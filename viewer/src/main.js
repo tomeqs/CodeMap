@@ -5,6 +5,9 @@ import { CodeModel, LEVELS, defaultEdgeKinds } from './data/model.js';
 import { KIND_COLORS } from './data/palette.js';
 import { GalaxyView } from './views/galaxy.js';
 import { CityView } from './views/city.js';
+import { LayeredView } from './views/layered.js';
+import { computeLayers } from './data/layering.js';
+import { buildDiGraph } from './data/di.js';
 import { DetailsPanel } from './ui/details.js';
 import { Sidebar, renderLegend } from './ui/sidebar.js';
 import { clear, debounce, fmt, h, shortName } from './ui/dom.js';
@@ -13,6 +16,8 @@ import { ProjectsScreen } from './ui/projects.js';
 
 const MAX_GALAXY_UNITS = 7000;
 const NEXT_LEVEL = { project: 'namespace', namespace: 'type', type: 'member' };
+/** Views that show one level of detail at a time (the level buttons apply). */
+const LEVEL_VIEWS = new Set(['galaxy', 'layers']);
 
 class App {
   constructor() {
@@ -44,9 +49,14 @@ class App {
     const model = new CodeModel(doc);
     this.view?.deactivate();
     this.galaxy?.dispose();
+    this.layers?.dispose();
+    this.diView?.dispose();
     this.model = model;
     this.galaxy = new GalaxyView(this.stage, model, this.labels);
     this.city = new CityView(this.stage, model, this.labels);
+    this.layers = new LayeredView(this.stage, model, this.labels);
+    this.diView = new LayeredView(this.stage, model, this.labels);
+    document.querySelector('#view-toggle [data-view="di"]').disabled = !model.doc.analysis?.di;
 
     const typeCount = model.nodes.filter((n) => n.level === 'type' && !n.external).length;
     this.state = {
@@ -87,8 +97,7 @@ class App {
     const removed = [...before].filter((id) => !after.has(id)).length;
 
     this.model = model;
-    this.galaxy.model = model;
-    this.city.model = model;
+    for (const view of [this.galaxy, this.city, this.layers, this.diView]) view.model = model;
     const s = this.state;
     if (s.scope && !model.get(s.scope)) s.scope = null;
     for (const id of [...s.hiddenProjects]) if (!model.get(id)) s.hiddenProjects.delete(id);
@@ -97,7 +106,7 @@ class App {
       this.details.hide();
     }
 
-    this.galaxy.userMoved = true; // keep the camera where the user left it
+    for (const view of [this.galaxy, this.layers, this.diView]) view.userMoved = true; // keep the camera where the user left it
     this.city.keepCamera = true;
     this.sidebar.render();
     this.rebuild();
@@ -157,11 +166,11 @@ class App {
 
   activateView() {
     this.view?.deactivate();
-    this.view = this.state.view === 'galaxy' ? this.galaxy : this.city;
+    this.view = { galaxy: this.galaxy, city: this.city, layers: this.layers, di: this.diView }[this.state.view] ?? this.galaxy;
     this.view.activate();
     this.applyOptions();
     document.querySelectorAll('#view-toggle button').forEach((b) => b.classList.toggle('active', b.dataset.view === this.state.view));
-    document.querySelectorAll('#level-toggle button').forEach((b) => (b.disabled = this.state.view === 'city'));
+    document.querySelectorAll('#level-toggle button').forEach((b) => (b.disabled = !LEVEL_VIEWS.has(this.state.view)));
   }
 
   // ------------------------------------------------------------------ state
@@ -187,20 +196,22 @@ class App {
 
   applyOptions() {
     const s = this.state;
-    this.galaxy.setOptions({ flowAll: s.flowAll, labels: s.labels, autoRotate: s.autoRotate });
+    for (const view of [this.galaxy, this.layers, this.diView]) view.setOptions({ flowAll: s.flowAll, labels: s.labels, autoRotate: s.autoRotate });
     this.city.setOptions({ allArcs: s.allArcs, labels: s.labels });
   }
 
   setView(view) {
     if (view === this.state.view) return;
+    if (view === 'di' && !this.model.doc.analysis?.di) return this.toast('No dependency-injection registrations were found in this code.');
     this.state.view = view;
+    this.statusLine = '';
     this.activateView();
     this.sidebar.renderFilters();
     this.rebuild();
   }
 
   setLevel(level) {
-    if (this.state.view !== 'galaxy') return;
+    if (!LEVEL_VIEWS.has(this.state.view)) return;
     const scope = this.state.scope ? this.model.get(this.state.scope) : null;
     // A scope deeper than (or equal to) the requested level makes no sense: widen it.
     const keepScope = scope && scope.levelIndex < LEVELS.indexOf(level);
@@ -222,6 +233,31 @@ class App {
 
       const { links, ghosts } = model.aggregate(units, s, { ghosts: !!s.scope });
       this.galaxy.build(units, links, s, ghosts);
+    } else if (s.view === 'layers') {
+      const units = model.units(s);
+      if (units.length > MAX_GALAXY_UNITS && s.level !== 'project') {
+        this.toast(`${fmt(units.length)} ${s.level}s is too many to lay out smoothly – drill into a project or namespace first.`);
+        s.level = LEVELS[Math.max(0, LEVELS.indexOf(s.level) - 1)];
+        return this.rebuild();
+      }
+
+      // Change coupling is not a dependency, it must not influence the layering.
+      const dependencyKinds = new Set([...s.edgeKinds].filter((k) => k !== 'changesWith'));
+      const { links } = model.aggregate(units, { ...s, edgeKinds: dependencyKinds });
+      const result = computeLayers(units.map((u) => u.id), links);
+      for (const link of links) link.violation = result.upward.has(link) ? 'error' : null;
+      const counts = new Array(result.count).fill(0);
+      for (const layer of result.layerOf.values()) counts[layer]++;
+      const layers = counts.map((count, i) => ({
+        title: `Layer ${i}${i === 0 && result.count > 1 ? ' (bottom)' : i === result.count - 1 && result.count > 1 ? ' (top)' : ''} · ${count}`,
+        color: layerColor(i, result.count),
+      }));
+      this.layerStats = { layers: result.count, upward: result.upward.size };
+      this.layers.build(units, links, s, { layerOf: result.layerOf, layers });
+    } else if (s.view === 'di') {
+      const graph = buildDiGraph(model, s);
+      this.diStats = graph.stats;
+      this.diView.build(graph.units, graph.links, { ...s, level: 'type' }, graph.layering);
     } else {
       const scope = s.scope ? model.get(s.scope) : null;
       const cityState = { ...s, level: 'type', scope: scope && scope.levelIndex <= 1 ? scope.id : null };
@@ -385,10 +421,22 @@ class App {
 
   showCycle(cycle) {
     const level = cycle.level === 'project' ? 'project' : cycle.level === 'namespace' ? 'namespace' : 'type';
-    if (this.state.view === 'galaxy' && (this.state.level !== level || this.state.scope)) {
+    let rebuild = false;
+    if (!LEVEL_VIEWS.has(this.state.view)) {
+      this.state.view = 'galaxy';
+      this.activateView();
+      rebuild = true;
+    }
+
+    if (this.state.level !== level || this.state.scope) {
       this.state.level = level;
       this.state.scope = null;
+      rebuild = true;
+    }
+
+    if (rebuild) {
       this.rebuild();
+      this.sidebar.renderFilters();
     }
 
     this.selection = { nodeId: cycle.nodes[0], unitId: null, mode: 'cycle', cycle };
@@ -398,6 +446,65 @@ class App {
     const first = this.unitFor(this.model.get(cycle.nodes[0]));
     if (first) this.view.focus(first);
     this.updateHud();
+  }
+
+  showDiIssue(issue) {
+    if (this.state.view !== 'di') this.setView('di');
+    if (this.diView.byId?.has(issue.consumer)) {
+      this.select(issue.consumer, { focus: true });
+      this.statusLine = issue.message;
+      this.updateHud();
+    } else {
+      this.reveal(issue.consumer);
+    }
+  }
+
+  /** Switches to the layers view at the given level (whole solution). */
+  showLayers(level) {
+    const s = this.state;
+    if (s.view !== 'layers') {
+      s.view = 'layers';
+      this.activateView();
+    }
+
+    s.level = level;
+    s.scope = null;
+    this.layers.userMoved = false;
+    this.rebuild();
+    this.sidebar.renderFilters();
+  }
+
+  showUpward(level, source, target) {
+    this.showLayers(level);
+    if (this.view.byId?.has(source) && this.view.byId?.has(target)) {
+      this.showPath(source, target);
+      this.view.focus(source);
+    } else {
+      this.reveal(source);
+    }
+  }
+
+  /** Shows two types that change together (git) with the change-coupling link switched on. */
+  showCoupling(pair) {
+    const s = this.state;
+    if (!s.edgeKinds.has('changesWith')) s.edgeKinds = new Set([...s.edgeKinds, 'changesWith']);
+    if (s.view !== 'galaxy') {
+      s.view = 'galaxy';
+      this.activateView();
+    }
+
+    s.level = 'type';
+    s.scope = null;
+    this.rebuild();
+    this.sidebar.renderFilters();
+    if (this.view.byId?.has(pair.source) && this.view.byId?.has(pair.target)) {
+      this.showPath(pair.source, pair.target);
+      this.view.focus(pair.source);
+      this.statusLine = `Changed together in ${pair.sharedCommits} commits (${Math.round(pair.strength * 100)}%)${pair.hidden ? ', with no code dependency' : ''}`;
+      this.updateHud();
+    } else {
+      this.reveal(pair.source);
+    }
   }
 
   /** Makes a node visible (switching level / scope / filters if needed), selects and focuses it. */
@@ -414,8 +521,17 @@ class App {
     if (node.isTest && !s.showTests) (s.showTests = true), (changed = true);
     if (node.external && !s.showExternal) (s.showExternal = true), (changed = true);
 
-    if (s.view === 'galaxy') {
-      const visible = this.galaxy.byId?.has(id) && !changed;
+    if (s.view === 'di' && !this.diView.byId?.has(id)) {
+      // Not part of the container graph: show it in the galaxy instead.
+      s.view = 'galaxy';
+      this.activateView();
+      changed = true;
+    }
+
+    if (s.view === 'di') {
+      // nothing to adjust: the DI view always shows every container-built type
+    } else if (LEVEL_VIEWS.has(s.view)) {
+      const visible = this.view.byId?.has(id) && !changed;
       if (!visible) {
         let level = node.external ? 'type' : node.level;
         let scope = s.scope && this.model.isDescendant(node, s.scope) && this.model.get(s.scope).levelIndex < LEVELS.indexOf(level) ? s.scope : null;
@@ -454,20 +570,21 @@ class App {
 
     const next = NEXT_LEVEL[node.level];
     if (!next || node.external) return;
+    if (this.state.view === 'di') return this.view.focus(id);
     this.state.level = next;
     this.state.scope = node.id;
-    this.galaxy.userMoved = false;
+    this.view.userMoved = false;
     this.rebuild();
     this.sidebar.renderFilters();
     this.selection = { nodeId: id, unitId: null, mode: 'neighbors' };
     this.details.show(node, node.level);
-    setTimeout(() => this.galaxy.fit(true), 50);
+    setTimeout(() => this.view.fit(true), 50);
   }
 
   goUp() {
     const s = this.state;
     if (!s.scope) {
-      if (s.view === 'galaxy' && s.level !== 'project') this.setLevel(LEVELS[LEVELS.indexOf(s.level) - 1]);
+      if (LEVEL_VIEWS.has(s.view) && s.level !== 'project') this.setLevel(LEVELS[LEVELS.indexOf(s.level) - 1]);
       return;
     }
 
@@ -481,14 +598,14 @@ class App {
     const s = this.state;
     if (!id) {
       s.scope = null;
-      if (s.view === 'galaxy') s.level = levelHint ?? (s.level === 'member' ? 'type' : s.level);
+      if (LEVEL_VIEWS.has(s.view)) s.level = levelHint ?? (s.level === 'member' ? 'type' : s.level);
     } else {
       const node = this.model.get(id);
       s.scope = id;
-      if (s.view === 'galaxy') s.level = NEXT_LEVEL[node.level] ?? s.level;
+      if (LEVEL_VIEWS.has(s.view)) s.level = NEXT_LEVEL[node.level] ?? s.level;
     }
 
-    this.galaxy.userMoved = false;
+    this.view.userMoved = false;
     this.rebuild();
     this.sidebar.renderFilters();
     setTimeout(() => this.view.fit(true), 50);
@@ -513,7 +630,18 @@ class App {
     if (!this.view) return;
     const units = this.view.units?.length ?? 0;
     const links = this.view.links?.length ?? 0;
-    const lines = [`${fmt(units)} ${this.state.view === 'city' ? 'buildings' : this.state.level + 's'} · ${fmt(links)} links`];
+    const view = this.state.view;
+    const lines = [`${fmt(units)} ${view === 'city' ? 'buildings' : view === 'di' ? 'services' : this.state.level + 's'} · ${fmt(links)} links`];
+    if (view === 'layers' && this.layerStats) {
+      const { layers, upward } = this.layerStats;
+      lines.unshift(`${layers} layers · ${upward ? `${upward} upward dependenc${upward === 1 ? 'y' : 'ies'} (red)` : 'no upward dependencies'}`);
+    }
+
+    if (view === 'di' && this.diStats) {
+      const { errors, warnings } = this.diStats;
+      lines.unshift(errors || warnings ? `${errors} lifetime error(s) · ${warnings} warning(s)` : 'No DI problems found');
+    }
+
     if (this.pathPending) lines.unshift('Click the target node to find a dependency path…');
     else if (this.statusLine) lines.unshift(this.statusLine);
     if (this.liveStatus) lines.unshift('⟳ ' + this.liveStatus);
@@ -612,6 +740,8 @@ class App {
       } else if (e.key >= '1' && e.key <= '4') this.setLevel(LEVELS[Number(e.key) - 1]);
       else if (e.key === 'g' || e.key === 'G') this.setView('galaxy');
       else if (e.key === 'c' || e.key === 'C') this.setView('city');
+      else if (e.key === 'l' || e.key === 'L') this.setView('layers');
+      else if (e.key === 'd' || e.key === 'D') this.setView('di');
       else if (e.key === 'f' || e.key === 'F') this.view.fit(true);
       else if (e.key === 'Escape') {
         if (this.pathPending) {
@@ -776,4 +906,11 @@ boot();
 function samePath(a, b) {
   const norm = (p) => (p ?? '').replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
   return norm(a) === norm(b);
+}
+
+/** Layer tints from teal (foundation) to violet (top). */
+function layerColor(index, count) {
+  const t = count <= 1 ? 0 : index / (count - 1);
+  const hue = 172 + t * 100;
+  return `hsl(${hue}, 70%, 62%)`;
 }

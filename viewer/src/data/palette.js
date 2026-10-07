@@ -38,6 +38,7 @@ export const EDGE_KINDS = {
   decoratedWith: { color: '#bcaaa4', label: 'decorated with', on: false, hint: '[Attribute]' },
   projectReference: { color: '#cfd8dc', label: 'project reference', on: true, hint: '<ProjectReference>' },
   packageReference: { color: '#a1887f', label: 'package reference', on: false, hint: '<PackageReference>' },
+  changesWith: { color: '#ffd166', label: 'changes with (git)', on: false, hint: 'modified in the same commits – not a code dependency' },
 };
 
 export const TAG_COLORS = {
