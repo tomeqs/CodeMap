@@ -5,6 +5,7 @@ using CodeMap;
 using CodeMap.Analysis;
 using CodeMap.Export;
 using CodeMap.Model;
+using CodeMap.Server;
 
 return Cli.Run(args);
 
@@ -16,7 +17,9 @@ internal static class Cli
         codemap – maps C# code into a relationship graph and an interactive 3D map.
 
         Usage:
-          codemap <path> [options]                 analyze a .sln/.slnx/.slnf/.csproj/.cs file or a folder
+          codemap                                  open the CodeMap app in your browser (pick or clone a project there)
+          codemap ui [path] [--watch]              same, and start analyzing <path> right away
+          codemap <path> [options]                 analyze a .sln/.slnx/.slnf/.csproj/.cs file or a folder into files
           codemap export <graph.codemap.json> [options]   convert an existing graph to other formats
 
         Options:
@@ -34,6 +37,12 @@ internal static class Cli
               --indent             pretty-print JSON
               --viewer <file>      use a custom viewer template instead of the embedded one
               --open               open the HTML map when done
+
+        App options (codemap / codemap ui):
+              --port <n>           preferred port (default 5180; a free one is used if taken)
+              --no-open            do not open the browser
+              --watch              re-analyze automatically when the sources change
+
           -q, --quiet              less output
           -h, --help               show this help
               --version            show version
@@ -45,7 +54,7 @@ internal static class Cli
         {
             var options = Parse(args);
             if (options == null) return 0;
-            return Execute(options);
+            return options.Ui ? RunUiAsync(options).GetAwaiter().GetResult() : Execute(options);
         }
         catch (ArgumentException ex)
         {
@@ -72,6 +81,10 @@ internal static class Cli
         public bool Open { get; set; }
         public bool Quiet { get; set; }
         public string? Viewer { get; set; }
+        public bool Ui { get; set; }
+        public int Port { get; set; } = 5180;
+        public bool NoOpen { get; set; }
+        public bool Watch { get; set; }
         public AnalyzerOptions Analyzer { get; } = new();
     }
 
@@ -134,6 +147,15 @@ internal static class Cli
                 case "-q" or "--quiet":
                     options.Quiet = true;
                     break;
+                case "--port":
+                    options.Port = int.TryParse(Next(), out var port) && port is >= 0 and <= 65535 ? port : throw new ArgumentException("--port expects a number between 0 and 65535.");
+                    break;
+                case "--no-open":
+                    options.NoOpen = true;
+                    break;
+                case "--watch":
+                    options.Watch = true;
+                    break;
                 default:
                     if (arg.StartsWith('-')) throw new ArgumentException($"Unknown option {arg}.");
                     positional.Add(arg);
@@ -145,6 +167,19 @@ internal static class Cli
         {
             options.Export = true;
             positional.RemoveAt(0);
+        }
+
+        if (positional.Count > 0 && positional[0] == "ui")
+        {
+            options.Ui = true;
+            positional.RemoveAt(0);
+        }
+
+        // No arguments at all: start the app – the friendliest way in.
+        if (positional.Count == 0 && !options.Export)
+        {
+            options.Ui = true;
+            return options;
         }
 
         if (positional.Count == 0)
@@ -252,6 +287,45 @@ internal static class Cli
         return 0;
     }
 
+    private static async Task<int> RunUiAsync(CliOptions options)
+    {
+        var template = LoadViewerTemplate(options.Viewer);
+        if (template == null)
+        {
+            Console.Error.WriteLine("error: the viewer is not embedded in this build (run `npm run build` in /viewer).");
+            return 1;
+        }
+
+        var settings = new AnalysisSettings
+        {
+            Tests = options.Analyzer.IncludeTests,
+            External = options.Analyzer.IncludeExternal,
+            Git = options.Analyzer.Git,
+            TypesOnly = options.TypesOnly,
+            Watch = options.Watch,
+        };
+
+        await using var server = await UiServer.StartAsync(new UiServerOptions
+        {
+            ViewerHtml = template,
+            Port = options.Port,
+            InitialPath = string.IsNullOrEmpty(options.Input) ? null : Path.GetFullPath(options.Input),
+            InitialSettings = settings,
+            Log = options.Quiet ? null : message => Console.WriteLine($"  {message}"),
+        });
+
+        Console.WriteLine($"CodeMap is running at {server.Url}");
+        // For `npm run dev` in /viewer: the dev server proxies /api and needs the session token.
+        if (Environment.GetEnvironmentVariable("CODEMAP_DEV") == "1") Console.WriteLine($"Dev viewer: http://localhost:5173/?token={server.Token}");
+        Console.WriteLine("Pick a solution in the browser. Press Ctrl+C to stop.");
+        if (!options.NoOpen) OpenInBrowser(server.Url);
+
+        // The host's console lifetime handles Ctrl+C and SIGTERM.
+        await server.WaitForShutdownAsync();
+        Console.WriteLine("Stopping.");
+        return 0;
+    }
+
     private static void PrintSummary(CodeGraph graph)
     {
         var byId = graph.Nodes.ToDictionary(n => n.Id);
@@ -301,7 +375,7 @@ internal static class Cli
         {
             if (OperatingSystem.IsWindows()) Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
             else if (OperatingSystem.IsMacOS()) Process.Start("open", path);
-            else Process.Start("xdg-open", path);
+            else Process.Start(new ProcessStartInfo("xdg-open", path) { RedirectStandardError = true, RedirectStandardOutput = true });
         }
         catch (Exception ex)
         {

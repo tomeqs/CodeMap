@@ -8,6 +8,8 @@ import { CityView } from './views/city.js';
 import { DetailsPanel } from './ui/details.js';
 import { Sidebar, renderLegend } from './ui/sidebar.js';
 import { clear, debounce, fmt, h, shortName } from './ui/dom.js';
+import { ServerClient } from './data/server.js';
+import { ProjectsScreen } from './ui/projects.js';
 
 const MAX_GALAXY_UNITS = 7000;
 const NEXT_LEVEL = { project: 'namespace', namespace: 'type', type: 'member' };
@@ -33,7 +35,12 @@ class App {
 
   // ------------------------------------------------------------------ loading
 
-  load(doc) {
+  /**
+   * Shows a graph. With `preserve` (live / background refresh) the current view, filters, camera,
+   * layout and selection are kept and only the data changes.
+   */
+  load(doc, { preserve = false } = {}) {
+    if (preserve && this.model && this.state) return this.reload(doc);
     const model = new CodeModel(doc);
     this.view?.deactivate();
     this.galaxy?.dispose();
@@ -69,6 +76,83 @@ class App {
     this.activateView();
     this.sidebar.render();
     this.rebuild();
+  }
+
+  reload(doc) {
+    const model = new CodeModel(doc);
+    const typeIds = (m) => new Set(m.nodes.filter((n) => n.level === 'type' && !n.external).map((n) => n.id));
+    const before = typeIds(this.model);
+    const after = typeIds(model);
+    const added = [...after].filter((id) => !before.has(id)).length;
+    const removed = [...before].filter((id) => !after.has(id)).length;
+
+    this.model = model;
+    this.galaxy.model = model;
+    this.city.model = model;
+    const s = this.state;
+    if (s.scope && !model.get(s.scope)) s.scope = null;
+    for (const id of [...s.hiddenProjects]) if (!model.get(id)) s.hiddenProjects.delete(id);
+    if (this.selection && !model.get(this.selection.nodeId)) {
+      this.selection = null;
+      this.details.hide();
+    }
+
+    this.galaxy.userMoved = true; // keep the camera where the user left it
+    this.city.keepCamera = true;
+    this.sidebar.render();
+    this.rebuild();
+    this.city.keepCamera = false;
+    if (this.selection) this.details.show(model.get(this.selection.nodeId), this.selection.unitId ? model.get(this.selection.unitId)?.level : undefined);
+
+    const changes = [added && `+${added}`, removed && `−${removed}`].filter(Boolean).join(' / ');
+    const plural = added + removed === 1 ? 'type' : 'types';
+    this.toast(changes ? `Map updated: ${changes} ${plural}` : 'Map updated', 'info');
+  }
+
+  // ------------------------------------------------------------------ local app (codemap ui)
+
+  enableServer(client) {
+    this.server = client;
+    this.projects = new ProjectsScreen(this, client);
+    for (const id of ['btn-projects', 'btn-reanalyze', 'btn-live']) document.getElementById(id).classList.remove('hidden');
+    document.getElementById('btn-projects').addEventListener('click', () => this.projects.open());
+    document.getElementById('btn-reanalyze').addEventListener('click', () => this.projects.reanalyze());
+    document.getElementById('btn-live').addEventListener('click', () => this.projects.toggleLive());
+    client.connect((event) => this.projects.onEvent(event));
+  }
+
+  setServerProject(project) {
+    this.serverProject = project;
+    document.getElementById('btn-reanalyze').disabled = !project;
+    document.getElementById('btn-live').disabled = !project;
+    this.setWatching(this.watchedPath);
+  }
+
+  /** The server watches at most one project; it only counts as "live" when it is the one on screen. */
+  get watching() {
+    return this.watchedPath && this.serverProject && samePath(this.watchedPath, this.serverProject.path) ? this.watchedPath : null;
+  }
+
+  setWatching(path) {
+    this.watchedPath = path ?? null;
+    const button = document.getElementById('btn-live');
+    button.classList.toggle('on', !!this.watching);
+    button.setAttribute('aria-pressed', String(!!this.watching));
+    button.title = this.watching ? 'Live updates are on: the map refreshes when you save a file. Click to stop.' : 'Refresh the map automatically when files change';
+    this.updateHud();
+  }
+
+  setLiveStatus(text) {
+    this.liveStatus = text;
+    this.updateHud();
+  }
+
+  setConnection(connected) {
+    if (this.connected === connected) return;
+    const wasConnected = this.connected;
+    this.connected = connected;
+    if (!connected && wasConnected !== undefined) this.toast('Lost the connection to codemap. Is it still running?');
+    this.updateHud();
   }
 
   activateView() {
@@ -432,16 +516,13 @@ class App {
     const lines = [`${fmt(units)} ${this.state.view === 'city' ? 'buildings' : this.state.level + 's'} · ${fmt(links)} links`];
     if (this.pathPending) lines.unshift('Click the target node to find a dependency path…');
     else if (this.statusLine) lines.unshift(this.statusLine);
+    if (this.liveStatus) lines.unshift('⟳ ' + this.liveStatus);
+    else if (this.watching) lines.push('● live: watching for changes');
     this.hud.replaceChildren(...lines.map((l) => h('div', {}, l)));
   }
 
-  toast(message) {
-    const el = h('div', {
-      style: {
-        position: 'absolute', top: '74px', left: '50%', transform: 'translateX(-50%)', zIndex: 40, padding: '8px 14px',
-        background: 'rgba(40, 30, 10, 0.92)', border: '1px solid rgba(255,183,77,0.5)', borderRadius: '10px', color: '#ffd08a',
-      },
-    }, message);
+  toast(message, kind = 'warn') {
+    const el = h('div', { class: `toast ${kind}`, role: 'status' }, message);
     document.getElementById('app').append(el);
     setTimeout(() => el.remove(), 4500);
   }
@@ -517,6 +598,11 @@ class App {
     this.bindSearch();
 
     window.addEventListener('keydown', (e) => {
+      if (this.projects?.visible) {
+        if (e.key === 'Escape') this.projects.close();
+        return;
+      }
+
       if (!this.model) return;
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement;
       if (typing) return;
@@ -649,8 +735,29 @@ async function boot() {
   const app = new App();
   window.codemap = app;
   const embedded = document.getElementById('codemap-data')?.textContent?.trim();
+  const server = ServerClient.detect();
   try {
     if (embedded && embedded !== 'null') return app.load(JSON.parse(embedded));
+    if (server) {
+      // Local app: pick up a running analysis (codemap ui <path>) or show the project picker.
+      Object.assign(server.config, await server.get('/api/config'));
+      app.enableServer(server);
+      app.setServerProject(null);
+      if (server.config.current?.status === 'running') {
+        await app.projects.open();
+        app.projects.showJob(server.config.current);
+      } else if (server.config.current?.status === 'done' && server.config.current.key) {
+        const job = server.config.current;
+        app.load(await server.get(`/api/jobs/${job.id}/graph`));
+        app.setServerProject({ path: job.path, settings: job.settings, key: job.key });
+        if (server.config.watching) app.setWatching(server.config.watching);
+      } else {
+        await app.projects.open();
+      }
+
+      return;
+    }
+
     const url = new URLSearchParams(location.search).get('data');
     if (url) {
       const response = await fetch(url);
@@ -665,3 +772,8 @@ async function boot() {
 }
 
 boot();
+
+function samePath(a, b) {
+  const norm = (p) => (p ?? '').replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
+  return norm(a) === norm(b);
+}

@@ -32,6 +32,9 @@
           <div id="search-results" class="dropdown hidden"></div>
         </div>
         <div class="actions">
+          <button id="btn-projects" class="hidden" title="Open another project">Projects</button>
+          <button id="btn-reanalyze" class="hidden" title="Analyze the project again and refresh the map">↻</button>
+          <button id="btn-live" class="hidden live-toggle" title="Refresh the map automatically when files change" aria-pressed="false">Live</button>
           <button id="btn-fit" title="Fit view (F)">⤢</button>
           <button id="btn-open" title="Open a .codemap.json file">Open…</button>
           <input id="file-input" type="file" accept=".json,application/json" hidden />
@@ -67,6 +70,7 @@
           <p class="muted small">Generate one with <code>codemap path/to/Solution.sln</code></p>
         </div>
       </div>
+      <div id="projects" class="hidden"></div>
       <div id="drop-overlay" class="hidden"><div>Drop the CodeMap JSON to load it</div></div>
     </div>
 

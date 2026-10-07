@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CodeMap.Core\CodeMap.Core.csproj" />
+    <ProjectReference Include="..\CodeMap.Server\CodeMap.Server.csproj" />
   </ItemGroup>
 
   <!-- Single-file 3D viewer, produced by `npm run build` in /viewer. -->

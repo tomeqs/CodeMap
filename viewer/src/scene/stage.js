@@ -97,7 +97,14 @@ export class Stage {
     this.stars.visible = stars;
   }
 
+  /** Stops drawing (e.g. while a full-screen panel covers the map) to save GPU and battery. */
+  setPaused(paused) {
+    this.paused = paused;
+    this.lastTime = performance.now();
+  }
+
   frame() {
+    if (this.paused) return;
     const now = performance.now();
     const dt = Math.min(0.1, (now - this.lastTime) / 1000);
     this.lastTime = now;

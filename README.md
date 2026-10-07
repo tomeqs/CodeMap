@@ -19,13 +19,58 @@ codemap MySolution.sln            →  MySolution.codemap.json   (graf: format d
 Wymagany jest .NET SDK 8 lub nowszy. Node.js jest potrzebny tylko do przebudowania viewera.
 
 ```bash
-# analiza solucji (.sln / .slnx / .slnf), projektu (.csproj), pliku .cs albo dowolnego folderu
-dotnet run --project src/CodeMap.Cli -- path/to/MySolution.sln -o out
-
-# albo jako globalne narzędzie
+# instalacja jako globalne narzędzie
 dotnet pack src/CodeMap.Cli -o nupkg
 dotnet tool install -g CodeMap.Tool --add-source nupkg
+
+codemap            # otwiera aplikację w przeglądarce
+```
+
+### Aplikacja w przeglądarce (najwygodniej)
+
+`codemap` bez argumentów uruchamia lokalny serwer (tylko `127.0.0.1`) i otwiera przeglądarkę
+z ekranem wyboru projektu:
+
+* **przeglądarka folderów**: od razu widać, gdzie leżą solucje (◆) i projekty (●); dwuklik analizuje;
+* **klonowanie z Gita**: wklej URL repozytorium, a CodeMap sklonuje je do `~/.codemap/repos` i sam znajdzie solucję;
+* **ostatnie projekty**: zapamiętane mapy otwierają się natychmiast z cache (`~/.codemap/cache`);
+* **postęp analizy na żywo**, z możliwością anulowania;
+* **↻** na mapie: ponowna analiza bez utraty kamery, filtrów i zaznaczenia;
+* **Live**: mapa sama się odświeża, gdy zapiszesz plik `.cs`/`.csproj`, a toast pokazuje, ile typów przybyło lub ubyło.
+
+```bash
+codemap                                   # ekran wyboru projektu
+codemap ui path/to/MySolution.sln         # od razu analizuje wskazaną solucję
+codemap ui . --watch                      # bieżący folder + odświeżanie na żywo
+codemap ui --port 6000 --no-open          # inny port, bez otwierania przeglądarki
+```
+
+Serwer przyjmuje połączenia tylko z `127.0.0.1`, odrzuca obce nagłówki `Host` (DNS rebinding),
+a każde wywołanie API wymaga tokenu sesji, który jest wstrzykiwany tylko do strony serwowanej
+przez `codemap`. Inne strony otwarte w przeglądarce nie mogą więc z niego korzystać.
+
+### Skrót w IDE
+
+**Visual Studio**: *Tools → External Tools… → Add*
+* Command: `%USERPROFILE%\.dotnet\tools\codemap.exe`
+* Arguments: `ui "$(SolutionDir)$(SolutionFileName)" --watch`
+
+**JetBrains Rider**: *Settings → Tools → External Tools*, Program `codemap`, Arguments `ui "$SolutionPath$" --watch`.
+
+**VS Code**: `.vscode/tasks.json`
+```json
+{
+  "version": "2.0.0",
+  "tasks": [{ "label": "CodeMap", "type": "shell", "command": "codemap ui \"${workspaceFolder}\" --watch", "isBackground": true, "problemMatcher": [] }]
+}
+```
+
+### Generowanie plików (CI, raporty)
+
+```bash
+# analiza solucji (.sln / .slnx / .slnf), projektu (.csproj), pliku .cs albo dowolnego folderu
 codemap path/to/MySolution.sln -o out --open
+# bez instalacji: dotnet run --project src/CodeMap.Cli -- path/to/MySolution.sln -o out
 ```
 
 Otwórz `out/MySolution.html` w przeglądarce. Plik jest samowystarczalny (viewer i dane w jednym pliku),
@@ -48,6 +93,7 @@ z zainstalowanego .NET. Jeśli wcześniej był `dotnet restore`, typy z paczek N
 | `--no-git` / `--git-since "1 year ago"` | historia gita: churn, autorzy, hotspoty |
 | `--indent` | sformatowany JSON |
 | `--open` | otwórz mapę w przeglądarce |
+| `--port <n>` / `--no-open` / `--watch` | opcje aplikacji (`codemap` / `codemap ui`) |
 | `codemap export graph.codemap.json -f dgml,cypher` | konwersja istniejącego grafu na inne formaty |
 
 ## Co jest najciekawsze w mapie kodu
@@ -160,6 +206,7 @@ src/CodeMap.Core      analizator (Roslyn), model grafu, metryki, eksportery
   Loading/            .sln/.slnx/.slnf/.csproj → kompilacje Roslyn (bez MSBuild i bez budowania)
   Analysis/           deklaracje, walker referencji, metryki, cykle, git, tagi
   Export/             JSON, DGML, GraphML, Cypher, Markdown, HTML
+src/CodeMap.Server    lokalna aplikacja: API (ASP.NET Core), przeglądarka folderów, klonowanie, cache, tryb live
 src/CodeMap.Cli       narzędzie `codemap` (dotnet tool), osadza zbudowany viewer
 viewer/               mapa 3D: Vite + three.js + d3-force-3d + d3-hierarchy, budowana do jednego pliku HTML
 tests/CodeMap.Tests   testy xUnit analizatora i eksporterów
@@ -176,6 +223,8 @@ npm run build                                 # buduje dist/index.html i kopiuje
 ```
 
 Do trybu dev wrzuć dowolny wygenerowany graf do `viewer/public/sample.codemap.json`.
+Żeby rozwijać ekran wyboru projektów, uruchom `CODEMAP_DEV=1 codemap ui --no-open` i otwórz
+wypisany adres „Dev viewer” (Vite przekierowuje `/api` do serwera).
 Zbudowany viewer (`src/CodeMap.Cli/Assets/viewer.html`) jest w repozytorium, żeby samo `dotnet run`
 generowało HTML bez Node.js. Po zmianach w `viewer/` trzeba uruchomić `npm run build`.
 
@@ -201,3 +250,4 @@ nadal jest mapowany, a nierozwiązane symbole są po prostu pomijane.
 * tryb VR/WebXR dla widoku City
 * własność kodu (autorzy z gita) jako kolor dzielnic
 * serwer MCP, który odpowiada na pytania o architekturę na podstawie grafu
+* rozszerzenie VS Code / Visual Studio z mapą w panelu edytora i przejściem do kodu jednym kliknięciem

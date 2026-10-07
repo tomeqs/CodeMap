@@ -204,7 +204,7 @@ export class CityView {
     this.labelOrder = [...this.units].sort((a, b) => b.height - a.height);
     this.recolor();
     this.setHighlight(null);
-    this.fit(false);
+    if (!this.keepCamera) this.fit(false);
   }
 
   updateMatrices() {
