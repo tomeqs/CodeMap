@@ -52,6 +52,48 @@
         "mostComplex": { "$ref": "#/$defs/ranking" },
         "mostDepended": { "$ref": "#/$defs/ranking" },
         "unusedCandidates": { "type": "array", "items": { "type": "string" } },
+        "layers": {
+          "type": "array",
+          "description": "Architecture layers computed from the dependency graph, bottom (index 0) to top.",
+          "items": {
+            "type": "object",
+            "required": ["level", "layers", "upward"],
+            "properties": {
+              "level": { "enum": ["project", "namespace"] },
+              "layers": { "type": "array", "items": { "type": "array", "items": { "type": "string" } } },
+              "upward": {
+                "type": "array",
+                "description": "Dependencies on the same or a higher layer; cutting them removes every cycle.",
+                "items": {
+                  "type": "object",
+                  "required": ["source", "target", "weight"],
+                  "properties": {
+                    "source": { "type": "string" },
+                    "target": { "type": "string" },
+                    "kind": { "const": "upward" },
+                    "weight": { "type": "integer", "minimum": 1 }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "changeCoupling": {
+          "type": "array",
+          "description": "Types modified in the same git commits.",
+          "items": {
+            "type": "object",
+            "required": ["source", "target", "sharedCommits", "strength", "hidden"],
+            "properties": {
+              "source": { "type": "string" },
+              "target": { "type": "string" },
+              "sharedCommits": { "type": "integer", "minimum": 1 },
+              "strength": { "type": "number", "minimum": 0, "maximum": 1 },
+              "hidden": { "type": "boolean", "description": "No code dependency between the two types." }
+            }
+          }
+        },
+        "di": { "$ref": "#/$defs/di" },
         "warnings": { "type": "array", "items": { "type": "string" } }
       }
     }
@@ -97,7 +139,7 @@
           "enum": [
             "projectReference", "packageReference", "inherits", "implements", "overrides", "calls",
             "instantiates", "accesses", "subscribes", "throws", "catches", "uses", "holds", "returns",
-            "accepts", "injects", "extends", "decoratedWith"
+            "accepts", "injects", "extends", "decoratedWith", "changesWith"
           ]
         },
         "weight": { "type": "integer", "minimum": 1 }
@@ -110,6 +152,61 @@
         "file": { "type": "string" },
         "line": { "type": "integer", "minimum": 1 },
         "endLine": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "lifetime": { "enum": ["singleton", "scoped", "transient"] },
+    "di": {
+      "type": "object",
+      "required": ["registrations", "dependencies", "issues"],
+      "properties": {
+        "registrations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["service", "lifetime", "kind"],
+            "properties": {
+              "service": { "type": "string" },
+              "external": { "type": "boolean" },
+              "implementation": { "type": "string" },
+              "lifetime": { "$ref": "#/$defs/lifetime" },
+              "kind": { "enum": ["type", "instance", "factory", "forward", "hosted", "dbcontext", "httpclient"] },
+              "key": { "type": "string" },
+              "registeredIn": { "type": "string" },
+              "location": { "$ref": "#/$defs/location" }
+            }
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["consumer", "consumerLifetime", "service", "implementations"],
+            "properties": {
+              "consumer": { "type": "string" },
+              "consumerLifetime": { "$ref": "#/$defs/lifetime" },
+              "service": { "type": "string" },
+              "external": { "type": "boolean" },
+              "many": { "type": "boolean" },
+              "optional": { "type": "boolean" },
+              "implementations": { "type": "array", "items": { "type": "string" } },
+              "lifetime": { "$ref": "#/$defs/lifetime" }
+            }
+          }
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "severity", "consumer", "service", "message"],
+            "properties": {
+              "kind": { "enum": ["captive", "captive-transient", "unregistered"] },
+              "severity": { "enum": ["error", "warning"] },
+              "consumer": { "type": "string" },
+              "service": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
+        }
       }
     },
     "ranking": {

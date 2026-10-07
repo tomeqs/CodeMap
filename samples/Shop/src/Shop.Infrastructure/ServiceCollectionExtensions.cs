@@ -7,6 +7,7 @@ using Shop.Domain.Orders;
 using Shop.Infrastructure.Messaging;
 using Shop.Infrastructure.Payments;
 using Shop.Infrastructure.Persistence;
+using Shop.Infrastructure.Reporting;
 
 namespace Shop.Infrastructure;
 
@@ -30,6 +31,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<PricingCalculator>();
         services.AddScoped<ICommandHandler<PlaceOrderCommand, PlaceOrderResult>, PlaceOrderHandler>();
         services.AddScoped<OrderQueries>();
+        services.AddSingleton<DailyReportService>();
         return services;
     }
 }

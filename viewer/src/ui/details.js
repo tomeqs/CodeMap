@@ -1,5 +1,6 @@
 import { EDGE_KINDS, KIND_COLORS } from '../data/palette.js';
 import { MEMBER_KINDS, METRICS } from '../data/model.js';
+import { LIFETIME_COLORS } from '../data/di.js';
 import { clear, fmt, h, shortName } from './dom.js';
 
 const METRICS_BY_LEVEL = {
@@ -119,6 +120,9 @@ export class DetailsPanel {
     if (buttons.length) body.append(h('div', { class: 'btns' }, buttons));
     if (app.statusLine) body.append(h('div', { class: 'small muted' }, app.statusLine));
 
+    this.diSection(body, node);
+    this.couplingSection(body, node);
+
     // ---------------------------------------------------------------- relationships
     const { outgoing, incoming } = model.relations(node.id, unitLevel ?? node.level);
     body.append(this.relationSection('Depends on →', outgoing));
@@ -141,6 +145,75 @@ export class DetailsPanel {
 
       body.append(section);
     }
+  }
+
+  /** How the container builds this type: registrations, what its constructor receives, problems. */
+  diSection(body, node) {
+    const di = this.app.model.doc.analysis?.di;
+    if (!di || node.level !== 'type') return;
+    const model = this.app.model;
+    const name = (id) => (model.get(id) ? shortName(model.get(id)) : String(id).split('<')[0].split('.').pop());
+    const registrations = di.registrations.filter((r) => r.implementation === node.id || r.service === node.id);
+    const dependencies = di.dependencies.filter((d) => d.consumer === node.id);
+    const issues = di.issues.filter((i) => i.consumer === node.id);
+    if (!registrations.length && !dependencies.length) return;
+
+    const section = h('div', { class: 'section' }, h('h3', {}, 'Dependency injection'));
+    for (const issue of issues) section.append(h('div', { class: `issue ${issue.severity}` }, h('div', { class: 'small' }, issue.message)));
+
+    for (const r of registrations) {
+      const asService = r.service === node.id && r.implementation && r.implementation !== node.id;
+      const text = asService
+        ? `implemented by ${name(r.implementation)}`
+        : r.service === node.id || !r.service ? 'registered as itself' : `registered for ${r.external ? r.service.split('.').pop() : name(r.service)}`;
+      const where = r.registeredIn ? ` · in ${name(r.registeredIn)}` : '';
+      const target = r.registeredIn ?? (asService ? r.implementation : null);
+      section.append(
+        h('div', { class: 'di-row', title: r.location ? `${r.location.file}:${r.location.line}` : '', onClick: () => target && this.app.reveal(target) },
+          h('span', { class: 'life', style: { color: LIFETIME_COLORS[r.lifetime] } }, r.lifetime),
+          h('span', {}, text + where),
+          r.kind !== 'type' ? h('span', { class: 'faint' }, r.kind) : null,
+        ),
+      );
+    }
+
+    if (dependencies.length) {
+      section.append(h('div', { class: 'small muted', style: { marginTop: '6px' } }, 'Constructor receives'));
+      for (const d of dependencies) {
+        const implementations = d.implementations.map(name).join(', ');
+        const issue = issues.find((i) => i.service === d.service);
+        section.append(
+          h('div', { class: 'di-row', onClick: () => !d.external && this.app.reveal(d.implementations[0] ?? d.service) },
+            h('span', { class: 'life', style: { color: LIFETIME_COLORS[d.lifetime] ?? 'var(--faint)' } }, d.lifetime ?? (d.external ? 'framework' : '–')),
+            h('span', {}, (d.many ? 'all ' : '') + (d.external ? d.service.split('<')[0].split('.').pop() : name(d.service))),
+            implementations && implementations !== name(d.service) ? h('span', { class: 'faint' }, '→ ' + implementations) : null,
+            issue ? h('span', { class: 'chip ' + (issue.severity === 'error' ? 'danger' : 'warn') }, issue.kind.replace('-', ' ')) : null,
+          ),
+        );
+      }
+    }
+
+    body.append(section);
+  }
+
+  /** Types that change in the same commits (git history). */
+  couplingSection(body, node) {
+    const pairs = (this.app.model.doc.analysis?.changeCoupling ?? []).filter((c) => c.source === node.id || c.target === node.id);
+    if (!pairs.length) return;
+    const section = h('div', { class: 'section' }, h('h3', { title: 'Modified in the same commits' }, 'Changes together with'));
+    for (const pair of pairs) {
+      const other = this.app.model.get(pair.source === node.id ? pair.target : pair.source);
+      if (!other) continue;
+      section.append(
+        h('div', { class: 'di-row', onClick: () => this.app.showCoupling(pair) },
+          h('span', {}, shortName(other)),
+          h('span', { class: 'faint' }, `${pair.sharedCommits} commits · ${Math.round(pair.strength * 100)}%`),
+          pair.hidden ? h('span', { class: 'chip warn', title: 'Neither type references the other' }, 'no code dependency') : null,
+        ),
+      );
+    }
+
+    body.append(section);
   }
 
   relationSection(title, buckets) {

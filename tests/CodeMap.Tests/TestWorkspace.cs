@@ -40,6 +40,27 @@ internal sealed class TestWorkspace : IDisposable
             """);
     }
 
+    /// <summary>Runs git in the workspace (used to build a history for churn / change-coupling tests).</summary>
+    public TestWorkspace Git(params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git") { WorkingDirectory = Root, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var a in new[] { "-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false" }.Concat(args)) psi.ArgumentList.Add(a);
+        using var process = System.Diagnostics.Process.Start(psi)!;
+        var error = process.StandardError.ReadToEnd();
+        process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        if (process.ExitCode != 0) throw new InvalidOperationException($"git {string.Join(' ', args)} failed: {error}");
+        return this;
+    }
+
+    /// <summary>Writes the files and commits them.</summary>
+    public TestWorkspace Commit(string message, params (string Path, string Content)[] files)
+    {
+        foreach (var (path, content) in files) File(path, content);
+        Git("add", "-A");
+        return Git("commit", "-q", "-m", message);
+    }
+
     public CodeGraph Analyze(string? path = null, AnalyzerOptions? options = null) =>
         CodeMapAnalyzer.Analyze(path ?? Root, options ?? new AnalyzerOptions { Git = false });
 

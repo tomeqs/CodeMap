@@ -22,7 +22,7 @@ internal sealed class TypeAnalyzer
         _projectName = projectName;
         _isTestProject = isTestProject;
         _relativePath = Path.GetRelativePath(builder.Root, model.SyntaxTree.FilePath).Replace('\\', '/');
-        _walker = new ReferenceWalker(builder, model);
+        _walker = new ReferenceWalker(builder, model) { RelativePath = _relativePath };
     }
 
     public void Run(CancellationToken ct)
@@ -226,6 +226,36 @@ internal sealed class TypeAnalyzer
         }
 
         Tagger.TagType(type, node, _isTestProject);
+        if (type.TypeKind is TypeKind.Class or TypeKind.Struct && !type.IsStatic && !type.IsAbstract) RecordConstructor(type, key);
+    }
+
+    /// <summary>What a DI container would have to supply: the parameters of the widest public constructor.</summary>
+    private void RecordConstructor(INamedTypeSymbol type, string key)
+    {
+        var constructor = type.InstanceConstructors
+            .Where(c => c.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Public)
+            .OrderByDescending(c => c.Parameters.Length)
+            .FirstOrDefault();
+        if (constructor == null || constructor.Parameters.Length == 0) return;
+
+        var dependencies = new List<GraphBuilder.DependencyDraft>();
+        foreach (var parameter in constructor.Parameters)
+        {
+            var parameterType = parameter.Type;
+            var many = false;
+            if (parameterType is INamedTypeSymbol { IsGenericType: true } generic
+                && generic.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
+            {
+                parameterType = generic.TypeArguments[0];
+                many = true;
+            }
+
+            if (parameterType.IsValueType) continue; // enums, numbers, structs: never container services
+            var ident = _builder.ServiceIdent(parameterType);
+            if (ident != null) dependencies.Add(new GraphBuilder.DependencyDraft(ident, many, parameter.HasExplicitDefaultValue));
+        }
+
+        if (dependencies.Count > 0) _builder.SetConstructorDependencies(key, dependencies);
     }
 
     private static bool IsTrivialBase(INamedTypeSymbol baseType) =>

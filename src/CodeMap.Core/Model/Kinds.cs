@@ -66,14 +66,17 @@ public static class EdgeKinds
     /// <summary>Implicit edge derived from <see cref="GraphNode.Parent"/>; only emitted by exporters.</summary>
     public const string Contains = "contains";
 
+    /// <summary>Not a code dependency: the two types are modified in the same commits (git history).</summary>
+    public const string ChangesWith = "changesWith";
+
     public static readonly IReadOnlyList<string> All = new[]
     {
         ProjectReference, PackageReference, Inherits, Implements, Overrides, Calls, Instantiates,
-        Accesses, Subscribes, Throws, Catches, Uses, Holds, Returns, Accepts, Injects, Extends, DecoratedWith,
+        Accesses, Subscribes, Throws, Catches, Uses, Holds, Returns, Accepts, Injects, Extends, DecoratedWith, ChangesWith,
     };
 
     /// <summary>Edge kinds that represent a compile-time dependency of the source on the target.</summary>
-    public static bool IsDependency(string kind) => kind != Contains;
+    public static bool IsDependency(string kind) => kind is not (Contains or ChangesWith);
 }
 
 public static class Tags
@@ -100,4 +103,8 @@ public static class Tags
     public const string InCycle = "in-cycle";
     public const string Hotspot = "hotspot";
     public const string TestProject = "test-project";
+    public const string DiSingleton = "singleton";
+    public const string DiScoped = "scoped";
+    public const string DiTransient = "transient";
+    public const string DiIssue = "di-issue";
 }

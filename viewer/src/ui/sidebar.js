@@ -1,4 +1,6 @@
 import { EDGE_KINDS, KIND_COLORS, TAG_COLORS, turboCss } from '../data/palette.js';
+import { LIFETIMES } from '../data/di.js';
+import { VIOLATION_COLORS } from '../views/galaxy.js';
 import { METRICS, defaultEdgeKinds } from '../data/model.js';
 import { clear, fmt, h, shortName } from './dom.js';
 
@@ -40,12 +42,13 @@ export class Sidebar {
       ['kind', 'Kind (class, interface…)'],
       ['role', 'Role (controller, repository…)'],
       ['cycles', 'Cycles & unused code'],
+      ...(model.doc.analysis?.di ? [['lifetime', 'DI lifetime']] : []),
       ...metricOptions.map(([k, m]) => [k, m.label]),
     ];
 
     const appearance = h('div', { class: 'section' }, h('h3', {}, 'Appearance'));
     appearance.append(h('div', { class: 'row' }, h('label', {}, 'Colour'), select(state.colorMode, colorOptions, (v) => app.setState({ colorMode: v }, 'recolor'))));
-    if (state.view === 'galaxy') {
+    if (state.view !== 'city') {
       appearance.append(h('div', { class: 'row' }, h('label', {}, 'Size'), select(state.sizeMetric, metricOptions.map(([k, m]) => [k, m.label]), (v) => app.setState({ sizeMetric: v }))));
     } else {
       appearance.append(h('div', { class: 'row' }, h('label', {}, 'Height'), select(state.heightMetric, metricOptions.map(([k, m]) => [k, m.label]), (v) => app.setState({ heightMetric: v }))));
@@ -56,7 +59,7 @@ export class Sidebar {
       h('label', { class: 'toggle-row', title }, h('span', {}, label), h('input', { type: 'checkbox', checked, onChange: (e) => onChange(e.target.checked) }));
 
     appearance.append(toggle('Labels', state.labels, (v) => app.setState({ labels: v }, 'options')));
-    if (state.view === 'galaxy') {
+    if (state.view !== 'city') {
       appearance.append(toggle('Flow particles on all links', state.flowAll, (v) => app.setState({ flowAll: v }, 'options')));
       appearance.append(toggle('Auto-rotate', state.autoRotate, (v) => app.setState({ autoRotate: v }, 'options')));
     } else {
@@ -158,6 +161,10 @@ export class Sidebar {
     const analysis = model.doc.analysis ?? {};
     const el = clear(this.insights);
 
+    this.renderDiInsights(el, analysis.di);
+    this.renderLayerInsights(el, analysis.layers ?? []);
+    this.renderCouplingInsights(el, analysis.changeCoupling ?? []);
+
     const cycles = analysis.cycles ?? [];
     const cycleSection = h('div', { class: 'section' }, h('h3', {}, `Dependency cycles (${cycles.length})`));
     if (!cycles.length) cycleSection.append(h('div', { class: 'small faint' }, 'No cycles – nice layering!'));
@@ -232,6 +239,84 @@ export class Sidebar {
     }
   }
 
+  renderDiInsights(el, di) {
+    if (!di) return;
+    const { app } = this;
+    const { model } = app;
+    const counts = LIFETIMES.filter((l) => l.id !== 'missing')
+      .map((l) => [l, di.registrations.filter((r) => r.lifetime === l.id).length])
+      .filter(([, n]) => n > 0);
+    const section = h('div', { class: 'section' },
+      h('h3', { title: 'Registrations found in code, resolved like the container would' }, 'Dependency injection',
+        h('span', { class: 'links' }, h('button', { onClick: () => app.setView('di') }, 'open view')),
+      ),
+      h('div', { class: 'chips' }, counts.map(([l, n]) => h('span', { class: 'chip', style: { borderColor: l.color, color: l.color } }, `${n} ${l.title.toLowerCase()}`))),
+    );
+    if (!di.issues.length) section.append(h('div', { class: 'small faint' }, 'No captive dependencies or missing registrations.'));
+    for (const issue of di.issues.slice(0, 30)) {
+      const consumer = model.get(issue.consumer);
+      section.append(
+        h('div', { class: `issue ${issue.severity}`, title: issue.message, onClick: () => app.showDiIssue(issue) },
+          h('div', { class: 'issue-head' },
+            h('span', { class: 'chip ' + (issue.severity === 'error' ? 'danger' : 'warn') }, issue.kind.replace('-', ' ')),
+            h('b', {}, consumer ? shortName(consumer) : issue.consumer),
+          ),
+          h('div', { class: 'small muted' }, issue.message),
+        ),
+      );
+    }
+
+    el.append(section);
+  }
+
+  renderLayerInsights(el, layering) {
+    const { app } = this;
+    const { model } = app;
+    const info = layering.find((l) => l.level === 'namespace') ?? layering[0];
+    if (!info) return;
+    const section = h('div', { class: 'section' },
+      h('h3', { title: 'Dependencies that point up in the computed layering: cutting them removes every cycle' }, `Upward dependencies (${info.upward.length})`,
+        h('span', { class: 'links' }, h('button', { onClick: () => app.showLayers(info.level) }, 'open view')),
+      ),
+      h('div', { class: 'small faint' }, `${info.layers.length} ${info.level} layers over all dependency kinds (the view layers only the relationships enabled in Filters).`),
+    );
+    for (const edge of info.upward.slice(0, 20)) {
+      const source = model.get(edge.source);
+      const target = model.get(edge.target);
+      section.append(
+        h('div', { class: 'insight', title: `${source?.fullName ?? edge.source} → ${target?.fullName ?? edge.target}`, onClick: () => app.showUpward(info.level, edge.source, edge.target) },
+          h('span', { class: 'name' }, `${shortName(source) || edge.source} → ${shortName(target) || edge.target}`),
+          h('span', { class: 'score' }, `${edge.weight}×`),
+        ),
+      );
+    }
+
+    el.append(section);
+  }
+
+  renderCouplingInsights(el, coupling) {
+    const hidden = coupling.filter((c) => c.hidden);
+    if (!coupling.length) return;
+    const { app } = this;
+    const { model } = app;
+    const section = h('div', { class: 'section' },
+      h('h3', { title: 'Changed in the same commits although neither uses the other' }, `Hidden change coupling (${hidden.length})`),
+    );
+    if (!hidden.length) section.append(h('div', { class: 'small faint' }, 'Everything that changes together is also connected in code.'));
+    for (const pair of hidden.slice(0, 20)) {
+      const a = model.get(pair.source);
+      const b = model.get(pair.target);
+      section.append(
+        h('div', { class: 'insight', title: `${pair.sharedCommits} shared commits · strength ${Math.round(pair.strength * 100)}%`, onClick: () => app.showCoupling(pair) },
+          h('span', { class: 'name' }, `${shortName(a) || pair.source} ⇄ ${shortName(b) || pair.target}`),
+          h('span', { class: 'score' }, `${pair.sharedCommits} · ${Math.round(pair.strength * 100)}%`),
+        ),
+      );
+    }
+
+    el.append(section);
+  }
+
   // ------------------------------------------------------------------ data
 
   renderAbout() {
@@ -284,6 +369,7 @@ export function renderLegend(el, app) {
   const { model, state } = app;
   clear(el);
   const item = (color, label) => h('span', { class: 'li' }, h('span', { class: 'sw', style: { background: color, boxShadow: `0 0 6px ${color}` } }), label);
+  const line = (color, label) => h('span', { class: 'li' }, h('span', { class: 'ln', style: { background: color, boxShadow: `0 0 6px ${color}` } }), label);
   switch (state.colorMode) {
     case 'project':
       for (const p of model.projects.slice(0, 14)) if (!state.hiddenProjects.has(p.id)) el.append(item('#' + p.baseColor.getHexString(), p.name));
@@ -297,6 +383,10 @@ export function renderLegend(el, app) {
       for (const [tag, color] of Object.entries(TAG_COLORS)) if (model.nodes.some((n) => n.tags.includes(tag))) el.append(item(color, tag));
       el.append(item('#3a4560', 'other'));
       break;
+    case 'lifetime':
+      for (const l of LIFETIMES.filter((x) => x.id !== 'missing')) el.append(item(l.color, l.title.toLowerCase()));
+      el.append(item('#ff4545', 'DI problem'), item('#2c3550', 'not in the container'));
+      break;
     case 'cycles':
       el.append(item('#ff5252', 'in a dependency cycle'), item('#ffd54f', 'possibly unused'), item('#35435f', 'other'));
       break;
@@ -309,7 +399,15 @@ export function renderLegend(el, app) {
     }
   }
 
-  const shapes = state.view === 'galaxy' && state.level !== 'project' && state.level !== 'namespace'
+  if (state.view === 'layers') {
+    el.append(line(VIOLATION_COLORS.error, 'upward dependency (against the layering)'));
+  } else if (state.view === 'di') {
+    for (const l of LIFETIMES) el.append(item(l.color, `${l.title} plane`));
+    el.append(line(VIOLATION_COLORS.error, 'captive (singleton → scoped)'), line(VIOLATION_COLORS.warning, 'warning'));
+    return;
+  }
+
+  const shapes = (state.view === 'galaxy' || state.view === 'layers') && state.level !== 'project' && state.level !== 'namespace'
     ? (state.level === 'member' ? '● method · ◆ ctor · ■ property · ▲ field' : '● class · ◆ interface · ■ struct · ⬟ record · ▲ enum')
     : state.view === 'city' ? `height = ${METRICS[state.heightMetric]?.label ?? state.heightMetric} · footprint = ${METRICS[state.footprintMetric]?.label ?? state.footprintMetric}` : '';
   if (shapes) el.append(h('span', { class: 'li faint' }, shapes));

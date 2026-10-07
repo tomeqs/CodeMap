@@ -60,6 +60,9 @@ const RADIUS = {
   member: [0.9, 3.4],
 };
 
+/** Edge colours for problems: dependencies against the layering, DI lifetime errors / warnings. */
+export const VIOLATION_COLORS = { error: '#ff4545', warning: '#ffb02e', true: '#ff4545' };
+
 const matrix = new Matrix4();
 const color = new Color();
 const tmp = new Vector3();
@@ -359,13 +362,17 @@ export class GalaxyView {
     const base = this.links.length > 4000 ? 0.09 : this.links.length > 1500 ? 0.14 : this.links.length > 500 ? 0.22 : 0.32;
     let i = 0;
     this.links.forEach((l, index) => {
-      color.set(EDGE_KINDS[l.kind]?.color ?? '#9fb3c8');
+      color.set(l.violation ? VIOLATION_COLORS[l.violation] ?? VIOLATION_COLORS.error : EDGE_KINDS[l.kind]?.color ?? '#9fb3c8');
       let a;
       let b;
       if (h) {
         const on = h.links.has(index);
-        a = on ? 1.0 : 0.025;
-        b = on ? 0.35 : 0.01;
+        a = on ? 1.0 : l.violation ? 0.12 : 0.025;
+        b = on ? 0.35 : l.violation ? 0.05 : 0.01;
+      } else if (l.violation) {
+        // Problems stay visible at rest: they are what these views are about.
+        a = 1.0;
+        b = 0.45;
       } else if (hovered && (l.s === hovered || l.t === hovered)) {
         a = 1;
         b = 0.35;
@@ -409,7 +416,7 @@ export class GalaxyView {
     if (h) selected = this.links.filter((_, i) => h.links.has(i));
     else if (this.hovered) selected = this.links.filter((l) => l.s === this.hovered || l.t === this.hovered);
     else if (this.options.flowAll) selected = this.links;
-    else selected = [];
+    else selected = this.links.filter((l) => l.violation);
     selected = selected.slice(0, 2500);
 
     this.particles.setPaths(
@@ -417,7 +424,7 @@ export class GalaxyView {
         count: Math.min(4, 1 + Math.floor(Math.log2(l.weight))),
         speed: 0.28 + Math.random() * 0.12,
         phase: Math.random(),
-        color: new Color(EDGE_KINDS[l.kind]?.color ?? '#ffffff').multiplyScalar(1.6),
+        color: new Color(l.violation ? VIOLATION_COLORS[l.violation] ?? VIOLATION_COLORS.error : EDGE_KINDS[l.kind]?.color ?? '#ffffff').multiplyScalar(1.6),
         at: (t, out) => out.set(l.s.x + (l.t.x - l.s.x) * t, l.s.y + (l.t.y - l.s.y) * t, l.s.z + (l.t.z - l.s.z) * t),
       })),
     );
@@ -447,7 +454,13 @@ export class GalaxyView {
       push(u, u.node.level === 'project' ? 'l-project' : u.node.level === 'namespace' ? 'l-namespace' : '');
     }
 
+    items.unshift(...this.extraLabels());
     this.labels.render(items, 140);
+  }
+
+  /** Subclasses add fixed labels (e.g. layer names); they win label placement. */
+  extraLabels() {
+    return [];
   }
 
   // ------------------------------------------------------------------ interaction
@@ -487,7 +500,7 @@ export class GalaxyView {
     const vFov = (this.stage.camera.fov * Math.PI) / 180;
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * this.stage.camera.aspect);
     const distance = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 0.95;
-    const dir = new Vector3(0.35, 0.45, 1).normalize();
+    const dir = (this.fitDirection ?? new Vector3(0.35, 0.45, 1)).clone().normalize();
     const position = center.clone().add(dir.multiplyScalar(distance));
     if (animate) this.stage.flyTo(center, position, 1100);
     else {
@@ -515,7 +528,7 @@ function fibonacciSphere(i, n, radius) {
 }
 
 /** Pulls nodes toward the centroid of their group (namespace, type...). */
-function clusterForce(groupOf, strength) {
+export function clusterForce(groupOf, strength) {
   let nodes = [];
   const force = (alpha) => {
     const centroids = new Map();

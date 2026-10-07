@@ -76,6 +76,8 @@ JSON Schema: [`codemap.schema.json`](codemap.schema.json).
 | `in-cycle` | element należy do cyklu zależności |
 | `unused` | kandydat na martwy kod |
 | `hotspot` | jeden z najważniejszych hotspotów |
+| `singleton`, `scoped`, `transient` | czas życia typu w kontenerze DI (z rejestracji albo z aktywacji przez framework) |
+| `di-issue` | typ ma problem z DI: captive dependency albo brakującą rejestrację |
 
 ### Metryki
 
@@ -128,6 +130,10 @@ Krawędzie są zapisywane na najdokładniejszym możliwym poziomie: `calls` łą
 | `injects` | typ → typ | parametry konstruktora (także primary constructors), czyli zależności DI |
 | `extends` | metoda/typ → typ | `this T` w metodach rozszerzających, bloki `extension(T)` z C# 14 |
 | `decoratedWith` | element → klasa atrybutu | `[Attr]` |
+| `changesWith` | typ → typ | historia gita: pliki obu typów zmieniały się w tych samych commitach (patrz `analysis.changeCoupling`) |
+
+`changesWith` (i `contains`) **nie są zależnościami w kodzie**: nie wchodzą do metryk coupling, cykli ani warstw.
+Waga to liczba wspólnych commitów.
 
 Typy zewnętrzne pojawiają się w krawędziach tylko z opcją `--external`. Odwołania do składowych zewnętrznych są wtedy podnoszone do ich typu
 (np. `calls` → `T:System.Net.Http.HttpClient`).
@@ -141,11 +147,85 @@ Typy zewnętrzne pojawiają się w krawędziach tylko z opcją `--external`. Odw
   "mostComplex": [{ "id": "...", "score": 16 }],
   "mostDepended": [{ "id": "...", "score": 13 }],
   "unusedCandidates": ["M:Shop.Application.Orders.OrderQueries.LegacyFormat(Shop.Domain.Orders.Order)"],
+  "layers": [{ "level": "namespace", "layers": [["namespace:Shop.Domain/Shop.Domain.Common"], ["..."]], "upward": [...] }],
+  "changeCoupling": [{ "source": "T:A", "target": "T:B", "sharedCommits": 7, "strength": 0.78, "hidden": true }],
+  "di": { "registrations": [...], "dependencies": [...], "issues": [...] },
   "warnings": ["Could not read ..."]
 }
 ```
 
 `cycles` to silnie spójne składowe (algorytm Tarjana) grafu zależności na poziomach `type`, `namespace` i `project`.
+
+### `layers`
+
+Warstwy architektury wyliczone z grafu zależności na poziomach `project` i `namespace` (wszystkie rodzaje
+krawędzi oprócz `contains`, `changesWith` i `packageReference`):
+
+1. silnie spójne składowe w porządku topologicznym, a w każdym cyklu kolejność z heurystyki
+   Eadesa–Lina–Smytha (przybliżony minimalny *feedback arc set*, ważony liczbą wystąpień);
+2. numer warstwy = najdłuższa ścieżka w dół (warstwa 0 to fundament, od niczego nie zależy);
+3. każdy węzeł jest podnoszony tuż pod najniższego użytkownika, więc warstwy są zwarte.
+
+| Pole | Opis |
+|---|---|
+| `level` | `project` albo `namespace` |
+| `layers` | id węzłów w kolejnych warstwach, od dołu (indeks 0) do góry |
+| `upward` | krawędzie (`source`, `target`, `kind: "upward"`, `weight`), które nie wskazują w dół: zależność od elementu z tej samej albo wyższej warstwy. Usunięcie ich likwiduje wszystkie cykle, więc to najlepsze kandydatki do refaktoryzacji |
+
+### `changeCoupling`
+
+Typy, których pliki zmieniają się w tych samych commitach (tylko gdy jest historia gita). Plik należy
+do największego typu najwyższego poziomu, który w nim leży. Commity z ponad 40 plikami są pomijane
+(masowe zmiany nazw, formatowanie).
+
+| Pole | Opis |
+|---|---|
+| `source`, `target` | id typów (para nieuporządkowana) |
+| `sharedCommits` | liczba wspólnych commitów (co najmniej 2, a od 30 commitów w historii: 3) |
+| `strength` | `sharedCommits / średnia liczba commitów obu typów`, od 0.3 do 1 |
+| `hidden` | `true`, gdy między typami nie ma żadnej zależności w kodzie (w żadną stronę): ukryte powiązanie |
+
+Dla każdej pary jest też krawędź `changesWith`.
+
+### `di`
+
+Pojawia się, gdy w kodzie są rejestracje `Microsoft.Extensions.DependencyInjection`.
+
+`registrations`: każde wywołanie rejestrujące.
+
+| Pole | Opis |
+|---|---|
+| `service` | id typu usługi; dla typów frameworka pełna nazwa i `external: true` |
+| `implementation` | id implementacji (brak dla fabryk, których nie da się prześledzić) |
+| `lifetime` | `singleton`, `scoped`, `transient` |
+| `kind` | `type` (`AddScoped<I, T>()`, `typeof`), `instance` (`AddSingleton(obj)`), `factory` (lambda), `forward` (`sp => sp.GetRequiredService<T>()`), `hosted` (`AddHostedService`), `dbcontext` (`AddDbContext`, `Add…DbContext` z Aspire), `httpclient` (typowany `AddHttpClient<T>`) |
+| `key` | klucz dla `AddKeyed*` |
+| `registeredIn`, `location` | metoda i miejsce w kodzie, które rejestruje usługę |
+
+Rozpoznawane są też `TryAdd*`, `AddKeyed*` i deskryptory `ServiceDescriptor.Singleton/Scoped/Transient` (także `Keyed*`), np. w `services.TryAdd(...)`.
+Jak w kontenerze, wygrywa ostatnia rejestracja, a `IEnumerable<T>` dostaje wszystkie.
+
+`dependencies`: parametry konstruktora (najszerszego publicznego) każdego typu, który buduje kontener,
+oraz typów aktywowanych przez framework (kontrolery i huby jako `transient`, middleware konwencyjne jako `singleton`).
+
+| Pole | Opis |
+|---|---|
+| `consumer`, `consumerLifetime` | typ z konstruktorem i jego czas życia |
+| `service` | żądana usługa (id albo pełna nazwa przy `external: true`) |
+| `many` | `IEnumerable<T>`: wstrzykiwane są wszystkie rejestracje |
+| `optional` | parametr z wartością domyślną |
+| `implementations` | co kontener faktycznie wstrzyknie (pusta lista: nic nie jest zarejestrowane) |
+| `lifetime` | czas życia wstrzykiwanej usługi |
+
+`issues`: problemy, błędy najpierw.
+
+| `kind` | `severity` | Znaczenie |
+|---|---|---|
+| `captive` | `error` | singleton zależy od usługi scoped: jedna instancja jest współdzielona przez wszystkie żądania i żyje dłużej niż jej scope |
+| `captive-transient` | `warning` | singleton trzyma usługę transient, która przez to też staje się singletonem |
+| `unregistered` | `warning` | konstruktor potrzebuje usługi z analizowanego kodu, której nikt nie rejestruje |
+
+Każdy problem ma też `consumer`, `service` i czytelny `message`.
 
 ## Przykładowe zapytania
 

@@ -1,5 +1,6 @@
 import { Color } from 'three';
 import { EDGE_KINDS, KIND_COLORS, TAG_COLORS, projectColor, turbo, vary } from './palette.js';
+import { LIFETIME_COLORS } from './di.js';
 
 export const LEVELS = ['project', 'namespace', 'type', 'member'];
 export const TYPE_KINDS = new Set(['class', 'interface', 'struct', 'record', 'recordStruct', 'enum', 'delegate']);
@@ -144,6 +145,31 @@ export class CodeModel {
     return METRICS[metric]?.scale === 'linear' ? v / max : Math.log1p(v) / Math.log1p(max);
   }
 
+  /** Lifetime per node; a project or namespace takes the most common lifetime of its types (red if any has a DI problem). */
+  lifetimeSummary() {
+    if (this._lifetimes) return this._lifetimes;
+    const counts = new Map();
+    for (const node of this.nodes) {
+      const lifetime = ['singleton', 'scoped', 'transient'].find((t) => node.tags?.includes(t));
+      const issue = node.tags?.includes('di-issue');
+      if (!lifetime && !issue) continue;
+      for (let n = node; n; n = n.parent ? this.byId.get(n.parent) : null) {
+        let c = counts.get(n.id);
+        if (!c) counts.set(n.id, (c = { issue: false, singleton: 0, scoped: 0, transient: 0 }));
+        if (issue) c.issue = true;
+        if (lifetime) c[lifetime]++;
+      }
+    }
+
+    this._lifetimes = new Map();
+    for (const [id, c] of counts) {
+      const lifetime = ['singleton', 'scoped', 'transient'].reduce((best, l) => (c[l] > c[best] ? l : best), 'singleton');
+      this._lifetimes.set(id, { issue: c.issue, lifetime });
+    }
+
+    return this._lifetimes;
+  }
+
   colorOf(node, mode, target = new Color()) {
     switch (mode) {
       case 'project':
@@ -153,6 +179,12 @@ export class CodeModel {
       case 'role': {
         const tag = node.tags.find((t) => TAG_COLORS[t]);
         return tag ? target.set(TAG_COLORS[tag]) : target.set('#3a4560');
+      }
+      case 'lifetime': {
+        const summary = this.lifetimeSummary().get(node.id);
+        if (!summary) return target.set('#2c3550');
+        if (summary.issue) return target.set('#ff4545');
+        return target.set(LIFETIME_COLORS[summary.lifetime]);
       }
       case 'cycles':
         if (node.tags.includes('in-cycle')) return target.set('#ff5252');

@@ -77,6 +77,8 @@ public static class CodeMapAnalyzer
         }
 
         GraphMetrics.Compute(graph);
+        Layering.Analyze(graph);
+        DependencyInjectionAnalysis.Compute(graph, builder);
 
         if (options.Git)
         {
@@ -85,6 +87,7 @@ public static class CodeMapAnalyzer
             {
                 ApplyGit(graph, history, load.Root);
                 GraphMetrics.ComputeHotspots(graph);
+                ChangeCouplingAnalysis.Compute(graph, history, load.Root);
                 graph.Source.Git = new GitInfo { Branch = history.Branch, Commit = history.Head, CommitsAnalyzed = history.CommitCount, Since = options.GitSince };
             }
         }
