@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <RootNamespace>CodeMap.Cli</RootNamespace>
+    <AssemblyName>codemap</AssemblyName>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>codemap</ToolCommandName>
+    <PackageId>CodeMap.Tool</PackageId>
+    <Description>Maps C# solutions into a relationship graph (JSON, DGML, GraphML, Cypher) and an interactive 3D map.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CodeMap.Core\CodeMap.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Single-file 3D viewer, produced by `npm run build` in /viewer. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\viewer.html" LogicalName="CodeMap.viewer.html" Condition="Exists('Assets\viewer.html')" />
+  </ItemGroup>
+
+</Project>
