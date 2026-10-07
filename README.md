@@ -2,17 +2,20 @@
 
 **Mapa kodu dla projektów C#**: analizator oparty na Roslynie, który zamienia solucję w graf powiązań
 (klasy, interfejsy, metody, wywołania, dziedziczenie, wstrzykiwanie zależności…), oraz interaktywna
-**mapa 3D** z dwoma widokami: *Galaxy* (graf siłowy w przestrzeni) i *City* (miasto kodu, w którym typy są budynkami).
+**mapa 3D** z czterema widokami: *Galaxy* (graf siłowy w przestrzeni), *City* (miasto kodu, w którym typy są budynkami),
+*Layers* (warstwy architektury wyliczone z kodu) i *DI* (kontener zależności z czasami życia usług).
 
 ```
 codemap MySolution.sln            →  MySolution.codemap.json   (graf: format do dalszego przetwarzania)
                                      MySolution.html           (interaktywna mapa 3D, działa offline)
-                                     MySolution.md             (raport: cykle, hotspoty, martwy kod…)
+                                     MySolution.md             (raport: warstwy, DI, cykle, hotspoty, martwy kod…)
 ```
 
 | Galaxy: typy jako gwiazdy, projekty jako układy słoneczne | City: wysokość = złożoność, kolor = hotspot |
 |---|---|
 | ![galaxy](docs/img/galaxy.png) | ![city](docs/img/city.png) |
+| **Layers: zależności w górę (czerwone) łamią warstwy** | **DI: singleton trzymający usługę scoped (captive dependency)** |
+| ![layers](docs/img/layers.png) | ![di](docs/img/di.png) |
 
 ## Szybki start
 
@@ -100,7 +103,7 @@ z zainstalowanego .NET. Jeśli wcześniej był `dotnet restore`, typy z paczek N
 
 Sama lista klas niewiele mówi. Wartość mapy bierze się z **relacji** i z tego, co da się z nich policzyć.
 
-### 1. Relacje: 18 rodzajów krawędzi, z wagą (liczbą wystąpień)
+### 1. Relacje: 19 rodzajów krawędzi, z wagą (liczbą wystąpień)
 
 | Rodzaj | Przykład w C# | Po co |
 |---|---|---|
@@ -119,6 +122,7 @@ Sama lista klas niewiele mówi. Wartość mapy bierze się z **relacji** i z teg
 | `decoratedWith` | `[ApiController]`, `[Fact]` | atrybuty |
 | `uses` | `typeof(X)`, wywołania statyczne, `is X` | pozostałe zależności |
 | `projectReference`, `packageReference` | `.csproj` | architektura na poziomie projektów |
+| `changesWith` | dwa pliki zmieniane w tych samych commitach | **ukryte powiązania** z historii gita (to nie jest zależność w kodzie) |
 
 ### 2. Metryki (na każdym poziomie: projekt → namespace → typ → składowa)
 
@@ -135,6 +139,17 @@ Sama lista klas niewiele mówi. Wartość mapy bierze się z **relacji** i z teg
 * **Hotspoty** = złożoność × częstotliwość zmian z gita. Kod, który jest skomplikowany *i* ciągle
   zmieniany, to najlepsi kandydaci do refaktoryzacji (podejście Adama Tornhilla, „Your Code as a Crime Scene”).
 * **Cykle zależności** (Tarjan SCC) między typami, namespace’ami i projektami.
+* **Warstwy architektury** wyliczane z samego kodu: każdy namespace i projekt dostaje numer warstwy
+  (zależności mają wskazywać w dół), a **zależności „w górę”** to minimalny zestaw krawędzi, których
+  usunięcie rozbija wszystkie cykle, czyli najlepsze miejsca do cięcia.
+* **Ukryte powiązania z gita** (change coupling): typy, które ciągle zmieniają się razem
+  (wspólne commity / średnia liczba zmian), a nie mają między sobą żadnej zależności w kodzie.
+  Zwykle to zduplikowana logika, ukryty kontrakt (np. format JSON, nazwa kolejki) albo para klient–serwer.
+* **Mapa DI**: rejestracje z `IServiceCollection` (`AddSingleton/Scoped/Transient`, `TryAdd*`, `Keyed*`,
+  `AddHostedService`, `AddDbContext`, `AddHttpClient<T>`, fabryki i przekierowania), czas życia każdej usługi,
+  a na tej podstawie **captive dependencies** (singleton trzymający usługę scoped albo transient)
+  i **brakujące rejestracje** (konstruktor potrzebuje czegoś, czego nikt nie rejestruje).
+  Kontrolery, huby i middleware aktywowane przez framework też są brane pod uwagę.
 * **Kandydaci na martwy kod**: niepubliczne symbole, do których nic się nie odwołuje.
 * **Role** rozpoznawane heurystycznie: controller, DbContext, repository, handler (MediatR/CQRS),
   hosted service, middleware, test, options, DTO, extensions…
@@ -164,7 +179,7 @@ między uruchomieniami i zgodne z tym, czego używają XML docs i Roslyn.
     { "source": "M:Shop.Application.Orders.PlaceOrderHandler.HandleAsync(...)",
       "target": "M:Shop.Domain.Orders.Order.Place", "kind": "calls", "weight": 1 }
   ],
-  "analysis": { "cycles": [...], "hotspots": [...], "unusedCandidates": [...] }
+  "analysis": { "cycles": [...], "hotspots": [...], "layers": [...], "changeCoupling": [...], "di": {...} }
 }
 ```
 
@@ -187,14 +202,22 @@ Formaty dodatkowe:
 * **City**: miasto kodu. Dzielnice to projekty, kwartały namespace’y, budynki typy.
   Powierzchnia odpowiada LOC, wysokość złożoności (lub innej metryce), a kolor np. hotspotom.
   Relacje rysowane są jako łuki nad miastem.
+* **Layers**: węzły leżą na poziomych płaszczyznach warstw wyliczonych z widocznych relacji
+  (projekty to kolumny przechodzące przez warstwy). Zależności wskazujące w górę są czerwone.
+* **DI**: typy budowane przez kontener na płaszczyznach *Singleton / Scoped / Transient / Not registered*.
+  Zdrowa zależność wskazuje w dół albo w bok (do czegoś, co żyje co najmniej tak długo),
+  captive dependency jest czerwona, a brakująca rejestracja pomarańczowa.
 * Poziomy szczegółowości: **Projects / Namespaces / Types / Members** i drill-down dwuklikiem
   (projekt → namespace’y → typy → składowe, z „duchami” sąsiadów spoza zakresu).
 * Panel szczegółów: sygnatura, dokumentacja XML, metryki, tagi, link *Open in VS Code*,
   relacje wychodzące i przychodzące pogrupowane według rodzaju, lista składowych.
 * **Neighbours / Dependencies ↓ / Impact ↑ / Path to…** (albo Shift+klik na drugim elemencie).
-* Zakładka **Insights**: cykle, hotspoty, najbardziej złożone typy, najczęściej używane typy, możliwy martwy kod.
+* Zakładka **Insights**: problemy DI, zależności w górę, ukryte powiązania z gita, cykle, hotspoty,
+  najbardziej złożone typy, najczęściej używane typy, możliwy martwy kod. Kliknięcie przenosi do właściwego widoku.
+* Kolor **DI lifetime** w każdym widoku (namespace’y i projekty dostają dominujący czas życia swoich typów),
+  a w panelu szczegółów sekcje *Dependency injection* i *Changes together with*.
 * Filtry rodzajów relacji, projektów, testów, typów zewnętrznych, minimalnej siły powiązania.
-* Wyszukiwarka (`/`), skróty: `1`–`4` poziom, `G`/`C` widok, `F` dopasuj, `Esc` wstecz.
+* Wyszukiwarka (`/`), skróty: `1`–`4` poziom, `G`/`C`/`L`/`D` widok (Galaxy, City, Layers, DI), `F` dopasuj, `Esc` wstecz.
 
 Viewer można też otworzyć bez danych i przeciągnąć na niego dowolny plik `*.codemap.json`
 albo użyć parametru `?data=url.json`.
@@ -204,7 +227,7 @@ albo użyć parametru `?data=url.json`.
 ```
 src/CodeMap.Core      analizator (Roslyn), model grafu, metryki, eksportery
   Loading/            .sln/.slnx/.slnf/.csproj → kompilacje Roslyn (bez MSBuild i bez budowania)
-  Analysis/           deklaracje, walker referencji, metryki, cykle, git, tagi
+  Analysis/           deklaracje, walker referencji, metryki, cykle, warstwy, DI, git (churn, change coupling), tagi
   Export/             JSON, DGML, GraphML, Cypher, Markdown, HTML
 src/CodeMap.Server    lokalna aplikacja: API (ASP.NET Core), przeglądarka folderów, klonowanie, cache, tryb live
 src/CodeMap.Cli       narzędzie `codemap` (dotnet tool), osadza zbudowany viewer
@@ -237,7 +260,9 @@ generowało HTML bez Node.js. Po zmianach w `viewer/` trzeba uruchomić `npm run
    paczki z `project.assets.json`, a projekty jako `CompilationReference`.
 3. `TypeAnalyzer` + `ReferenceWalker` przechodzą równolegle drzewa składni: deklarują węzły i każdą
    referencję w kodzie rozwiązują przez model semantyczny na krawędź z odpowiednim rodzajem.
-4. `GraphMetrics` liczy metryki, cykle i kandydatów na martwy kod, a `GitHistory` dokłada churn i hotspoty.
+4. `GraphMetrics` liczy metryki, cykle i kandydatów na martwy kod, `Layering` warstwy i zależności w górę,
+   `DependencyInjectionAnalysis` łączy rejestracje z konstruktorami, a `GitHistory` i `ChangeCouplingAnalysis`
+   dokładają churn, hotspoty i ukryte powiązania.
 5. Eksportery zapisują wynik; HTML to viewer z osadzonym JSON-em.
 
 Analiza jest „best effort”: kod, który nie kompiluje się w izolacji (np. brak restore’u paczek),
@@ -246,6 +271,7 @@ nadal jest mapowany, a nierozwiązane symbole są po prostu pomijane.
 ## Pomysły na dalszy rozwój
 
 * reguły architektoniczne (np. „Domain nie może zależeć od Infrastructure”) z naruszeniami zaznaczonymi na mapie
+  (warstwy wyliczane automatycznie są dobrym punktem startowym)
 * porównanie dwóch wersji grafu (diff architektury między commitami / w PR)
 * tryb VR/WebXR dla widoku City
 * własność kodu (autorzy z gita) jako kolor dzielnic
