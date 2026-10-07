@@ -370,7 +370,8 @@ export class CityView {
   fit(animate = true) {
     const size = this.size ?? 300;
     const target = new Vector3(0, 0, 0);
-    const position = new Vector3(size * 0.62, size * 0.78, size * 1.05);
+    const narrow = Math.max(1, 1.2 / Math.max(0.3, this.stage.camera.aspect));
+    const position = new Vector3(size * 0.62, size * 0.78, size * 1.05).multiplyScalar(narrow);
     if (animate) this.stage.flyTo(target, position, 1000);
     else {
       this.stage.controls.target.copy(target);

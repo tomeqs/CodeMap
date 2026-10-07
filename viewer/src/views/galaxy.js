@@ -483,7 +483,10 @@ export class GalaxyView {
     center.divideScalar(this.units.length);
     let radius = 10;
     for (const u of this.units) radius = Math.max(radius, tmp.set(u.x, u.y, u.z).distanceTo(center) + u.r);
-    const distance = radius / Math.sin((this.stage.camera.fov * Math.PI) / 360) * 0.95;
+    // Fit the narrower of the two fields of view (portrait phones are narrow, not short).
+    const vFov = (this.stage.camera.fov * Math.PI) / 180;
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * this.stage.camera.aspect);
+    const distance = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 0.95;
     const dir = new Vector3(0.35, 0.45, 1).normalize();
     const position = center.clone().add(dir.multiplyScalar(distance));
     if (animate) this.stage.flyTo(center, position, 1100);

@@ -17,6 +17,23 @@ const METRIC_SHORT = {
   fanIn: 'callers', fanOut: 'callees',
 };
 
+/** Clipboard writes can be refused (sandboxed frames, old browsers): fall back to selecting the path. */
+function copyText(event, text) {
+  event.preventDefault();
+  const link = event.currentTarget;
+  const selectPath = () => {
+    const code = link.parentElement?.querySelector('code');
+    if (code) window.getSelection()?.selectAllChildren(code);
+  };
+  try {
+    const result = navigator.clipboard?.writeText(text);
+    if (result) result.then(() => (link.textContent = 'copied'), selectPath);
+    else selectPath();
+  } catch {
+    selectPath();
+  }
+}
+
 const TAG_CLASS = { 'in-cycle': 'danger', hotspot: 'danger', unused: 'warn', test: 'ok', 'test-project': 'ok', entrypoint: 'ok' };
 
 /** Right-hand panel describing the selected node and its relationships. */
@@ -62,7 +79,7 @@ export class DetailsPanel {
         h('div', { class: 'loc-line' },
           h('code', {}, `${node.location.file}:${node.location.line}`),
           root ? h('a', { href: `vscode://file/${encodeURI(abs)}:${node.location.line}`, title: 'Open in VS Code' }, 'VS Code') : null,
-          h('a', { href: '#', title: 'Copy path', onClick: (e) => (e.preventDefault(), navigator.clipboard?.writeText(`${abs}:${node.location.line}`)) }, 'copy'),
+          h('a', { href: '#', title: 'Copy path', onClick: (e) => copyText(e, `${abs}:${node.location.line}`) }, 'copy'),
         ),
       );
       if (node.extraLocations?.length) body.append(h('div', { class: 'small faint' }, `+ ${node.extraLocations.length} more partial declaration(s): `, node.extraLocations.map((l) => l.file).join(', ')));

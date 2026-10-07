@@ -504,12 +504,15 @@ class App {
 
     const left = document.getElementById('left');
     const leftToggle = document.getElementById('left-toggle');
-    leftToggle.addEventListener('click', () => {
-      const collapsed = left.classList.toggle('collapsed');
+    const setCollapsed = (collapsed) => {
+      left.classList.toggle('collapsed', collapsed);
       leftToggle.classList.toggle('collapsed', collapsed);
       leftToggle.textContent = collapsed ? '⟩' : '⟨';
       this.legend.classList.toggle('wide', collapsed);
-    });
+    };
+    leftToggle.addEventListener('click', () => setCollapsed(!left.classList.contains('collapsed')));
+    // On small screens the map comes first; filters open on demand.
+    if (window.innerWidth < 900) setCollapsed(true);
 
     this.bindSearch();
 

@@ -241,7 +241,7 @@ export class Sidebar {
     const stats = doc.stats ?? {};
     const kv = (pairs) => h('div', { class: 'kv' }, pairs.filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => [h('div', { class: 'k' }, k), h('div', {}, v)]));
 
-    el.append(
+    el.append(...[
       h('div', { class: 'section' }, h('h3', {}, 'Source'),
         kv([
           ['name', doc.source?.name],
@@ -259,7 +259,8 @@ export class Sidebar {
       h('div', { class: 'section' }, h('h3', {}, 'Relationships'),
         kv(Object.entries(stats).filter(([k]) => k.startsWith('edges.')).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k.slice(6), fmt(v)])),
       ),
-      h('div', { class: 'section' },
+      // Downloads are blocked inside sandboxed frames (embedded previews), so only offer them top-level.
+      window.self === window.top && h('div', { class: 'section' },
         h('button', {
           class: 'small',
           onClick: () => {
@@ -270,7 +271,7 @@ export class Sidebar {
           },
         }, 'Download JSON'),
       ),
-    );
+    ].filter(Boolean));
 
     if (doc.analysis?.warnings?.length) {
       el.append(h('div', { class: 'section' }, h('h3', {}, `Warnings (${doc.analysis.warnings.length})`), doc.analysis.warnings.slice(0, 30).map((w) => h('div', { class: 'small faint' }, w))));

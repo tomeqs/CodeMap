@@ -187,9 +187,11 @@ internal static class Cli
 
         string PathFor(string extension) => Path.Combine(options.Output, name + extension);
 
-        if (options.Formats.Contains("json") && !options.Export)
+        // Re-exporting a graph only rewrites the JSON when it was transformed (--types-only), never over its input.
+        if (options.Formats.Contains("json") && (!options.Export || options.TypesOnly))
         {
             var path = PathFor(".codemap.json");
+            if (options.Export && Path.GetFullPath(path) == Path.GetFullPath(options.Input)) path = PathFor(".types.codemap.json");
             using (var stream = File.Create(path)) JsonExporter.Write(graph, stream, options.Indent);
             written.Add(path);
         }
