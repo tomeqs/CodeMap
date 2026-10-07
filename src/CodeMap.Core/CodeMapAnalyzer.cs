@@ -77,6 +77,7 @@ public static class CodeMapAnalyzer
         }
 
         GraphMetrics.Compute(graph);
+        Layering.Analyze(graph);
         DependencyInjectionAnalysis.Compute(graph, builder);
 
         if (options.Git)

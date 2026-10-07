@@ -51,6 +51,10 @@ public static class MarkdownReport
             }
         }
 
+        WriteLayers(sb, graph, byId);
+        WriteDependencyInjection(sb, graph, Name);
+        WriteChangeCoupling(sb, graph, Name);
+
         WriteRanking(sb, "Hotspots (complexity × change frequency)", graph.Analysis.Hotspots, Name, byId, "hotspot", "commits", "complexity");
         WriteRanking(sb, "Most complex types", graph.Analysis.MostComplex, Name, byId, "complexity", "loc", "members");
         WriteRanking(sb, "Most depended-upon types (afferent coupling)", graph.Analysis.MostDepended, Name, byId, "ca", "ce", "instability");
@@ -96,6 +100,77 @@ public static class MarkdownReport
         }
 
         return sb.ToString();
+    }
+
+    private static void WriteLayers(StringBuilder sb, CodeGraph graph, Dictionary<string, GraphNode> byId)
+    {
+        var info = graph.Analysis.Layers.FirstOrDefault(l => l.Level == "namespace") ?? graph.Analysis.Layers.FirstOrDefault();
+        if (info == null || info.Layers.Count == 0) return;
+        string Short(string id) => byId.TryGetValue(id, out var n) ? n.Name : id;
+
+        sb.AppendLine();
+        sb.AppendLine($"## Layers ({info.Level}s)");
+        sb.AppendLine();
+        sb.AppendLine("Computed from the code: everything depends only on layers below it, except the upward dependencies listed after the table.");
+        sb.AppendLine();
+        sb.AppendLine("| Layer | Members |");
+        sb.AppendLine("|---|---|");
+        for (var i = info.Layers.Count - 1; i >= 0; i--)
+        {
+            var members = info.Layers[i].Select(Short).ToList();
+            sb.AppendLine($"| {i}{(i == info.Layers.Count - 1 ? " (top)" : i == 0 ? " (bottom)" : "")} | {string.Join(", ", members.Take(15))}{(members.Count > 15 ? $", … (+{members.Count - 15})" : "")} |");
+        }
+
+        sb.AppendLine();
+        if (info.Upward.Count == 0)
+        {
+            sb.AppendLine("No upward dependencies: the layering is clean.");
+            return;
+        }
+
+        sb.AppendLine($"**Upward dependencies ({info.Upward.Count})**: cutting these removes every {info.Level} cycle.");
+        sb.AppendLine();
+        foreach (var edge in info.Upward.Take(20)) sb.AppendLine($"- {Short(edge.Source)} → {Short(edge.Target)} ({edge.Weight} reference{(edge.Weight == 1 ? "" : "s")})");
+    }
+
+    private static void WriteDependencyInjection(StringBuilder sb, CodeGraph graph, Func<string, string> name)
+    {
+        var di = graph.Analysis.Di;
+        if (di == null) return;
+        sb.AppendLine();
+        sb.AppendLine("## Dependency injection");
+        sb.AppendLine();
+        var lifetimes = di.Registrations.GroupBy(r => r.Lifetime).OrderBy(g => g.Key).Select(g => $"{g.Count()} {g.Key}");
+        sb.AppendLine($"{di.Registrations.Count} registrations ({string.Join(", ", lifetimes)}), {di.Dependencies.Count} constructor dependencies resolved.");
+        if (di.Issues.Count == 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("No lifetime problems or missing registrations found.");
+            return;
+        }
+
+        sb.AppendLine();
+        foreach (var issue in di.Issues.Take(40))
+        {
+            sb.AppendLine($"- **{issue.Severity}** ({issue.Kind}): {issue.Message}");
+        }
+    }
+
+    private static void WriteChangeCoupling(StringBuilder sb, CodeGraph graph, Func<string, string> name)
+    {
+        var hidden = graph.Analysis.ChangeCoupling.Where(c => c.Hidden).ToList();
+        if (hidden.Count == 0) return;
+        sb.AppendLine();
+        sb.AppendLine("## Hidden change coupling (git)");
+        sb.AppendLine();
+        sb.AppendLine("These types keep changing in the same commits although neither uses the other: a shared assumption the compiler cannot check.");
+        sb.AppendLine();
+        sb.AppendLine("| Type | Type | Shared commits | Strength |");
+        sb.AppendLine("|---|---|---|---|");
+        foreach (var pair in hidden.Take(15))
+        {
+            sb.AppendLine($"| {name(pair.Source)} | {name(pair.Target)} | {pair.SharedCommits} | {pair.Strength:P0} |");
+        }
     }
 
     private static void WriteRanking(StringBuilder sb, string title, List<RankedItem> items, Func<string, string> name,

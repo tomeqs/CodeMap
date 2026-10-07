@@ -349,6 +349,20 @@ internal static class Cli
             Console.WriteLine("Most complex: " + string.Join(", ", graph.Analysis.MostComplex.Take(5).Select(h => byId[h.Id].Name)));
         }
 
+        if (graph.Analysis.Layers.FirstOrDefault(l => l.Level == "namespace") is { } layers)
+        {
+            Console.WriteLine($"Layers: {layers.Layers.Count} namespace layers, {layers.Upward.Count} upward dependencies");
+        }
+
+        if (graph.Analysis.Di is { } di)
+        {
+            var errors = di.Issues.Count(i => i.Severity == "error");
+            var warnings = di.Issues.Count - errors;
+            Console.WriteLine($"DI: {di.Registrations.Count} registrations, {errors} error(s), {warnings} warning(s)");
+        }
+
+        var hiddenCoupling = graph.Analysis.ChangeCoupling.Count(c => c.Hidden);
+        if (hiddenCoupling > 0) Console.WriteLine($"Hidden change coupling: {hiddenCoupling} pairs of types change together without a code dependency");
         if (graph.Analysis.UnusedCandidates.Count > 0) Console.WriteLine($"Possibly unused: {graph.Analysis.UnusedCandidates.Count} symbols");
         if (graph.Analysis.Warnings.Count > 0) Console.WriteLine($"Warnings: {graph.Analysis.Warnings.Count} (see the .md report)");
     }
