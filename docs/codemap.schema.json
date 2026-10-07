@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomeqs/CodeMap/docs/codemap.schema.json",
+  "title": "CodeMap graph",
+  "description": "Relationship graph of a C# code base produced by the codemap tool. See docs/format.md.",
+  "type": "object",
+  "required": ["format", "version", "nodes", "edges"],
+  "properties": {
+    "format": { "const": "codemap" },
+    "version": { "type": "string", "pattern": "^1\\." },
+    "generator": {
+      "type": "object",
+      "properties": { "name": { "type": "string" }, "version": { "type": "string" } }
+    },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" },
+        "root": { "type": "string" },
+        "kind": { "enum": ["solution", "project", "directory", "file"] },
+        "name": { "type": "string" },
+        "git": {
+          "type": "object",
+          "properties": {
+            "branch": { "type": ["string", "null"] },
+            "commit": { "type": ["string", "null"] },
+            "commitsAnalyzed": { "type": "integer" },
+            "since": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "stats": { "type": "object", "additionalProperties": { "type": "integer" } },
+    "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+    "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } },
+    "analysis": {
+      "type": "object",
+      "properties": {
+        "cycles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["level", "nodes"],
+            "properties": {
+              "level": { "enum": ["project", "namespace", "type"] },
+              "nodes": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "hotspots": { "$ref": "#/$defs/ranking" },
+        "mostComplex": { "$ref": "#/$defs/ranking" },
+        "mostDepended": { "$ref": "#/$defs/ranking" },
+        "unusedCandidates": { "type": "array", "items": { "type": "string" } },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "kind", "name"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": {
+          "enum": [
+            "project", "package", "assembly", "namespace",
+            "class", "interface", "struct", "record", "recordStruct", "enum", "delegate",
+            "method", "constructor", "property", "field", "event"
+          ]
+        },
+        "name": { "type": "string" },
+        "fullName": { "type": "string" },
+        "parent": { "type": "string" },
+        "project": { "type": "string" },
+        "namespace": { "type": "string" },
+        "accessibility": { "enum": ["public", "internal", "protected", "private", "protected internal", "private protected"] },
+        "modifiers": { "type": "array", "items": { "type": "string" } },
+        "signature": { "type": "string" },
+        "baseType": { "type": "string" },
+        "location": { "$ref": "#/$defs/location" },
+        "extraLocations": { "type": "array", "items": { "$ref": "#/$defs/location" } },
+        "attributes": { "type": "array", "items": { "type": "string" } },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "doc": { "type": "string" },
+        "external": { "type": "boolean" },
+        "metrics": { "type": "object", "additionalProperties": { "type": "number" } }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["source", "target", "kind"],
+      "properties": {
+        "source": { "type": "string" },
+        "target": { "type": "string" },
+        "kind": {
+          "enum": [
+            "projectReference", "packageReference", "inherits", "implements", "overrides", "calls",
+            "instantiates", "accesses", "subscribes", "throws", "catches", "uses", "holds", "returns",
+            "accepts", "injects", "extends", "decoratedWith"
+          ]
+        },
+        "weight": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "location": {
+      "type": "object",
+      "required": ["file", "line"],
+      "properties": {
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "endLine": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "ranking": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "score"],
+        "properties": { "id": { "type": "string" }, "score": { "type": "number" } }
+      }
+    }
+  }
+}

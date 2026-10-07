@@ -27,7 +27,8 @@ public static class ProjectLoader
             {
                 case ".sln":
                 case ".slnx":
-                    var projectFiles = ext == ".sln" ? ReadSln(full) : ReadSlnx(full);
+                case ".slnf":
+                    var projectFiles = ext switch { ".sln" => ReadSln(full), ".slnx" => ReadSlnx(full), _ => ReadSlnf(full) };
                     var fromSolution = LoadProjects(projectFiles, warnings);
                     return new LoadResult(full, dir, "solution", Path.GetFileNameWithoutExtension(full), fromSolution, warnings);
                 case ".csproj":
@@ -37,7 +38,7 @@ public static class ProjectLoader
                     var single = CreateVirtualProject(Path.GetFileNameWithoutExtension(full), dir, new[] { full });
                     return new LoadResult(full, dir, "file", single.Name, new List<ProjectInfo> { single }, warnings);
                 default:
-                    throw new ArgumentException($"Unsupported input '{path}'. Use a .sln, .slnx, .csproj, .cs file or a directory.");
+                    throw new ArgumentException($"Unsupported input '{path}'. Use a .sln, .slnx, .slnf, .csproj, .cs file or a directory.");
             }
         }
 
@@ -140,6 +141,21 @@ public static class ProjectLoader
                 yield return ResolvePath(dir, relative);
             }
         }
+    }
+
+    /// <summary>Solution filter: { "solution": { "path": "x.sln", "projects": [ "src\\A\\A.csproj" ] } }.</summary>
+    internal static IEnumerable<string> ReadSlnf(string slnfPath)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(slnfPath));
+        var solution = doc.RootElement.GetProperty("solution");
+        var solutionPath = solution.TryGetProperty("path", out var p) ? p.GetString() ?? "" : "";
+        var solutionDir = Path.GetDirectoryName(ResolvePath(Path.GetDirectoryName(slnfPath)!, solutionPath))!;
+        if (!solution.TryGetProperty("projects", out var projects)) return Array.Empty<string>();
+        return projects.EnumerateArray()
+            .Select(e => e.GetString())
+            .Where(path => path != null && path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+            .Select(path => ResolvePath(solutionDir, path!))
+            .ToList();
     }
 
     public static ProjectInfo ReadProject(string projectFile)

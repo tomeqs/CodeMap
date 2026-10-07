@@ -1,0 +1,3 @@
+# Single-file build of /viewer, embedded into the CLI. Regenerate with `npm run build` in /viewer.
+src/CodeMap.Cli/Assets/viewer.html linguist-generated=true -diff
+*.sh text eol=lf

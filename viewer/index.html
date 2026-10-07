@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CodeMap</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%234f8ef7'/%3E%3Ccircle cx='6' cy='8' r='3' fill='%2335c9a5'/%3E%3Ccircle cx='26' cy='9' r='3' fill='%23ffb74d'/%3E%3Ccircle cx='24' cy='25' r='3' fill='%23b07cf7'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="stage"></div>
+      <div id="labels"></div>
+
+      <header id="topbar">
+        <div class="brand">
+          <span class="logo"></span>
+          <span class="title">CodeMap</span>
+          <span id="source-name" class="muted"></span>
+        </div>
+        <div class="seg" id="view-toggle" title="View (G / C)">
+          <button data-view="galaxy" class="active">Galaxy</button>
+          <button data-view="city">City</button>
+        </div>
+        <div class="seg" id="level-toggle" title="Level of detail (1-4)">
+          <button data-level="project">Projects</button>
+          <button data-level="namespace">Namespaces</button>
+          <button data-level="type" class="active">Types</button>
+          <button data-level="member">Members</button>
+        </div>
+        <div class="search">
+          <input id="search" type="search" placeholder="Search types, members, files…  ( / )" autocomplete="off" spellcheck="false" />
+          <div id="search-results" class="dropdown hidden"></div>
+        </div>
+        <div class="actions">
+          <button id="btn-fit" title="Fit view (F)">⤢</button>
+          <button id="btn-open" title="Open a .codemap.json file">Open…</button>
+          <input id="file-input" type="file" accept=".json,application/json" hidden />
+        </div>
+      </header>
+
+      <nav id="breadcrumb" class="hidden"></nav>
+
+      <aside id="left" class="panel">
+        <div class="tabs">
+          <button data-tab="filters" class="active">Filters</button>
+          <button data-tab="insights">Insights</button>
+          <button data-tab="about">Data</button>
+        </div>
+        <div class="tab-body" id="tab-filters"></div>
+        <div class="tab-body hidden" id="tab-insights"></div>
+        <div class="tab-body hidden" id="tab-about"></div>
+      </aside>
+      <button id="left-toggle" class="panel-toggle" title="Toggle panel">⟨</button>
+
+      <aside id="right" class="panel hidden"></aside>
+
+      <div id="legend"></div>
+      <div id="hud"></div>
+      <div id="tooltip" class="hidden"></div>
+
+      <div id="welcome" class="hidden">
+        <div class="welcome-card">
+          <div class="logo big"></div>
+          <h1>CodeMap</h1>
+          <p>Drop a <code>.codemap.json</code> file here, or</p>
+          <button id="welcome-open" class="primary">Choose a file…</button>
+          <p class="muted small">Generate one with <code>codemap path/to/Solution.sln</code></p>
+        </div>
+      </div>
+      <div id="drop-overlay" class="hidden"><div>Drop the CodeMap JSON to load it</div></div>
+    </div>
+
+    <script id="codemap-data" type="application/json">null</script>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

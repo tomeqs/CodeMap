@@ -44,6 +44,30 @@ public class LoaderTests
     }
 
     [Fact]
+    public void Reads_slnx_and_solution_filters()
+    {
+        using var ws = new TestWorkspace()
+            .Project("A")
+            .Project("B")
+            .File("A/A.cs", "namespace A; public class X { }")
+            .File("B/B.cs", "namespace B; public class Y { }")
+            .File("All.slnx", """
+                <Solution>
+                  <Folder Name="/src/">
+                    <Project Path="A/A.csproj" />
+                    <Project Path="B/B.csproj" />
+                  </Folder>
+                </Solution>
+                """)
+            .File("OnlyB.slnf", """
+                { "solution": { "path": "All.slnx", "projects": [ "B\\B.csproj" ] } }
+                """);
+
+        Assert.Equal(new[] { "A", "B" }, ProjectLoader.Load(Path.Combine(ws.Root, "All.slnx")).Projects.Select(p => p.Name).Order());
+        Assert.Equal("B", Assert.Single(ProjectLoader.Load(Path.Combine(ws.Root, "OnlyB.slnf")).Projects).Name);
+    }
+
+    [Fact]
     public void Folder_without_projects_becomes_a_virtual_project()
     {
         using var ws = new TestWorkspace()
@@ -105,6 +129,19 @@ public class ExportTests
         Assert.Equal(graph.Edges.Count, back.Edges.Count);
         Assert.Equal("Talks to Repo & friends.", back.Nodes.Single(n => n.Id == "T:App.Service").Doc);
         Assert.Contains("\"kind\":\"calls\"", json);
+    }
+
+    [Fact]
+    public void Collapsing_members_lifts_edges_to_types()
+    {
+        var graph = Sample();
+
+        GraphView.CollapseMembers(graph);
+
+        Assert.DoesNotContain(graph.Nodes, n => NodeKinds.IsMember(n.Kind));
+        graph.AssertEdge("T:App.Service", EdgeKinds.Calls, "T:App.Repo");
+        graph.AssertEdge("T:App.Service", EdgeKinds.Holds, "T:App.Repo");
+        Assert.All(graph.Edges, e => Assert.Contains(graph.Nodes, n => n.Id == e.Source));
     }
 
     [Fact]

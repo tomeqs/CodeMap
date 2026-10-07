@@ -6,6 +6,22 @@ namespace CodeMap.Export;
 public static class GraphView
 {
     /// <summary>
+    /// Drops member nodes and lifts their relationships to the declaring types – a much smaller file
+    /// for very large solutions. Metrics computed from members are kept on the types.
+    /// </summary>
+    public static void CollapseMembers(CodeGraph graph)
+    {
+        var edges = TypeLevelEdges(graph);
+        graph.Nodes.RemoveAll(n => NodeKinds.IsMember(n.Kind));
+        var ids = graph.Nodes.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
+        graph.Analysis.UnusedCandidates.RemoveAll(id => !ids.Contains(id));
+        graph.Edges = edges.OrderBy(e => e.Source, StringComparer.Ordinal).ThenBy(e => e.Kind, StringComparer.Ordinal).ThenBy(e => e.Target, StringComparer.Ordinal).ToList();
+        graph.Stats["edges"] = graph.Edges.Count;
+        foreach (var key in graph.Stats.Keys.Where(k => k.StartsWith("edges.", StringComparison.Ordinal)).ToList()) graph.Stats.Remove(key);
+        foreach (var group in graph.Edges.GroupBy(e => e.Kind)) graph.Stats["edges." + group.Key] = group.Count();
+    }
+
+    /// <summary>
     /// Aggregates every edge to the type level (members are replaced by their declaring type) and
     /// returns distinct (source, target, kind) triples with summed weights. Self loops are dropped.
     /// </summary>
