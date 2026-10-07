@@ -25,6 +25,9 @@ internal sealed class ReferenceWalker : CSharpSyntaxWalker
 
     public string Context { get; private set; } = EdgeKinds.Uses;
 
+    /// <summary>File being walked, relative to the source root (for DI registration locations).</summary>
+    public string RelativePath { get; init; } = "";
+
     public void Walk(SyntaxNode? node, string? sourceKey, INamedTypeSymbol? selfType, string context)
     {
         if (node == null || sourceKey == null) return;
@@ -96,6 +99,22 @@ internal sealed class ReferenceWalker : CSharpSyntaxWalker
     }
 
     // ------------------------------------------------------------------ special expressions
+
+    public override void VisitInvocationExpression(InvocationExpressionSyntax node)
+    {
+        if (DiRegistrationDetector.TryDetect(node, _model) is { } registration)
+        {
+            var span = node.GetLocation().GetLineSpan();
+            _builder.AddRegistration(registration, _source, new SourceLocation
+            {
+                File = RelativePath,
+                Line = span.StartLinePosition.Line + 1,
+                EndLine = span.EndLinePosition.Line + 1,
+            });
+        }
+
+        base.VisitInvocationExpression(node);
+    }
 
     public override void VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
     {

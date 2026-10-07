@@ -158,7 +158,120 @@ public sealed class AnalysisResult
     public List<RankedItem> MostComplex { get; set; } = new();
     public List<RankedItem> MostDepended { get; set; } = new();
     public List<string> UnusedCandidates { get; set; } = new();
+
+    /// <summary>Automatic layering per level: dependencies point down, "upward" ones work against the architecture.</summary>
+    public List<LayeringInfo> Layers { get; set; } = new();
+
+    /// <summary>Types that change in the same commits (git), strongest first.</summary>
+    public List<ChangeCouplingInfo> ChangeCoupling { get; set; } = new();
+
+    /// <summary>Dependency-injection container setup found in code; null when nothing was registered.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DiAnalysis? Di { get; set; }
+
     public List<string> Warnings { get; set; } = new();
+}
+
+public sealed class LayeringInfo
+{
+    /// <summary>project | namespace | type</summary>
+    public string Level { get; set; } = "";
+
+    /// <summary>Layers from the bottom (depends on nothing) to the top; each is a list of node ids.</summary>
+    public List<List<string>> Layers { get; set; } = new();
+
+    /// <summary>Dependencies that point up (against the layering); breaking them removes all cycles.</summary>
+    public List<GraphEdge> Upward { get; set; } = new();
+}
+
+public sealed class ChangeCouplingInfo
+{
+    public string Source { get; set; } = "";
+    public string Target { get; set; } = "";
+
+    /// <summary>Commits that touched both.</summary>
+    public int SharedCommits { get; set; }
+
+    /// <summary>Shared commits relative to the average number of commits of the two (0..1).</summary>
+    public double Strength { get; set; }
+
+    /// <summary>True when there is no code dependency between the two in either direction.</summary>
+    public bool Hidden { get; set; }
+}
+
+public sealed class DiAnalysis
+{
+    public List<ServiceRegistration> Registrations { get; set; } = new();
+    public List<DiDependency> Dependencies { get; set; } = new();
+    public List<DiIssue> Issues { get; set; } = new();
+}
+
+public sealed class ServiceRegistration
+{
+    /// <summary>Node id of the service type (interface or class), or its full name when it is a framework type.</summary>
+    public string Service { get; set; } = "";
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool External { get; set; }
+
+    /// <summary>Node id of the implementation; null for factories we cannot see through.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Implementation { get; set; }
+
+    /// <summary>singleton | scoped | transient</summary>
+    public string Lifetime { get; set; } = "";
+
+    /// <summary>type | instance | factory | forward | hosted | dbcontext | httpclient</summary>
+    public string Kind { get; set; } = "type";
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Key { get; set; }
+
+    /// <summary>Member that performs the registration (e.g. AddInfrastructure).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RegisteredIn { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SourceLocation? Location { get; set; }
+}
+
+/// <summary>"consumer needs service" resolved to the registered implementation(s).</summary>
+public sealed class DiDependency
+{
+    /// <summary>Type whose constructor asks for the service.</summary>
+    public string Consumer { get; set; } = "";
+
+    /// <summary>Lifetime of the consumer: singleton | scoped | transient (framework-activated types count as transient).</summary>
+    public string ConsumerLifetime { get; set; } = "";
+
+    /// <summary>Requested service: node id for code in the solution, otherwise the type's full name.</summary>
+    public string Service { get; set; } = "";
+
+    public bool External { get; set; }
+
+    /// <summary>IEnumerable&lt;T&gt;: every registration is injected.</summary>
+    public bool Many { get; set; }
+
+    public bool Optional { get; set; }
+
+    /// <summary>Implementations the container would inject (empty when the service is not registered).</summary>
+    public List<string> Implementations { get; set; } = new();
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Lifetime { get; set; }
+}
+
+public sealed class DiIssue
+{
+    /// <summary>captive | captive-transient | unregistered</summary>
+    public string Kind { get; set; } = "";
+
+    /// <summary>error | warning</summary>
+    public string Severity { get; set; } = "";
+
+    public string Consumer { get; set; } = "";
+    public string Service { get; set; } = "";
+    public string Message { get; set; } = "";
 }
 
 public sealed class CycleInfo

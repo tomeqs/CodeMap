@@ -15,6 +15,9 @@ internal sealed class GraphBuilder
     private readonly ConcurrentDictionary<string, string> _fallbacks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _onceFlags = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _assemblyToProject;
+    private readonly ConcurrentBag<RegistrationDraft> _registrations = new();
+    private readonly ConcurrentDictionary<string, List<DependencyDraft>> _constructorDependencies = new(StringComparer.Ordinal);
+    private Dictionary<string, string>? _ids;
 
     public GraphBuilder(AnalyzerOptions options, string root, Dictionary<string, string> assemblyToProject)
     {
@@ -27,6 +30,46 @@ internal sealed class GraphBuilder
     public string Root { get; }
 
     private readonly record struct EdgeKey(string Source, string Target, string Kind);
+
+    /// <summary>A DI registration; services are identified by symbol key, or "ext:FullName" for framework types.</summary>
+    internal sealed record RegistrationDraft(string ServiceIdent, string? ImplementationKey, string Lifetime, string Kind, string? Key, string? SourceKey, SourceLocation Location);
+
+    /// <summary>One constructor parameter of a type, as a DI container would see it.</summary>
+    internal sealed record DependencyDraft(string ServiceIdent, bool Many, bool Optional)
+    {
+        public bool External => ServiceIdent.StartsWith("ext:", StringComparison.Ordinal);
+    }
+
+    public IReadOnlyCollection<RegistrationDraft> Registrations => _registrations;
+    public IReadOnlyDictionary<string, List<DependencyDraft>> ConstructorDependencies => _constructorDependencies;
+
+    /// <summary>Identity of a service type for DI matching (generic types match on their definition).</summary>
+    public string? ServiceIdent(ITypeSymbol? type, string? fallbackName = null)
+    {
+        if (type == null) return fallbackName != null ? "ext:" + fallbackName : null;
+        if (type is not INamedTypeSymbol named || named.TypeKind is TypeKind.Error or TypeKind.TypeParameter) return null;
+        if (named.OriginalDefinition.SpecialType != SpecialType.None) return null;
+        var definition = (INamedTypeSymbol)named.OriginalDefinition;
+        return IsInternal(definition) ? SymbolKey(definition) : "ext:" + definition.ToDisplayString(SymbolFormats.FullType);
+    }
+
+    public void AddRegistration(RegistrationCandidate candidate, string? sourceKey, SourceLocation location)
+    {
+        var service = ServiceIdent(candidate.Service, candidate.ServiceName);
+        if (service == null) return;
+        string? implementation = null;
+        if (candidate.Implementation is INamedTypeSymbol impl && impl.TypeKind != TypeKind.Error && IsInternal(impl.OriginalDefinition))
+        {
+            implementation = SymbolKey(impl.OriginalDefinition);
+        }
+
+        _registrations.Add(new RegistrationDraft(service, implementation, candidate.Lifetime, candidate.Kind, candidate.Key, sourceKey, location));
+    }
+
+    public void SetConstructorDependencies(string typeKey, List<DependencyDraft> dependencies) => _constructorDependencies[typeKey] = dependencies;
+
+    /// <summary>Public id of an internal key; only valid after <see cref="Build"/>.</summary>
+    public string? IdOf(string? key) => key != null && _ids != null && _ids.TryGetValue(key, out var id) ? id : null;
 
     internal sealed class NodeDraft
     {
@@ -208,6 +251,7 @@ internal sealed class GraphBuilder
     {
         var graph = new CodeGraph();
         var ids = AssignIds(projectOrder);
+        _ids = ids;
 
         foreach (var (key, draft) in _nodes)
         {

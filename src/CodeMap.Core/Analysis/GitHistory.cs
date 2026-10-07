@@ -19,6 +19,9 @@ public sealed class GitHistory
     public string? Head { get; private set; }
     public int CommitCount { get; private set; }
 
+    /// <summary>Files touched by each commit (absolute paths), newest first. Used for change coupling.</summary>
+    public List<string[]> Commits { get; } = new();
+
     /// <summary>Returns null when <paramref name="directory"/> is not inside a git work tree or git is missing.</summary>
     public static GitHistory? Read(string directory, string? since, int maxCommits, Action<string>? log = null)
     {
@@ -45,10 +48,19 @@ public sealed class GitHistory
 
         string? author = null;
         long timestamp = 0;
+        var commitFiles = new List<string>();
+
+        void EndCommit()
+        {
+            if (commitFiles.Count > 0) history.Commits.Add(commitFiles.ToArray());
+            commitFiles.Clear();
+        }
+
         foreach (var line in output.Split('\n'))
         {
             if (line.StartsWith("@@", StringComparison.Ordinal))
             {
+                EndCommit();
                 var parts = line[2..].Split('\t');
                 author = parts.Length > 1 ? parts[1] : null;
                 timestamp = parts.Length > 2 && long.TryParse(parts[2], out var t) ? t : 0;
@@ -59,6 +71,7 @@ public sealed class GitHistory
             var columns = line.Split('\t');
             if (columns.Length < 3) continue;
             var path = Path.GetFullPath(Path.Combine(top, columns[2].Trim()));
+            commitFiles.Add(path);
             if (!history.Files.TryGetValue(path, out var stats)) history.Files[path] = stats = new FileStats();
             stats.Commits++;
             if (int.TryParse(columns[0], out var added)) stats.Churn += added;
@@ -67,6 +80,7 @@ public sealed class GitHistory
             stats.LastCommitUnix = Math.Max(stats.LastCommitUnix, timestamp);
         }
 
+        EndCommit();
         log?.Invoke($"git: {history.CommitCount} commits, {history.Files.Count} files");
         return history;
     }
