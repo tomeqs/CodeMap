@@ -18,6 +18,19 @@ async function run() {
   const extension = vscode.extensions.getExtension('tomeqs.codemap');
   assert.ok(extension, 'extension is installed');
   const { controller } = await extension.activate();
+  // keep what the extension writes to its output channel, to show it if something fails
+  const log = [];
+  const appendLine = controller.output.appendLine.bind(controller.output);
+  controller.output.appendLine = (line) => (log.push(line), appendLine(line));
+  try {
+    await scenario(controller, log);
+  } catch (error) {
+    console.log('--- CodeMap output ---\n' + log.join('\n'));
+    throw error;
+  }
+}
+
+async function scenario(controller) {
   const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
   const orderFile = path.join(root, 'src', 'Shop.Domain', 'Orders', 'Order.cs');
 
@@ -53,10 +66,10 @@ async function run() {
   const text = fs.readFileSync(orderFile, 'utf8');
   try {
     const edit = new vscode.WorkspaceEdit();
-    edit.insert(document.uri, new vscode.Position(document.lineCount, 0), '\npublic sealed class LiveAddedType { }\n');
-    await vscode.workspace.applyEdit(edit);
-    await document.save();
-    await until('the map to refresh', () => controller.doc !== before && !controller.running, 240000);
+    edit.insert(document.uri, document.lineAt(document.lineCount - 1).range.end, '\npublic sealed class LiveAddedType { }\n');
+    assert.ok(await vscode.workspace.applyEdit(edit), 'edit applied');
+    assert.ok(await document.save(), 'file saved');
+    await until('the map to refresh', () => controller.doc !== before && !controller.running, 120000);
     assert.ok(controller.doc.nodes.some((n) => n.id === 'T:Shop.Domain.Orders.LiveAddedType'), 'the new type is on the refreshed map');
     assert.ok(posted.some((m) => m.type === 'load' && m.preserve), 'refresh keeps the view');
   } finally {

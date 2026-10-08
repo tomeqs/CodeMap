@@ -313,6 +313,7 @@ class CodeMapController {
   onFileChanged(file) {
     if (!this.panel || !this.doc || !this.settings.get('liveUpdate', true) || !SOURCE_FILES.test(file)) return;
     if (!relativeToRoot(this.doc.source?.root, file)) return;
+    this.output.appendLine(`Changed: ${path.basename(file)}`);
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.analyze({ preserve: true }), 900);
   }
