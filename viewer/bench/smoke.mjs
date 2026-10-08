@@ -2,8 +2,9 @@
 // Smoke tests of the built viewer in headless Chromium: every view draws something, picking and search
 // work, no errors – once per renderer.
 //
-//   npm run test:smoke [-- --renderers webgl,webgpu] [--headed]
+//   npm run test:smoke [-- --renderers webgl,webgpu] [--headed] [--only 'name part'] [--dist other/build]
 import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
 import { graph, launch, open, serve, settled } from './lib.mjs';
 
 const args = process.argv.slice(2);
@@ -12,11 +13,13 @@ const option = (name, fallback) => {
   return i >= 0 ? args[i + 1] : fallback;
 };
 const renderers = option('renderers', 'auto').split(',');
+const only = option('only'); // run just the tests whose name contains this
 
-const server = await serve();
+const server = await serve(option('dist') ? resolve(option('dist')) : undefined);
 const browser = await launch({ headed: args.includes('--headed') });
 let failed = 0;
 const test = async (name, fn) => {
+  if (only && !name.includes(only) && !/loads and lays out/.test(name)) return;
   const start = Date.now();
   try {
     await fn();
@@ -72,12 +75,52 @@ try {
         const app = window.codemap;
         const unit = [...app.view.units].sort((a, b) => b.r - a.r)[0];
         const p = app.stage.project(app.view.positionOf(unit.id));
-        const rect = app.stage.renderer.domElement.getBoundingClientRect();
+        const rect = app.stage.canvas.getBoundingClientRect();
         return { id: unit.id, x: rect.left + p.x, y: rect.top + p.y };
       });
       await page.mouse.click(target.x, target.y);
       const selected = await page.evaluate(() => window.codemap.selection?.nodeId);
       assert.equal(selected, target.id);
+    });
+
+    await test('selecting a node dims the others (the change reaches the GPU without further frames)', async () => {
+      const brightness = async (point) => {
+        const shot = await page.screenshot({ clip: { x: point.x - 3, y: point.y - 3, width: 6, height: 6 } });
+        return page.evaluate(async (base64) => {
+          const image = new Image();
+          image.src = `data:image/png;base64,${base64}`;
+          await image.decode();
+          const canvas = new OffscreenCanvas(image.width, image.height);
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(image, 0, 0);
+          const data = ctx.getImageData(0, 0, image.width, image.height).data;
+          let max = 0;
+          for (let i = 0; i < data.length; i += 4) max = Math.max(max, data[i] + data[i + 1] + data[i + 2]);
+          return max;
+        }, shot.toString('base64'));
+      };
+      const other = await page.evaluate(() => {
+        const app = window.codemap;
+        const units = [...app.view.units].sort((a, b) => b.r - a.r);
+        app.select(units[0].id);
+        const h = app.view.highlight;
+        const u = units.find((x) => !h.nodes.has(x.id) && app.stage.project(app.view.positionOf(x.id)));
+        app.select(null);
+        const p = app.stage.project(app.view.positionOf(u.id));
+        const rect = app.stage.canvas.getBoundingClientRect();
+        return { id: u.id, selected: units[0].id, x: Math.round(rect.left + p.x), y: Math.round(rect.top + p.y) };
+      });
+      await page.waitForTimeout(400);
+      const before = await brightness(other);
+      // As if the user had been away: no ambient frames (pulsing halo) that would hide a missing frame.
+      await page.evaluate((id) => {
+        window.codemap.stage.lastInput = -1e9;
+        window.codemap.select(id);
+      }, other.selected);
+      await page.waitForTimeout(400);
+      const after = await brightness(other);
+      await page.evaluate(() => window.codemap.select(null));
+      assert.ok(after < before * 0.7, `brightness of an unrelated node: ${before} before, ${after} after selecting`);
     });
 
     await test('an idle map draws nothing', async () => {

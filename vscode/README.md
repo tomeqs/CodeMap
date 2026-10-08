@@ -38,6 +38,7 @@ The map updates itself when you save C# or project files; the camera and the sel
 | `codemap.includeTests` | `true` | Include test projects |
 | `codemap.includeExternal` | `false` | Include framework and NuGet types |
 | `codemap.gitHistory` | `true` | Churn, hotspots and change coupling from git |
+| `codemap.renderer` | `auto` | Graphics API of the map: WebGPU where VS Code supports it, otherwise WebGL 2 (`webgpu` / `webgl` to force one) |
 | `codemap.analyzerPath` | | Use another analyzer (a `codemap` executable or `codemap.dll`) |
 | `codemap.dotnetPath` | `dotnet` | The dotnet that runs the bundled analyzer |
 

@@ -20,7 +20,7 @@ import {
 } from 'three';
 import { EDGE_KINDS } from '../data/palette.js';
 import { createLines, FlowParticles, glowMaterial } from '../scene/materials.js';
-import { dotTexture } from '../scene/stage.js';
+import { dotTexture } from '../scene/textures.js';
 import { perf } from '../perf/stats.js';
 import { disposeObject } from '../scene/disposer.js';
 import { createSpec } from '../layout/spec.js';

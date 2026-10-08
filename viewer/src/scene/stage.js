@@ -1,33 +1,18 @@
-import {
-  ACESFilmicToneMapping,
-  AdditiveBlending,
-  BufferAttribute,
-  BufferGeometry,
-  CanvasTexture,
-  Color,
-  FogExp2,
-  PCFSoftShadowMap,
-  PerspectiveCamera,
-  Points,
-  PointsMaterial,
-  Raycaster,
-  Scene,
-  SRGBColorSpace,
-  Vector2,
-  Vector3,
-  WebGLRenderer,
-} from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { ACESFilmicToneMapping, Color, FogExp2, PCFSoftShadowMap, PerspectiveCamera, PostProcessing, Raycaster, Scene, Vector2, Vector3 } from 'three/webgpu';
+import { pass } from 'three/tsl';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { beginFrame, createRenderer } from '../gpu/renderer.js';
+import { createDots } from './materials.js';
 import { perf } from '../perf/stats.js';
 
 /** Ambient motion (particles, pulsing halo) stops this long after the last input, to save battery. */
 const AMBIENT_TIMEOUT = 20000;
 /** Ambient-only frames run at most this often (ms): ~30 fps is plenty for drifting particles. */
 const AMBIENT_INTERVAL = 33;
+/** Node bloom vs UnrealBloomPass: see setBloom(). */
+const BLOOM_STRENGTH = 1.15;
+const BLOOM_RADIUS = 0.4;
 
 /**
  * Renderer, camera, controls and bloom shared by every view. Frames are drawn on demand: when something
@@ -37,32 +22,25 @@ const AMBIENT_INTERVAL = 33;
 export class Stage {
   constructor(container) {
     this.container = container;
-    this.renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.toneMapping = ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
-    this.renderer.outputColorSpace = SRGBColorSpace;
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = PCFSoftShadowMap;
-    container.appendChild(this.renderer.domElement);
+    // The canvas exists at once (controls and input bind to it); the renderer behind it starts asynchronously.
+    this.canvas = document.createElement('canvas');
+    this.canvas.className = 'stage-canvas';
+    container.appendChild(this.canvas);
+    this.renderer = null;
+    this.backend = null; // 'webgpu' | 'webgl' once ready
 
     this.scene = new Scene();
     this.scene.background = new Color('#04060c');
     this.camera = new PerspectiveCamera(55, 1, 0.5, 40000);
     this.camera.position.set(0, 120, 420);
 
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.rotateSpeed = 0.6;
     this.controls.zoomSpeed = 1.1;
     this.controls.screenSpacePanning = true;
-
-    this.composer = new EffectComposer(this.renderer);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new Vector2(1, 1), 0.9, 0.55, 0.18);
-    this.composer.addPass(this.bloom);
-    this.composer.addPass(new OutputPass());
+    this.bloomSettings = { strength: 0.9, radius: 0.55, threshold: 0.18 };
 
     this.raycaster = new Raycaster();
     this.pointer = new Vector2();
@@ -75,18 +53,48 @@ export class Stage {
     this.raf = 0;
     this.ambientTimer = 0;
     this.dirty = true;
+    this.trailingFrames = 0;
     this.lastInput = performance.now();
     this.ambientSleeping = false;
     this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
     this.controls.addEventListener('change', () => this.invalidate());
     const input = () => this.onInput();
-    for (const type of ['pointerdown', 'pointermove', 'wheel']) this.renderer.domElement.addEventListener(type, input, { passive: true });
+    for (const type of ['pointerdown', 'pointermove', 'wheel']) this.canvas.addEventListener(type, input, { passive: true });
     window.addEventListener('keydown', input);
     document.addEventListener('visibilitychange', () => document.hidden || this.invalidate());
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.resize();
+    /** Resolves once the GPU is ready (WebGPU, or WebGL 2 where WebGPU is missing); rejects if neither works. */
+    this.ready = this.start();
+  }
+
+  async start() {
+    const { renderer, backend, adapter, software } = await createRenderer({ canvas: this.canvas });
+    this.renderer = renderer;
+    this.backend = backend;
+    this.adapter = adapter;
+    this.software = software;
+    // Software rendering (no GPU): fewer pixels and no multisampling keep it usable.
+    renderer.setPixelRatio(software ? 1 : Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = PCFSoftShadowMap;
+    renderer.onDeviceLost = (info) => this.onDeviceLost?.(info);
+
+    // The scene in an HDR, multisampled target; bloom on top; tone mapping and sRGB at the end.
+    this.post = new PostProcessing(renderer);
+    const scenePass = pass(this.scene, this.camera, { samples: software ? 0 : 4 });
+    const color = scenePass.getTextureNode('output');
+    this.bloom = bloom(color);
+    this.post.outputNode = color.add(this.bloom);
+    const { strength, radius, threshold } = this.bloomSettings;
+    this.setBloom(strength, radius, threshold);
+    this.resize();
+    this.invalidate();
+    return this;
   }
 
   onFrame(fn) {
@@ -99,18 +107,24 @@ export class Stage {
     const h = this.container.clientHeight || window.innerHeight;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h);
-    this.composer.setSize(w, h);
-    this.bloom.setSize(w, h);
+    this.renderer?.setSize(w, h);
     this.width = w;
     this.height = h;
     this.invalidate();
   }
 
+  /**
+   * Bloom in the units the views were tuned with (UnrealBloomPass). The node bloom blurs each level more
+   * narrowly, so a larger radius (more weight on the wide levels) gives the same soft haze.
+   */
   setBloom(strength, radius = 0.55, threshold = 0.18) {
-    this.bloom.strength = strength;
-    this.bloom.radius = radius;
-    this.bloom.threshold = threshold;
+    this.bloomSettings = { strength, radius, threshold };
+    if (this.bloom) {
+      this.bloom.strength.value = strength * BLOOM_STRENGTH;
+      this.bloom.radius.value = Math.min(1, radius + BLOOM_RADIUS);
+      this.bloom.threshold.value = threshold;
+    }
+
     this.invalidate();
   }
 
@@ -135,7 +149,7 @@ export class Stage {
   }
 
   requestFrame() {
-    if (this.raf || this.paused) return;
+    if (this.raf || this.paused || !this.renderer) return;
     clearTimeout(this.ambientTimer);
     this.ambientTimer = 0;
     this.raf = requestAnimationFrame((now) => this.frame(now));
@@ -178,14 +192,20 @@ export class Stage {
       else if (result) busy = true;
     }
 
-    const render = draw || busy || ambient || this.dirty;
+    // three's node renderer applies some per-frame updates (instance colours and matrices it copied) one
+    // frame late, so every change is followed by one more frame.
+    const trailing = this.trailingFrames > 0;
+    const render = draw || busy || ambient || trailing || this.dirty;
     if (render) {
       this.stars.rotation.y += dt * 0.004;
-      this.composer.render();
+      beginFrame(this.renderer);
+      this.post.render();
     }
 
     perf.frame(now, performance.now() - now, render);
-    if (busy || this.dirty) this.requestFrame();
+    if (draw || busy) this.trailingFrames = 1;
+    else if (trailing) this.trailingFrames--;
+    if (busy || this.dirty || this.trailingFrames > 0) this.requestFrame();
     else if (ambient) {
       if (this.ambientAllowed(now)) this.ambientTimer = setTimeout(() => this.requestFrame(), AMBIENT_INTERVAL);
       else this.ambientSleeping = true;
@@ -233,7 +253,7 @@ export class Stage {
 
   /** Converts a DOM event into a ray and intersects the given objects. */
   pick(event, objects) {
-    const rect = this.renderer.domElement.getBoundingClientRect();
+    const rect = this.canvas.getBoundingClientRect();
     this.pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
     return this.raycaster.intersectObjects(objects, false);
@@ -246,57 +266,21 @@ export class Stage {
     return { x: (out.x * 0.5 + 0.5) * this.width, y: (-out.y * 0.5 + 0.5) * this.height, depth: out.z };
   }
 
+  /** A sphere of faint stars far behind everything (instanced sprites: WebGPU points are one pixel). */
   createStars() {
     const count = 4000;
-    const positions = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
+    const { sprite, positions, colors } = createDots(count, { size: 2.2, sizeAttenuation: false, opacity: 0.75 });
     const color = new Color();
     for (let i = 0; i < count; i++) {
       const r = 6000 + Math.random() * 9000;
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
-      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = r * Math.cos(phi);
-      positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+      positions.setXYZ(i, r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi) * Math.sin(theta));
       color.setHSL(0.55 + Math.random() * 0.15, 0.5, 0.55 + Math.random() * 0.4);
-      colors.set([color.r, color.g, color.b], i * 3);
+      colors.setXYZ(i, color.r, color.g, color.b);
     }
 
-    const geometry = new BufferGeometry();
-    geometry.setAttribute('position', new BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new BufferAttribute(colors, 3));
-    const material = new PointsMaterial({
-      size: 2.2,
-      sizeAttenuation: false,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.75,
-      depthWrite: false,
-      fog: false,
-      blending: AdditiveBlending,
-      map: dotTexture(),
-    });
-    const points = new Points(geometry, material);
-    points.frustumCulled = false;
-    return points;
+    sprite.count = count;
+    return sprite;
   }
-}
-
-let cachedDot;
-/** Soft round sprite used for particles and stars. */
-export function dotTexture() {
-  if (cachedDot) return cachedDot;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  gradient.addColorStop(0, 'rgba(255,255,255,1)');
-  gradient.addColorStop(0.25, 'rgba(255,255,255,0.85)');
-  gradient.addColorStop(0.6, 'rgba(255,255,255,0.18)');
-  gradient.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 64, 64);
-  cachedDot = new CanvasTexture(canvas);
-  cachedDot.colorSpace = SRGBColorSpace;
-  return cachedDot;
 }

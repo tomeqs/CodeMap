@@ -58,6 +58,9 @@ test('webview HTML gets a strict CSP and a nonce on the viewer script only', () 
   assert.match(html, /<meta http-equiv="Content-Security-Policy" content="default-src 'none'; [^"]*script-src 'nonce-N0nce'"/);
   assert.match(html, /<script type="module" nonce="N0nce">run\(\)<\/script>/);
   assert.match(html, /worker-src blob:;/, 'the layout worker may start');
+  assert.doesNotMatch(html, /codemap-renderer/, 'automatic renderer: no override');
+  assert.match(webviewHtml(viewer, { cspSource: 'x', renderer: 'webgl' }), /<meta name="codemap-renderer" content="webgl" \/>/);
+  assert.doesNotMatch(webviewHtml(viewer, { cspSource: 'x', renderer: '"><script>' }), /codemap-renderer/);
   assert.doesNotMatch(html, /connect-src|unsafe-eval/);
   assert.throws(() => webviewHtml('<html><body>no viewer</body></html>', { cspSource: 'x' }));
 });

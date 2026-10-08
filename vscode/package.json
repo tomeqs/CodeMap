@@ -160,6 +160,17 @@
           "default": true,
           "description": "Read git history: churn, hotspots and files that change together."
         },
+        "codemap.renderer": {
+          "type": "string",
+          "enum": ["auto", "webgpu", "webgl"],
+          "enumDescriptions": [
+            "WebGPU (Metal, Direct3D 12, Vulkan) where VS Code supports it, WebGL 2 otherwise.",
+            "Prefer WebGPU (falls back to WebGL 2 when it is not available).",
+            "Always WebGL 2."
+          ],
+          "default": "auto",
+          "description": "Graphics API for the 3D map. Reopen the map to apply."
+        },
         "codemap.analyzerPath": {
           "type": "string",
           "default": "",

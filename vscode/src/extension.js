@@ -152,7 +152,7 @@ class CodeMapController {
     panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'icon.png');
     panel.webview.options = { enableScripts: true, localResourceRoots: [] };
     const viewer = fs.readFileSync(path.join(this.context.extensionPath, 'media', 'viewer.html'), 'utf8');
-    panel.webview.html = webviewHtml(viewer, { cspSource: panel.webview.cspSource });
+    panel.webview.html = webviewHtml(viewer, { cspSource: panel.webview.cspSource, renderer: this.settings.get('renderer', 'auto') });
     this.fatal = null;
     clearTimeout(this.readyTimer);
     this.readyTimer = setTimeout(() => {
@@ -190,6 +190,8 @@ class CodeMapController {
         clearTimeout(this.readyTimer);
         if (message.renderer) this.output.appendLine(`Map started: ${message.renderer} renderer (${message.adapter ?? 'unknown GPU'}), layout ${message.layout ?? 'unknown'}.`);
         this.mapInfo = { renderer: message.renderer, adapter: message.adapter, layout: message.layout };
+        // The webview started again (e.g. reloaded after a GPU reset): it needs the graph again.
+        if (this.doc && !this.queue.some((m) => m.type === 'load')) this.queue.unshift({ type: 'load', doc: this.doc, watching: this.settings.get('liveUpdate', true) });
         for (const queued of this.queue.splice(0)) this.panel.webview.postMessage(queued);
         break;
       case 'fatal':

@@ -40,8 +40,8 @@ jobs:
       - run: npm run build
       - name: The viewer built into the CLI matches the sources
         run: git diff --exit-code --stat -- ../src/CodeMap.Cli/Assets/viewer.html
-      - name: Smoke tests (headless Chromium without a GPU)
-        run: npm run test:smoke
+      - name: Smoke tests on WebGPU and WebGL 2 (headless Chromium without a GPU)
+        run: npm run test:smoke -- --renderers webgpu,webgl
 
   vscode:
     runs-on: ubuntu-latest

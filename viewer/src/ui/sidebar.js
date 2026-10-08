@@ -4,6 +4,8 @@ import { VIOLATION_COLORS } from '../views/galaxy.js';
 import { METRICS, defaultEdgeKinds, serializeDoc } from '../data/model.js';
 import { clear, fmt, h, shortName } from './dom.js';
 import { host } from '../data/host.js';
+import { rememberRenderer, rendererPreference } from '../gpu/renderer.js';
+import { workerAvailable } from '../layout/worker-layout.js';
 
 /** Left panel: filters, insights (cycles, hotspots, dead code...) and data info. */
 export class Sidebar {
@@ -377,6 +379,30 @@ export class Sidebar {
 
   // ------------------------------------------------------------------ data
 
+  /** How the map is drawn and laid out on this machine, and a choice of renderer (applies after a reload). */
+  renderGraphics(kv) {
+    const stage = this.app.stage;
+    const layout = this.app.view?.layout?.kind ?? (workerAvailable() ? 'worker' : 'main');
+    const names = { webgpu: 'WebGPU', webgl: 'WebGL 2' };
+    const choice = rendererPreference();
+    const select = h('select', {
+      onChange: (e) => {
+        rememberRenderer(e.target.value);
+        note.textContent = 'Reload the page to switch.';
+      },
+    }, ['auto', 'webgpu', 'webgl'].map((value) => h('option', { value, selected: value === choice }, value === 'auto' ? 'Automatic (WebGPU if available)' : names[value])));
+    const note = h('div', { class: 'small faint' });
+    return h('div', { class: 'section' }, h('h3', {}, 'Graphics'),
+      kv([
+        ['renderer', `${names[stage.backend] ?? '–'}${stage.software ? ' (software, no GPU)' : ''}`],
+        ['GPU', stage.adapter],
+        ['layout', { gpu: 'GPU compute', worker: 'web worker', main: 'main thread' }[layout] ?? layout],
+      ]),
+      h('label', { class: 'small' }, 'Renderer ', select),
+      note,
+    );
+  }
+
   renderAbout() {
     const { model } = this.app;
     const doc = model.doc;
@@ -402,6 +428,7 @@ export class Sidebar {
       h('div', { class: 'section' }, h('h3', {}, 'Relationships'),
         kv(Object.entries(stats).filter(([k]) => k.startsWith('edges.')).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k.slice(6), fmt(v)])),
       ),
+      this.renderGraphics(kv),
       // Downloads are blocked inside sandboxed frames (embedded previews), so only offer them top-level.
       (host || window.self === window.top) && h('div', { class: 'section' },
         h('button', {

@@ -41,8 +41,20 @@ export async function graph(types, options = {}) {
   return `/data/${name}`;
 }
 
-/** Chromium flags: WebGPU on (a software adapter when there is no GPU), WebGL 2 through SwiftShader. */
-export const CHROMIUM_ARGS = ['--enable-unsafe-webgpu', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-precise-memory-info'];
+/**
+ * Chromium flags: WebGPU on (a software adapter when there is no GPU), WebGL 2 through SwiftShader. Without
+ * the Vulkan/ANGLE features, headless Chromium loses the WebGPU device as soon as a canvas presents a frame
+ * ("A valid external Instance reference no longer exists").
+ */
+export const CHROMIUM_ARGS = [
+  '--enable-unsafe-webgpu',
+  '--use-webgpu-adapter=swiftshader',
+  '--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan',
+  '--use-angle=swiftshader',
+  '--enable-unsafe-swiftshader',
+  '--ignore-gpu-blocklist',
+  '--enable-precise-memory-info',
+];
 
 export async function launch({ headed = false } = {}) {
   let playwright;

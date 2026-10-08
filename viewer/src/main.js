@@ -821,6 +821,21 @@ class App {
     this.hud.replaceChildren(...lines.map((l) => h('div', {}, l)));
   }
 
+  /** The GPU went away (driver reset, GPU switched, too much memory): the map cannot draw any more. */
+  onDeviceLost(info) {
+    console.error('CodeMap: GPU device lost', info);
+    const card = h('div', { class: 'welcome-card' },
+      h('div', { class: 'logo big' }),
+      h('h1', {}, 'The graphics device was reset'),
+      h('p', {}, `The map stopped drawing (${info?.message ?? 'device lost'}). Reload to continue.`),
+      h('button', { class: 'primary', onClick: () => location.reload() }, 'Reload'),
+    );
+    const welcome = document.getElementById('welcome');
+    welcome.replaceChildren(card);
+    welcome.classList.remove('hidden');
+    host?.post('fatal', { message: 'The graphics device was reset; reopen the map.', webgl: false });
+  }
+
   toast(message, kind = 'warn') {
     const el = h('div', { class: `toast ${kind}`, role: 'status' }, message);
     document.getElementById('app').append(el);
@@ -830,7 +845,7 @@ class App {
   // ------------------------------------------------------------------ DOM wiring
 
   bindUi() {
-    const canvas = this.stage.renderer.domElement;
+    const canvas = this.stage.canvas;
     let down = null;
     canvas.addEventListener('pointerdown', (e) => (down = { x: e.clientX, y: e.clientY }));
     canvas.addEventListener('pointerup', (e) => {
@@ -952,7 +967,7 @@ class App {
 
     const id = this.view.pick(e);
     this.view.setHovered(id);
-    this.stage.renderer.domElement.style.cursor = id ? 'pointer' : '';
+    this.stage.canvas.style.cursor = id ? 'pointer' : '';
     if (!id) {
       this.tooltip.classList.add('hidden');
       return;
@@ -1041,11 +1056,13 @@ async function boot() {
   let app;
   try {
     app = new App();
+    await app.stage.ready;
   } catch (error) {
     return showStartupError(error);
   }
 
   window.codemap = app;
+  app.stage.onDeviceLost = (info) => app.onDeviceLost(info);
   if (params.has('bench')) window.codemapLayout = await import('./layout/testing.js');
   if (host) return app.enableHost(host);
   const embedded = document.getElementById('codemap-data')?.textContent?.trim();
@@ -1088,11 +1105,11 @@ async function boot() {
 
 boot();
 
-/** The map could not start (usually no WebGL 2): say why instead of leaving an empty page. */
+/** The map could not start (no WebGPU and no WebGL 2): say why instead of leaving an empty page. */
 function showStartupError(error) {
-  const webgl = /webgl/i.test(String(error?.message ?? error));
+  const webgl = /webgl|webgpu|gpu|context/i.test(String(error?.message ?? error));
   const message = webgl
-    ? 'The 3D map needs WebGL 2, which is not available here (graphics acceleration is turned off or the GPU is blocklisted).'
+    ? 'The 3D map needs WebGPU or WebGL 2, and neither is available here (graphics acceleration is turned off or the GPU is blocklisted).'
     : `CodeMap could not start: ${error?.message ?? error}`;
   console.error(error);
   host?.post('fatal', { message, webgl });

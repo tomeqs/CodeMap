@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The map draws with WebGPU (Metal, Direct3D 12, Vulkan) where VS Code supports it and WebGL 2 otherwise; setting `codemap.renderer`.
+- The force layout runs in a worker: large solutions lay out much faster and the editor stays responsive.
+- The map draws nothing while nothing moves (less CPU, GPU and battery).
+
 ## 0.1.0
 
 - Code map of the workspace's C# solution in an editor tab: Galaxy, City, Layers, DI, Flow and Auto zoom views.

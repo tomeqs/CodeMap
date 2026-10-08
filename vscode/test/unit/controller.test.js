@@ -47,6 +47,12 @@ test('opens the map, jumps between code and map, refreshes on save', { skip: !bu
     assert.ok(load.doc.nodes.some((n) => n.id === 'T:Shop.Domain.Orders.Order'));
     await until(() => fs.existsSync(path.join(storage, 'map.codemap.json')), 5000); // cached for the next start (written in the background)
 
+    // the webview starts again (reloaded after a GPU reset): it gets the graph again
+    const loadsBefore = log.posted.filter((m) => m.type === 'load').length;
+    panel.receive({ type: 'ready', renderer: 'webgpu', adapter: 'test GPU', layout: 'worker' });
+    await until(() => log.posted.filter((m) => m.type === 'load').length === loadsBefore + 1, 5000);
+    assert.deepEqual(controller.mapInfo, { renderer: 'webgpu', adapter: 'test GPU', layout: 'worker' });
+
     // map → code
     panel.receive({ type: 'openFile', file: 'src/Shop.Domain/Orders/Order.cs', line: 25 });
     await until(() => log.opened.length === 1);

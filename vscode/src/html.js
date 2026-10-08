@@ -11,7 +11,7 @@ function nonce() {
  * script it runs (plus its layout worker). The viewer receives the graph by postMessage, so it needs no
  * network access.
  */
-function webviewHtml(viewerHtml, { cspSource, scriptNonce = nonce() }) {
+function webviewHtml(viewerHtml, { cspSource, scriptNonce = nonce(), renderer = 'auto' }) {
   const csp = [
     "default-src 'none'",
     `img-src ${cspSource} data: blob:`,
@@ -24,8 +24,10 @@ function webviewHtml(viewerHtml, { cspSource, scriptNonce = nonce() }) {
 
   const script = '<script type="module" crossorigin>';
   if (!viewerHtml.includes(script) || !/<head>/i.test(viewerHtml)) throw new Error('viewer.html does not look like the CodeMap viewer build.');
+  // The renderer setting reaches the viewer as a meta tag (it reads it before creating the GPU device).
+  const rendererMeta = renderer === 'webgpu' || renderer === 'webgl' ? `\n    <meta name="codemap-renderer" content="${renderer}" />` : '';
   return viewerHtml
-    .replace(/<head>/i, `<head>\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />`)
+    .replace(/<head>/i, `<head>\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />${rendererMeta}`)
     .replace(script, `<script type="module" nonce="${scriptNonce}">`);
 }
 

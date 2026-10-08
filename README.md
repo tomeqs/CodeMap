@@ -290,6 +290,19 @@ Formaty dodatkowe:
 Viewer można też otworzyć bez danych i przeciągnąć na niego dowolny plik `*.codemap.json`
 albo użyć parametru `?data=url.json`.
 
+### GPU
+
+* Mapa rysuje przez **WebGPU**: Metal na macOS, Direct3D 12 na Windows, Vulkan na Linuksie.
+  Gdy przeglądarka (albo VS Code) nie ma WebGPU, przechodzi na **WebGL 2**.
+  Backend można wymusić w zakładce *Data* (*Graphics → Renderer*), parametrem `?renderer=webgpu|webgl`
+  albo ustawieniem `codemap.renderer` w VS Code.
+* Układ siłowy liczy się w **Web Workerze**, więc mapa i interfejs zostają płynne, a duży graf układa się wielokrotnie szybciej.
+  Do 15 000 elementów na poziom; bez workera, na przykład gdy CSP go blokuje, wraca na główny wątek z limitem 7000.
+* Klatki rysowane są tylko wtedy, gdy coś się zmienia: ruch kamery, układanie grafu, animacja.
+  Nieruchoma mapa nie zużywa GPU ani baterii. Cząsteczki i pulsowanie zaznaczenia zatrzymują się po 20 s bez ruchu myszy
+  i przy systemowym *ogranicz ruch*.
+* Natywne renderery (Metal / Direct3D 12 poza przeglądarką) to osobny temat: [tomeqs/CodeMap#6](https://github.com/tomeqs/CodeMap/issues/6).
+
 ## Struktura repozytorium
 
 ```
@@ -312,7 +325,7 @@ docs/                 specyfikacja formatu i JSON Schema
 dotnet test                                   # testy analizatora
 cd viewer && npm install && npm run dev       # viewer z hot-reload: http://localhost:5173/?data=sample.codemap.json
 npm run build                                 # buduje dist/index.html i kopiuje go do src/CodeMap.Cli/Assets/viewer.html
-npm run test:smoke                            # smoke testy zbudowanego viewera w headless Chromium (bez GPU)
+npm run test:smoke -- --renderers webgpu,webgl   # smoke testy zbudowanego viewera w headless Chromium (bez GPU)
 npm run bench -- --sizes 1k,7k,20k            # benchmark na wygenerowanych grafach, porównanie z bench/baseline.json
 ```
 
