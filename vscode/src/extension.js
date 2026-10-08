@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const vscode = require('vscode');
 const { resolveAnalyzer, runAnalyzer } = require('./analyzer');
-const { webviewHtml } = require('./html');
+const { standaloneHtml, webviewHtml } = require('./html');
 const { flowRootsFor, nodeAt, relativeToRoot, resolveInRoot } = require('./locate');
 
 const VIEW_TYPE = 'codemap.map';
@@ -12,6 +12,7 @@ const TARGET_KEY = 'codemap.target';
 const CACHE_FILE = 'map.codemap.json';
 const SOURCE_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf)$/i;
 const EXCLUDE = '**/{node_modules,bin,obj,.git,.vs}/**';
+const READY_TIMEOUT_MS = 30000;
 
 /** One code map per window: the webview with the 3D map, the analysis behind it and the live updates. */
 class CodeMapController {
@@ -136,8 +137,14 @@ class CodeMapController {
     panel.webview.options = { enableScripts: true, localResourceRoots: [] };
     const viewer = fs.readFileSync(path.join(this.context.extensionPath, 'media', 'viewer.html'), 'utf8');
     panel.webview.html = webviewHtml(viewer, { cspSource: panel.webview.cspSource });
+    this.fatal = null;
+    clearTimeout(this.readyTimer);
+    this.readyTimer = setTimeout(() => {
+      if (this.panel === panel && !this.ready && !this.fatal) this.offerBrowser('The map did not start in this window.');
+    }, READY_TIMEOUT_MS);
     panel.webview.onDidReceiveMessage((message) => this.onMessage(message), null, this.context.subscriptions);
     panel.onDidDispose(() => {
+      clearTimeout(this.readyTimer);
       this.running?.abort();
       this.panel = null;
       this.ready = false;
@@ -164,7 +171,15 @@ class CodeMapController {
     switch (message?.type) {
       case 'ready':
         this.ready = true;
+        clearTimeout(this.readyTimer);
         for (const queued of this.queue.splice(0)) this.panel.webview.postMessage(queued);
+        break;
+      case 'fatal':
+        // The webview cannot show the 3D map (no WebGL 2): offer the browser instead.
+        clearTimeout(this.readyTimer);
+        this.fatal = String(message.message ?? 'The map could not start.');
+        this.output.appendLine(this.fatal);
+        this.offerBrowser(this.fatal);
         break;
       case 'openFile':
         await this.openFile(message.file, message.line);
@@ -193,6 +208,25 @@ class CodeMapController {
     } catch (error) {
       vscode.window.showWarningMessage(`CodeMap: could not open ${file}: ${error.message}`);
     }
+  }
+
+  async offerBrowser(reason) {
+    const choice = await vscode.window.showErrorMessage(`CodeMap: ${reason}`, 'Open in Browser', 'Show Output');
+    if (choice === 'Open in Browser') await this.openInBrowser();
+    else if (choice === 'Show Output') this.output.show();
+  }
+
+  /** The map as a standalone HTML file in the default browser (its file links open VS Code at the right line). */
+  async openInBrowser() {
+    if (!this.doc && !(await this.open())) return;
+    const doc = await this.whenLoaded();
+    if (!doc) return;
+    const viewer = fs.readFileSync(path.join(this.context.extensionPath, 'media', 'viewer.html'), 'utf8');
+    const folder = this.context.storageUri?.fsPath ?? this.context.globalStorageUri?.fsPath ?? require('os').tmpdir();
+    const file = path.join(folder, `${(doc.source?.name ?? 'codemap').replace(/[^\w.-]+/g, '_')}.html`);
+    await fs.promises.mkdir(folder, { recursive: true });
+    await fs.promises.writeFile(file, standaloneHtml(viewer, doc));
+    await vscode.env.openExternal(vscode.Uri.file(file));
   }
 
   async saveFile(name, content) {
@@ -365,6 +399,7 @@ function activate(context) {
     vscode.commands.registerCommand('codemap.open', (uri) => controller.open(uri instanceof vscode.Uri ? uri : undefined)),
     vscode.commands.registerCommand('codemap.chooseTarget', () => controller.chooseTarget()),
     vscode.commands.registerCommand('codemap.refresh', () => controller.analyze({ preserve: true })),
+    vscode.commands.registerCommand('codemap.openInBrowser', () => controller.openInBrowser()),
     vscode.commands.registerCommand('codemap.revealInMap', editorCommand((editor) => controller.revealAt(editor))),
     vscode.commands.registerCommand('codemap.callFlow', editorCommand((editor) => controller.flowAt(editor))),
     vscode.workspace.onDidSaveTextDocument((document) => controller.onFileChanged(document.uri.fsPath)),

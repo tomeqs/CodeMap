@@ -52,7 +52,7 @@ class Range {
 }
 
 function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
-  const log = { panels: [], posted: [], opened: [], errors: [], infos: [], warnings: [], clipboard: [], saved: [], commands: new Map(), quickPicks: [] };
+  const log = { panels: [], posted: [], opened: [], errors: [], infos: [], warnings: [], clipboard: [], saved: [], external: [], commands: new Map(), quickPicks: [] };
   const saveEmitter = new Emitter();
 
   const vscode = {
@@ -62,7 +62,10 @@ function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
     ViewColumn: { Active: -1, Beside: -2, One: 1, Two: 2 },
     ProgressLocation: { Notification: 15, Window: 10 },
     StatusBarAlignment: { Left: 1, Right: 2 },
-    env: { clipboard: { writeText: async (text) => log.clipboard.push(text) } },
+    env: {
+      clipboard: { writeText: async (text) => log.clipboard.push(text) },
+      openExternal: async (uri) => void log.external.push(uri.fsPath),
+    },
     commands: {
       registerCommand: (id, fn) => {
         log.commands.set(id, fn);

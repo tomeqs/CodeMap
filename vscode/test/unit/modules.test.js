@@ -7,7 +7,7 @@ const path = require('path');
 const test = require('node:test');
 const { analyzerArgs, resolveAnalyzer, runAnalyzer } = require('../../src/analyzer');
 const { flowRootsFor, nodeAt, relativeToRoot, resolveInRoot } = require('../../src/locate');
-const { webviewHtml } = require('../../src/html');
+const { standaloneHtml, webviewHtml } = require('../../src/html');
 
 const doc = {
   nodes: [
@@ -59,6 +59,17 @@ test('webview HTML gets a strict CSP and a nonce on the viewer script only', () 
   assert.match(html, /<script type="module" nonce="N0nce">run\(\)<\/script>/);
   assert.doesNotMatch(html, /connect-src|unsafe-eval/);
   assert.throws(() => webviewHtml('<html><body>no viewer</body></html>', { cspSource: 'x' }));
+});
+
+test('standalone HTML embeds the graph safely', () => {
+  const viewer = '<html><head><title>CodeMap</title></head><body><script id="codemap-data" type="application/json">null</script></body></html>';
+  const doc = { source: { name: 'Shop<b>' }, nodes: [{ id: 'T:A', doc: 'ends with </script><script>alert(1)</script>' }] };
+  const html = standaloneHtml(viewer, doc);
+  assert.match(html, /<title>CodeMap · Shopb<\/title>/);
+  assert.equal(html.match(/<\/script>/g).length, 1, 'no early end of the data script');
+  const json = html.slice(html.indexOf('application/json">') + 18, html.lastIndexOf('</script>'));
+  assert.deepEqual(JSON.parse(json), doc);
+  assert.throws(() => standaloneHtml('<html></html>', doc));
 });
 
 test('analyzer resolution: settings, bundled copy, then PATH', () => {

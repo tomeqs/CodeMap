@@ -1066,7 +1066,13 @@ class App {
 }
 
 async function boot() {
-  const app = new App();
+  let app;
+  try {
+    app = new App();
+  } catch (error) {
+    return showStartupError(error);
+  }
+
   window.codemap = app;
   if (host) return app.enableHost(host);
   const embedded = document.getElementById('codemap-data')?.textContent?.trim();
@@ -1107,6 +1113,22 @@ async function boot() {
 }
 
 boot();
+
+/** The map could not start (usually no WebGL 2): say why instead of leaving an empty page. */
+function showStartupError(error) {
+  const webgl = /webgl/i.test(String(error?.message ?? error));
+  const message = webgl
+    ? 'The 3D map needs WebGL 2, which is not available here (graphics acceleration is turned off or the GPU is blocklisted).'
+    : `CodeMap could not start: ${error?.message ?? error}`;
+  console.error(error);
+  host?.post('fatal', { message, webgl });
+  const hint = host
+    ? 'Use “Open in Browser” to see the map in your web browser instead.'
+    : 'Try another browser, or turn on hardware acceleration in the browser settings.';
+  const card = document.querySelector('#welcome .welcome-card');
+  card.replaceChildren(h('div', { class: 'logo big' }), h('h1', {}, 'CodeMap'), h('p', {}, message), h('p', { class: 'muted small' }, hint));
+  document.getElementById('welcome').classList.remove('hidden');
+}
 
 function samePath(a, b) {
   const norm = (p) => (p ?? '').replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();

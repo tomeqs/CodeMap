@@ -12,7 +12,17 @@ async function main() {
     await runTests({
       extensionDevelopmentPath,
       extensionTestsPath: path.join(__dirname, 'suite.js'),
-      launchArgs: [workspace, '--disable-extensions', '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes'],
+      launchArgs: [
+        workspace,
+        '--disable-extensions',
+        '--disable-workspace-trust',
+        '--skip-welcome',
+        '--skip-release-notes',
+        // CI machines have no GPU: software WebGL (SwiftShader) for the 3D map in the webview.
+        '--ignore-gpu-blocklist',
+        '--use-angle=swiftshader',
+        '--enable-unsafe-swiftshader',
+      ],
     });
   } catch (error) {
     console.error('Integration tests failed:', error);

@@ -27,7 +27,8 @@ async function run() {
   await until('the analysis', () => controller.doc);
   assert.ok(controller.doc.nodes.some((n) => n.id === 'T:Shop.Domain.Orders.Order'), 'Order is on the map');
   // The viewer booted inside the webview (CSP, nonce, bridge) and asked for the graph.
-  await until('the viewer to start in the webview', () => controller.ready, 60000);
+  await until('the viewer to start in the webview', () => controller.ready || controller.fatal, 60000);
+  assert.ok(controller.ready, `the map did not start: ${controller.fatal}`);
 
   console.log('· editor → map');
   const document = await vscode.workspace.openTextDocument(orderFile);

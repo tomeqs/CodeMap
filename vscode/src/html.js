@@ -26,4 +26,17 @@ function webviewHtml(viewerHtml, { cspSource, scriptNonce = nonce() }) {
     .replace(script, `<script type="module" nonce="${scriptNonce}">`);
 }
 
-module.exports = { nonce, webviewHtml };
+const PLACEHOLDER = '<script id="codemap-data" type="application/json">null</script>';
+
+/** A self-contained HTML map with the graph inside, like `codemap -f html` writes (for opening in a browser). */
+function standaloneHtml(viewerHtml, doc) {
+  const index = viewerHtml.indexOf(PLACEHOLDER);
+  if (index < 0) throw new Error('viewer.html does not contain the CodeMap data placeholder.');
+  const json = JSON.stringify(doc).replace(/<\//g, '<\\/'); // "</" must not appear inside a <script> element
+  const name = String(doc?.source?.name ?? '').replace(/[<>&"]/g, '');
+  return viewerHtml.slice(0, index).replace('<title>CodeMap</title>', `<title>CodeMap · ${name}</title>`)
+    + `<script id="codemap-data" type="application/json">${json}</script>`
+    + viewerHtml.slice(index + PLACEHOLDER.length);
+}
+
+module.exports = { nonce, standaloneHtml, webviewHtml };

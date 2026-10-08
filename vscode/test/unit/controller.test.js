@@ -30,7 +30,8 @@ test('opens the map, jumps between code and map, refreshes on save', { skip: !bu
     const extension = require('../../src/extension');
     const context = fakeContext(extensionPath, storage);
     const { controller } = extension.activate(context);
-    for (const id of ['codemap.open', 'codemap.revealInMap', 'codemap.callFlow', 'codemap.refresh', 'codemap.chooseTarget']) assert.ok(log.commands.has(id), id);
+    const manifest = require('../../package.json');
+    for (const { command } of manifest.contributes.commands) assert.ok(log.commands.has(command), `${command} is registered`);
 
     // open: the only solution in the workspace is picked, the webview gets the CSP'd viewer
     const opening = log.commands.get('codemap.open')();
@@ -79,6 +80,15 @@ test('opens the map, jumps between code and map, refreshes on save', { skip: !bu
     saveEmitter.fire({ uri: Uri.file(path.join(shop, 'README.md')) }); // not code: ignored
     await until(() => loads() === before + 1);
     assert.equal(log.posted.filter((m) => m.type === 'load').at(-1).preserve, true);
+
+    // the webview cannot show the map (no WebGL): the error says so, and the map opens in the browser instead
+    panel.receive({ type: 'fatal', message: 'The 3D map needs WebGL 2, which is not available here.', webgl: true });
+    await until(() => log.errors.some((e) => e.includes('WebGL 2')));
+    await log.commands.get('codemap.openInBrowser')();
+    assert.equal(log.external.length, 1);
+    const html = fs.readFileSync(log.external[0], 'utf8');
+    assert.match(html, /<title>CodeMap · Shop<\/title>/);
+    assert.ok(html.includes('"T:Shop.Domain.Orders.Order"'), 'the graph is inside the page');
 
     // closing the panel stops everything
     panel.dispose();

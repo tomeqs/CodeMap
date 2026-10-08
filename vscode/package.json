@@ -75,6 +75,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "codemap.openInBrowser",
+        "title": "Open Map in Browser",
+        "category": "CodeMap",
+        "icon": "$(link-external)"
+      },
+      {
         "command": "codemap.chooseTarget",
         "title": "Choose Solution…",
         "category": "CodeMap"
@@ -105,6 +111,11 @@
           "command": "codemap.refresh",
           "when": "activeWebviewPanelId == codemap.map",
           "group": "navigation"
+        },
+        {
+          "command": "codemap.openInBrowser",
+          "when": "activeWebviewPanelId == codemap.map",
+          "group": "navigation@2"
         }
       ],
       "commandPalette": [
