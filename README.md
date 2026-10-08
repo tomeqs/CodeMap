@@ -62,7 +62,8 @@ dla 6 platform. Dla każdej sprawdza, czy program uruchamia się i analizuje prz
 git tag v0.2.0 && git push origin v0.2.0     # GitHub release z plikami i sumami SHA256
 ```
 
-Workflow można też uruchomić ręcznie (*Actions → Release → Run workflow*): wtedy pliki trafiają tylko do artefaktów.
+Workflow można też uruchomić ręcznie (*Actions → Release → Run workflow*). Z podaną wersją (np. `0.2.0`) sam tworzy tag `v0.2.0`
+i release. Bez wersji pliki trafiają tylko do artefaktów.
 Jeśli w ustawieniach repozytorium jest sekret `NUGET_API_KEY`, narzędzie trafia też do nuget.org
 (`dotnet tool install -g CodeMap.Tool`). Lokalnie program dla wybranej platformy buduje:
 
