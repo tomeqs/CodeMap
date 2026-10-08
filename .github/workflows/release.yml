@@ -37,7 +37,8 @@ jobs:
           - { rid: linux-x64, os: ubuntu-latest, smoke: true }
           - { rid: linux-arm64, os: ubuntu-latest }
           - { rid: osx-arm64, os: macos-latest, smoke: true }
-          - { rid: osx-x64, os: macos-latest }
+          # Intel macOS needs no code signature, so it cross-compiles on Linux (no wait for a macOS runner).
+          - { rid: osx-x64, os: ubuntu-latest }
     runs-on: ${{ matrix.os }}
     defaults:
       run:
