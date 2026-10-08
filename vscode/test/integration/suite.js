@@ -22,6 +22,7 @@ async function run() {
   const log = [];
   const appendLine = controller.output.appendLine.bind(controller.output);
   controller.output.appendLine = (line) => (log.push(line), appendLine(line));
+  controller.diagnostics = log;
   try {
     await scenario(controller, log);
   } catch (error) {
@@ -64,6 +65,13 @@ async function scenario(controller) {
   console.log('· live update on save');
   const before = controller.doc;
   const text = fs.readFileSync(orderFile, 'utf8');
+  const log = controller.diagnostics;
+  const saved = vscode.workspace.onDidSaveTextDocument((d) => log.push(`test saw save of ${d.uri.fsPath}`));
+  const onFileChanged = controller.onFileChanged.bind(controller);
+  controller.onFileChanged = (file) => {
+    log.push(`onFileChanged ${file} panel=${!!controller.panel} doc=${!!controller.doc} root=${controller.doc?.source?.root} live=${controller.settings.get('liveUpdate', true)}`);
+    onFileChanged(file);
+  };
   try {
     const edit = new vscode.WorkspaceEdit();
     edit.insert(document.uri, document.lineAt(document.lineCount - 1).range.end, '\npublic sealed class LiveAddedType { }\n');
@@ -73,6 +81,7 @@ async function scenario(controller) {
     assert.ok(controller.doc.nodes.some((n) => n.id === 'T:Shop.Domain.Orders.LiveAddedType'), 'the new type is on the refreshed map');
     assert.ok(posted.some((m) => m.type === 'load' && m.preserve), 'refresh keeps the view');
   } finally {
+    saved.dispose();
     fs.writeFileSync(orderFile, text);
   }
 
