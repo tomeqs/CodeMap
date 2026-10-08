@@ -1,0 +1,48 @@
+# Tests on every push: the analyzer, and the VS Code extension (unit tests and a real VS Code under Xvfb).
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dotnet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet test -c Release
+
+  vscode:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+      - run: npm ci
+      - name: Bundle the analyzer and the viewer
+        run: npm run prepare-assets
+      - name: Unit tests
+        run: npm test
+      - name: Integration tests in VS Code
+        run: xvfb-run -a npm run test:integration
+      - name: Package
+        run: npx vsce package --no-dependencies --skip-license -o codemap.vsix

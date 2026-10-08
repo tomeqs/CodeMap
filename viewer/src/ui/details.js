@@ -3,6 +3,7 @@ import { MEMBER_KINDS, METRICS } from '../data/model.js';
 import { LIFETIME_COLORS } from '../data/di.js';
 import { entryMethodsOf, flowIndex } from '../data/flow.js';
 import { clear, fmt, h, shortName } from './dom.js';
+import { host } from '../data/host.js';
 
 const METRICS_BY_LEVEL = {
   project: ['types', 'loc', 'complexity', 'files', 'lines', 'ca', 'ce', 'instability', 'abstractness', 'distance'],
@@ -77,12 +78,21 @@ export class DetailsPanel {
     if (node.location) {
       const root = model.doc.source?.root;
       const abs = root ? `${root.replace(/\\/g, '/').replace(/\/$/, '')}/${node.location.file}` : node.location.file;
+      const open = (e) => {
+        e.preventDefault();
+        host.openFile(node.location.file, node.location.line);
+      };
       body.append(
-        h('div', { class: 'loc-line' },
-          h('code', {}, `${node.location.file}:${node.location.line}`),
-          root ? h('a', { href: `vscode://file/${encodeURI(abs)}:${node.location.line}`, title: 'Open in VS Code' }, 'VS Code') : null,
-          h('a', { href: '#', title: 'Copy path', onClick: (e) => copyText(e, `${abs}:${node.location.line}`) }, 'copy'),
-        ),
+        host
+          ? h('div', { class: 'loc-line' },
+            h('a', { href: '#', class: 'code-link', title: 'Open in the editor (or double-click the node)', onClick: open }, h('code', {}, `${node.location.file}:${node.location.line}`)),
+            h('a', { href: '#', title: 'Open in the editor', onClick: open }, 'Open'),
+          )
+          : h('div', { class: 'loc-line' },
+            h('code', {}, `${node.location.file}:${node.location.line}`),
+            root ? h('a', { href: `vscode://file/${encodeURI(abs)}:${node.location.line}`, title: 'Open in VS Code' }, 'VS Code') : null,
+            h('a', { href: '#', title: 'Copy path', onClick: (e) => copyText(e, `${abs}:${node.location.line}`) }, 'copy'),
+          ),
       );
       if (node.extraLocations?.length) body.append(h('div', { class: 'small faint' }, `+ ${node.extraLocations.length} more partial declaration(s): `, node.extraLocations.map((l) => l.file).join(', ')));
     }

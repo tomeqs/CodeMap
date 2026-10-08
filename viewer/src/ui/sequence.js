@@ -1,5 +1,6 @@
 import { sequenceOf, toMermaid } from '../data/flow.js';
 import { clear, h, shortName } from './dom.js';
+import { host } from '../data/host.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const ROW = 30;
@@ -55,7 +56,7 @@ export class SequencePanel {
       : null;
 
     const svg = this.renderSvg(root);
-    const canDownload = window.self === window.top; // downloads are blocked in sandboxed frames
+    const canDownload = !!host || window.self === window.top; // downloads are blocked in sandboxed frames (VS Code saves them)
     clear(this.el).append(
       h('div', { class: 'seq-head' },
         h('b', {}, 'Sequence'),
@@ -256,6 +257,7 @@ function standalone(svg) {
 }
 
 function download(name, content, type) {
+  if (host) return host.save(name, content, type);
   const a = h('a', { href: URL.createObjectURL(new Blob([content], { type })), download: name });
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -267,6 +269,11 @@ function copy(button, content) {
     button.textContent = 'Copied';
     setTimeout(() => (button.textContent = 'Copy Mermaid'), 1500);
   };
+  if (host) {
+    host.copy(content);
+    return done();
+  }
+
   const fallback = () => {
     const area = h('textarea', { class: 'seq-copy', readonly: true }, content);
     button.closest('#sequence').querySelector('.seq-body').prepend(area);

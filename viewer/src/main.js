@@ -16,6 +16,7 @@ import { clear, debounce, fmt, h, shortName } from './ui/dom.js';
 import { ServerClient } from './data/server.js';
 import { ProjectsScreen } from './ui/projects.js';
 import { SequencePanel } from './ui/sequence.js';
+import { host } from './data/host.js';
 
 const MAX_GALAXY_UNITS = 7000;
 const NEXT_LEVEL = { project: 'namespace', namespace: 'type', type: 'member' };
@@ -136,6 +137,42 @@ class App {
     this.toast(changes ? `Map updated: ${changes} ${plural}` : 'Map updated', 'info');
   }
 
+  // ------------------------------------------------------------------ VS Code extension
+
+  /** Inside the VS Code webview: the extension analyzes the workspace and drives the map. */
+  enableHost(host) {
+    this.host = host;
+    const reanalyze = document.getElementById('btn-reanalyze');
+    reanalyze.classList.remove('hidden');
+    reanalyze.addEventListener('click', () => host.post('reanalyze'));
+    document.getElementById('welcome').classList.add('hidden');
+    this.setLiveStatus('Analyzing the workspace…');
+    host.onMessage((message) => {
+      switch (message.type) {
+        case 'load':
+          this.liveStatus = null;
+          this.load(message.doc, { preserve: !!message.preserve && !!this.model });
+          if (message.watching !== undefined) this.hostWatching = !!message.watching;
+          this.updateHud();
+          break;
+        case 'status':
+          this.setLiveStatus(message.text ?? null);
+          break;
+        case 'error':
+          this.setLiveStatus(null);
+          this.toast(message.message);
+          break;
+        case 'reveal':
+          if (this.model?.get(message.id)) this.reveal(message.id);
+          break;
+        case 'flow':
+          if (this.model) this.showFlow(message.ids, { sequence: !!message.sequence });
+          break;
+      }
+    });
+    host.post('ready');
+  }
+
   // ------------------------------------------------------------------ local app (codemap ui)
 
   enableServer(client) {
@@ -157,6 +194,7 @@ class App {
 
   /** The server watches at most one project; it only counts as "live" when it is the one on screen. */
   get watching() {
+    if (this.host) return this.hostWatching ? 'workspace' : null; // VS Code: live updates on save (extension setting)
     return this.watchedPath && this.serverProject && samePath(this.watchedPath, this.serverProject.path) ? this.watchedPath : null;
   }
 
@@ -698,6 +736,8 @@ class App {
   drill(id) {
     const node = this.model.get(id);
     if (!node) return;
+    // In VS Code a double click on a method (or anything in the call flow) opens its code.
+    if (host && node.location && (node.level === 'member' || this.state.view === 'flow')) return host.openFile(node.location.file, node.location.line);
     if (this.state.view === 'city') {
       if (node.levelIndex <= 1) {
         this.state.scope = node.id;
@@ -768,7 +808,12 @@ class App {
   }
 
   updateHud() {
-    if (!this.view) return;
+    if (!this.view) {
+      // nothing loaded yet (VS Code: the first analysis is running)
+      this.hud.replaceChildren(...(this.liveStatus ? [h('div', {}, '⟳ ' + this.liveStatus)] : []));
+      return;
+    }
+
     const units = this.view.units?.length ?? 0;
     const links = this.view.links?.length ?? 0;
     const view = this.state.view;
@@ -1023,6 +1068,7 @@ class App {
 async function boot() {
   const app = new App();
   window.codemap = app;
+  if (host) return app.enableHost(host);
   const embedded = document.getElementById('codemap-data')?.textContent?.trim();
   const server = ServerClient.detect();
   try {

@@ -1,0 +1,177 @@
+{
+  "name": "codemap",
+  "displayName": "CodeMap",
+  "description": "Interactive 3D map of your C# solution: dependencies, architecture layers, DI lifetimes, call flows and sequence diagrams, one click away from the code.",
+  "version": "0.1.0",
+  "publisher": "tomeqs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tomeqs/CodeMap"
+  },
+  "homepage": "https://github.com/tomeqs/CodeMap",
+  "bugs": "https://github.com/tomeqs/CodeMap/issues",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "csharp",
+    "dotnet",
+    "architecture",
+    "dependency graph",
+    "code map",
+    "sequence diagram",
+    "3d"
+  ],
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#04060c",
+    "theme": "dark"
+  },
+  "main": "./src/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onWebviewPanel:codemap.map"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "The analyzer only reads the code, but in untrusted workspaces CodeMap ignores analyzer paths set by the workspace.",
+      "restrictedConfigurations": [
+        "codemap.analyzerPath",
+        "codemap.dotnetPath"
+      ]
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "codemap.open",
+        "title": "Open Code Map",
+        "category": "CodeMap",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "codemap.revealInMap",
+        "title": "Show in Code Map",
+        "category": "CodeMap"
+      },
+      {
+        "command": "codemap.callFlow",
+        "title": "Show Call Flow",
+        "category": "CodeMap"
+      },
+      {
+        "command": "codemap.refresh",
+        "title": "Analyze Again",
+        "category": "CodeMap",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "codemap.chooseTarget",
+        "title": "Choose Solution…",
+        "category": "CodeMap"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "codemap.open",
+          "when": "explorerResourceIsFolder || resourceExtname =~ /^\\.(sln|slnx|slnf|csproj)$/",
+          "group": "navigation@90"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "codemap.revealInMap",
+          "when": "resourceLangId == csharp",
+          "group": "navigation@90"
+        },
+        {
+          "command": "codemap.callFlow",
+          "when": "resourceLangId == csharp",
+          "group": "navigation@91"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "codemap.refresh",
+          "when": "activeWebviewPanelId == codemap.map",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "codemap.revealInMap",
+          "when": "editorLangId == csharp"
+        },
+        {
+          "command": "codemap.callFlow",
+          "when": "editorLangId == csharp"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "codemap.revealInMap",
+        "key": "ctrl+alt+m",
+        "mac": "cmd+alt+m",
+        "when": "editorLangId == csharp"
+      }
+    ],
+    "configuration": {
+      "title": "CodeMap",
+      "properties": {
+        "codemap.liveUpdate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Analyze again and refresh the map (keeping the camera and selection) when C# or project files are saved."
+        },
+        "codemap.includeTests": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include test projects in the map."
+        },
+        "codemap.includeExternal": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include framework and NuGet types the code depends on."
+        },
+        "codemap.gitHistory": {
+          "type": "boolean",
+          "default": true,
+          "description": "Read git history: churn, hotspots and files that change together."
+        },
+        "codemap.analyzerPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Analyzer to use instead of the one bundled with the extension: the standalone `codemap` executable from the [releases](https://github.com/tomeqs/CodeMap/releases) (works without .NET) or a `codemap.dll`."
+        },
+        "codemap.dotnetPath": {
+          "type": "string",
+          "default": "dotnet",
+          "scope": "machine",
+          "description": "The dotnet command that runs the bundled analyzer (.NET 8 or newer)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "prepare-assets": "node scripts/prepare.js",
+    "test": "node --test \"test/unit/*.test.js\"",
+    "test:integration": "node test/integration/run.js",
+    "package": "npm run prepare-assets && vsce package --no-dependencies --skip-license"
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "3.9.2"
+  }
+}

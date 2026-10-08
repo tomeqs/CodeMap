@@ -1,8 +1,9 @@
 import { EDGE_KINDS, KIND_COLORS, TAG_COLORS, turboCss } from '../data/palette.js';
 import { LIFETIMES } from '../data/di.js';
 import { VIOLATION_COLORS } from '../views/galaxy.js';
-import { METRICS, defaultEdgeKinds } from '../data/model.js';
+import { METRICS, defaultEdgeKinds, serializeDoc } from '../data/model.js';
 import { clear, fmt, h, shortName } from './dom.js';
+import { host } from '../data/host.js';
 
 /** Left panel: filters, insights (cycles, hotspots, dead code...) and data info. */
 export class Sidebar {
@@ -402,11 +403,12 @@ export class Sidebar {
         kv(Object.entries(stats).filter(([k]) => k.startsWith('edges.')).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k.slice(6), fmt(v)])),
       ),
       // Downloads are blocked inside sandboxed frames (embedded previews), so only offer them top-level.
-      window.self === window.top && h('div', { class: 'section' },
+      (host || window.self === window.top) && h('div', { class: 'section' },
         h('button', {
           class: 'small',
           onClick: () => {
-            const blob = new Blob([JSON.stringify(doc)], { type: 'application/json' });
+            if (host) return host.save(`${doc.source?.name ?? 'codemap'}.codemap.json`, serializeDoc(doc), 'application/json');
+            const blob = new Blob([serializeDoc(doc)], { type: 'application/json' });
             const a = h('a', { href: URL.createObjectURL(blob), download: `${doc.source?.name ?? 'codemap'}.codemap.json` });
             a.click();
             setTimeout(() => URL.revokeObjectURL(a.href), 1000);

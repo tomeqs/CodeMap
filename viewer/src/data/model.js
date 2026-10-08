@@ -396,6 +396,17 @@ function fuzzy(text, query) {
   return i === query.length && query.length > 2;
 }
 
+/** Fields the model adds to the graph's nodes at runtime (ancestors, colours…): not part of the file format. */
+const RUNTIME_NODE_KEYS = new Set(['level', 'levelIndex', 'anc', 'projectNode', 'namespaceNode', 'typeNode', 'isTest', 'searchText', 'baseColor']);
+
+/** The loaded graph as CodeMap JSON again (the nodes hold circular runtime references). */
+export function serializeDoc(doc) {
+  const nodes = new Set(doc.nodes);
+  return JSON.stringify(doc, function (key, value) {
+    return nodes.has(this) && RUNTIME_NODE_KEYS.has(key) ? undefined : value;
+  });
+}
+
 export function defaultEdgeKinds(model) {
   const kinds = new Set();
   for (const [kind, info] of Object.entries(EDGE_KINDS)) if (info.on) kinds.add(kind);

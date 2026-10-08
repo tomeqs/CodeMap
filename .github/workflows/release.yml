@@ -1,4 +1,4 @@
-# Builds the standalone executables (Windows, Linux, macOS) and the dotnet tool package.
+# Builds the standalone executables (Windows, Linux, macOS), the dotnet tool package and the VS Code extension.
 # Push a tag such as v0.2.0 (or run it by hand with a version) to publish a GitHub release;
 # run it by hand without a version to just get the files as artifacts.
 name: Release
@@ -87,13 +87,58 @@ jobs:
             codemap-*.tar.gz
           if-no-files-found: error
 
+  vscode:
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+
+      - name: Version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then v="${GITHUB_REF_NAME#v}"
+          elif [[ -n "$INPUT_VERSION" ]]; then v="${INPUT_VERSION#v}"
+          else v="0.0.0-dev.$GITHUB_RUN_NUMBER"; fi
+          if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then echo "::error::Not a version: $v"; exit 1; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+      - name: Set the extension version
+        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
+      - name: Package the extension
+        run: |
+          npm run prepare-assets
+          npm test
+          npx vsce package --no-dependencies --skip-license -o "../codemap-${{ steps.version.outputs.version }}.vsix"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codemap-vscode
+          path: codemap-*.vsix
+          if-no-files-found: error
+
   release:
-    needs: build
+    needs: [build, vscode]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -145,3 +190,11 @@ jobs:
       - name: Publish the dotnet tool to NuGet
         if: steps.version.outputs.release == 'true' && env.NUGET_API_KEY != ''
         run: dotnet nuget push "dist/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Publish the extension to the VS Code Marketplace
+        if: steps.version.outputs.release == 'true' && env.VSCE_PAT != ''
+        run: npx --yes @vscode/vsce@3.9.2 publish --packagePath dist/*.vsix --skip-duplicate
+
+      - name: Publish the extension to Open VSX (VSCodium, Cursor…)
+        if: steps.version.outputs.release == 'true' && env.OVSX_PAT != ''
+        run: npx --yes ovsx@1.2.0 publish dist/*.vsix --skip-duplicate
