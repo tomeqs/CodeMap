@@ -41,10 +41,17 @@ async function scenario(controller) {
   await until('the analysis', () => controller.doc);
   assert.ok(controller.doc.nodes.some((n) => n.id === 'T:Shop.Domain.Orders.Order'), 'Order is on the map');
   // The viewer booted inside the webview (CSP, nonce, bridge) and asked for the graph.
+  let step = 'open';
+  const mark = (name) => {
+    step = name;
+    console.log(`· ${name}`);
+    controller.diagnostics.push(`step ${name}: panel=${!!controller.panel} visible=${controller.panel?.visible} column=${controller.panel?.viewColumn}`);
+  };
+  controller.panel.onDidDispose(() => controller.diagnostics.push(`map panel disposed during "${step}"`));
   await until('the viewer to start in the webview', () => controller.ready || controller.fatal, 60000);
   assert.ok(controller.ready, `the map did not start: ${controller.fatal}`);
 
-  console.log('· editor → map');
+  mark('editor → map');
   const document = await vscode.workspace.openTextDocument(orderFile);
   const editor = await vscode.window.showTextDocument(document, vscode.ViewColumn.One);
   const line = document.getText().split('\n').findIndex((l) => l.includes('public void AddLine'));
@@ -56,13 +63,14 @@ async function scenario(controller) {
   assert.deepEqual(posted.at(-1), { type: 'reveal', id: 'M:Shop.Domain.Orders.Order.AddLine(Shop.Domain.Catalog.Product,System.Int32)' });
   await vscode.commands.executeCommand('codemap.callFlow');
   assert.equal(posted.at(-1).type, 'flow');
+  controller.diagnostics.push(`after call flow: panel=${!!controller.panel}`);
 
-  console.log('· map → editor');
+  mark('map → editor');
   await controller.onMessage({ type: 'openFile', file: 'src/Shop.Domain/Catalog/Product.cs', line: 3 });
   await until('the file to open', () => vscode.window.activeTextEditor?.document.uri.fsPath.endsWith('Product.cs'), 10000);
   assert.equal(vscode.window.activeTextEditor.selection.active.line, 2);
 
-  console.log('· live update on save');
+  mark('live update on save');
   const before = controller.doc;
   const text = fs.readFileSync(orderFile, 'utf8');
   const log = controller.diagnostics;
@@ -85,7 +93,7 @@ async function scenario(controller) {
     fs.writeFileSync(orderFile, text);
   }
 
-  console.log('· close');
+  mark('close');
   controller.panel.dispose();
   assert.equal(controller.panel, null);
   console.log('Integration tests passed.');
