@@ -34,9 +34,16 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: viewer/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
       - run: npm ci
       - name: Chromium for the smoke tests
         run: npx playwright install --with-deps chromium
+      - name: Sample graph for the smoke tests (the analyzer on samples/Shop)
+        run: |
+          dotnet run --project ../src/CodeMap.Cli -c Release -- ../samples/Shop/Shop.sln -f json --no-git -o "$RUNNER_TEMP/shop"
+          cp "$RUNNER_TEMP/shop/Shop.codemap.json" public/sample.codemap.json
       - run: npm run build
       - name: The viewer built into the CLI matches the sources
         run: git diff --exit-code --stat -- ../src/CodeMap.Cli/Assets/viewer.html
