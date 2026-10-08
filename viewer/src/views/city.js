@@ -16,6 +16,7 @@ import {
 import { hierarchy, treemap, treemapSquarify } from 'd3-hierarchy';
 import { EDGE_KINDS } from '../data/palette.js';
 import { buildingMaterial, createLines, FlowParticles } from '../scene/materials.js';
+import { disposeObject } from '../scene/disposer.js';
 
 const SEGMENTS = 18;
 const PROJECT_SLAB = 2.2;
@@ -72,12 +73,14 @@ export class CityView {
     this.stage.setBloom(0.75, 0.45, 0.35);
     this.stage.controls.maxPolarAngle = Math.PI * 0.49;
     this.stage.controls.minDistance = 8;
+    this.stage.invalidate();
   }
 
   deactivate() {
     this.stage.scene.remove(this.group);
     this.stage.controls.maxPolarAngle = Math.PI;
     this.labels.clear();
+    this.stage.invalidate();
   }
 
   setOptions(options) {
@@ -208,32 +211,40 @@ export class CityView {
   }
 
   updateMatrices() {
-    for (const u of this.units) {
-      const grow = u === this.hovered ? 1.08 : 1;
-      matrix.makeScale(u.w * grow, u.height, u.d * grow);
-      matrix.setPosition(u.x, u.base, u.z);
-      this.buildingMesh.setMatrixAt(u.index, matrix);
-    }
-
+    for (const u of this.units) this.setMatrix(u);
+    this.buildingMesh.instanceMatrix.clearUpdateRanges();
     this.buildingMesh.instanceMatrix.needsUpdate = true;
     this.buildingMesh.computeBoundingSphere();
+    this.stage.invalidate();
+  }
+
+  setMatrix(u) {
+    const grow = u === this.hovered ? 1.08 : 1;
+    matrix.makeScale(u.w * grow, u.height, u.d * grow);
+    matrix.setPosition(u.x, u.base, u.z);
+    this.buildingMesh.setMatrixAt(u.index, matrix);
   }
 
   recolor() {
-    const mode = this.state?.colorMode ?? 'project';
-    const h = this.highlight;
-    for (const u of this.units) {
-      this.model.colorOf(u.node, mode, color);
-      let factor = 0.85;
-      if (h) {
-        if (h.primary === u.id) factor = 1.55;
-        else if (h.nodes.has(u.id)) factor = 1.15;
-        else factor = 0.18;
-      } else if (u === this.hovered) factor = 1.4;
-      this.buildingMesh.setColorAt(u.index, color.multiplyScalar(factor));
+    for (const u of this.units) this.setUnitColor(u);
+    if (this.buildingMesh.instanceColor) {
+      this.buildingMesh.instanceColor.clearUpdateRanges();
+      this.buildingMesh.instanceColor.needsUpdate = true;
     }
 
-    if (this.buildingMesh.instanceColor) this.buildingMesh.instanceColor.needsUpdate = true;
+    this.stage.invalidate();
+  }
+
+  setUnitColor(u) {
+    const h = this.highlight;
+    this.model.colorOf(u.node, this.state?.colorMode ?? 'project', color);
+    let factor = 0.85;
+    if (h) {
+      if (h.primary === u.id) factor = 1.55;
+      else if (h.nodes.has(u.id)) factor = 1.15;
+      else factor = 0.18;
+    } else if (u === this.hovered) factor = 1.4;
+    this.buildingMesh.setColorAt(u.index, color.multiplyScalar(factor));
   }
 
   setHighlight(highlight) {
@@ -243,12 +254,23 @@ export class CityView {
   }
 
   setHovered(id) {
-    const unit = id ? this.byId.get(id) : null;
+    const unit = id ? this.byId?.get(id) ?? null : null;
     if (unit === this.hovered) return;
+    const previous = this.hovered;
     this.hovered = unit;
-    this.updateMatrices();
-    this.recolor();
+    const mesh = this.buildingMesh;
+    for (const u of [previous, unit]) {
+      if (!u) continue;
+      this.setMatrix(u);
+      this.setUnitColor(u);
+      mesh.instanceMatrix.addUpdateRange(u.index * 16, 16);
+      mesh.instanceColor.addUpdateRange(u.index * 3, 3);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.instanceColor.needsUpdate = true;
     if (!this.highlight) this.refreshArcs();
+    this.stage.invalidate();
   }
 
   // ------------------------------------------------------------------ arcs
@@ -291,6 +313,7 @@ export class CityView {
     this.arcs.geometry.attributes.position.needsUpdate = true;
     this.arcs.geometry.attributes.color.needsUpdate = true;
     this.group.add(this.arcs);
+    this.stage.invalidate();
 
     const flowing = selected.length > 1200 ? selected.slice(0, 1200) : selected;
     this.particles.setPaths(
@@ -307,9 +330,10 @@ export class CityView {
   // ------------------------------------------------------------------ frame
 
   update(dt) {
-    this.particles.update(dt, tmp);
+    if (this.particles.count) this.particles.update(dt, tmp);
     if (this.options.labels) this.renderLabels();
     else this.labels.clear();
+    return this.particles.count ? 'ambient' : false;
   }
 
   renderLabels() {
@@ -373,13 +397,16 @@ export class CityView {
     const narrow = Math.max(1, 1.2 / Math.max(0.3, this.stage.camera.aspect));
     const position = new Vector3(size * 0.62, size * 0.78, size * 1.05).multiplyScalar(narrow);
     if (animate) this.stage.flyTo(target, position, 1000);
-    else {
-      this.stage.controls.target.copy(target);
-      this.stage.camera.position.copy(position);
-    }
+    else this.stage.jumpTo(target, position);
   }
 
-  dispose() {}
+  dispose() {
+    this.stage.scene.remove(this.group);
+    disposeObject(this.group);
+    this.boxGeometry.dispose();
+    this.units = [];
+    this.links = [];
+  }
 }
 
 function arcCurve(s, t) {

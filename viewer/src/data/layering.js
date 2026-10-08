@@ -37,7 +37,8 @@ export function computeLayers(nodes, links) {
   }
 
   const upward = new Set(links.filter((l) => layer.has(l.source) && layer.has(l.target) && l.source !== l.target && layer.get(l.target) >= layer.get(l.source)));
-  const count = ids.length ? Math.max(...layer.values()) + 1 : 0;
+  let count = 0;
+  for (const value of layer.values()) if (value + 1 > count) count = value + 1; // no spread: it overflows the stack on big graphs
   return { layerOf: layer, count, upward };
 }
 
@@ -59,28 +60,22 @@ function orderNodes(ids, out, inc) {
     }
   }
 
-  const name = (i) => components[i][0];
-  const ready = components.map((_, i) => i).filter((i) => indegree[i] === 0).sort((a, b) => cmp(name(a), name(b)));
+  // Components without remaining dependencies, the one with the smallest name first.
+  const ready = new Heap((a, b) => cmp(components[a][0], components[b][0]));
+  components.forEach((_, i) => indegree[i] === 0 && ready.push(i));
   const order = [];
-  while (ready.length) {
-    const next = ready.shift();
+  while (ready.size) {
+    const next = ready.pop();
     const members = components[next];
-    order.push(...(members.length === 1 ? members : greedyOrder(members, out, inc)));
-    let added = false;
-    for (const s of successors[next]) {
-      if (--indegree[s] === 0) {
-        ready.push(s);
-        added = true;
-      }
-    }
-
-    if (added) ready.sort((a, b) => cmp(name(a), name(b)));
+    if (members.length === 1) order.push(members[0]);
+    else for (const m of greedyOrder(members, out, inc)) order.push(m);
+    for (const s of successors[next]) if (--indegree[s] === 0) ready.push(s);
   }
 
   return order;
 }
 
-/** Eades–Lin–Smyth inside one strongly connected component. */
+/** Eades–Lin–Smyth inside one strongly connected component (`members` is sorted). */
 function greedyOrder(members, out, inc) {
   const remaining = new Set(members);
   const outW = new Map();
@@ -102,11 +97,14 @@ function greedyOrder(members, out, inc) {
     for (const [s, w] of inc.get(node)) if (remaining.has(s)) outW.set(s, outW.get(s) - w);
   };
 
+  // The remaining nodes in name order, compacted now and then (instead of sorting them on every pass).
+  let sorted = members;
   while (remaining.size) {
+    if (sorted.length > remaining.size * 2) sorted = sorted.filter((n) => remaining.has(n));
     let changed = true;
     while (changed && remaining.size) {
       changed = false;
-      for (const n of [...remaining].sort()) {
+      for (const n of sorted) {
         if (remaining.has(n) && outW.get(n) === 0) {
           back.push(n);
           remove(n);
@@ -114,7 +112,7 @@ function greedyOrder(members, out, inc) {
         }
       }
 
-      for (const n of [...remaining].sort()) {
+      for (const n of sorted) {
         if (remaining.has(n) && inW.get(n) === 0) {
           front.push(n);
           remove(n);
@@ -125,7 +123,7 @@ function greedyOrder(members, out, inc) {
 
     if (!remaining.size) break;
     let best = null;
-    for (const n of [...remaining].sort()) if (best === null || outW.get(n) - inW.get(n) > outW.get(best) - inW.get(best)) best = n;
+    for (const n of sorted) if (remaining.has(n) && (best === null || outW.get(n) - inW.get(n) > outW.get(best) - inW.get(best))) best = n;
     front.push(best);
     remove(best);
   }
@@ -192,4 +190,48 @@ function stronglyConnected(ids, out) {
 
 function cmp(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Binary min-heap. */
+class Heap {
+  constructor(compare) {
+    this.compare = compare;
+    this.items = [];
+  }
+
+  get size() {
+    return this.items.length;
+  }
+
+  push(item) {
+    const items = this.items;
+    items.push(item);
+    for (let i = items.length - 1; i > 0; ) {
+      const parent = (i - 1) >> 1;
+      if (this.compare(items[i], items[parent]) >= 0) break;
+      [items[i], items[parent]] = [items[parent], items[i]];
+      i = parent;
+    }
+  }
+
+  pop() {
+    const items = this.items;
+    const top = items[0];
+    const last = items.pop();
+    if (items.length) {
+      items[0] = last;
+      for (let i = 0; ; ) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < items.length && this.compare(items[l], items[m]) < 0) m = l;
+        if (r < items.length && this.compare(items[r], items[m]) < 0) m = r;
+        if (m === i) break;
+        [items[i], items[m]] = [items[m], items[i]];
+        i = m;
+      }
+    }
+
+    return top;
+  }
 }

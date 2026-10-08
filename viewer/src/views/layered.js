@@ -92,8 +92,7 @@ export class LayeredView extends GalaxyView {
     this.settled = false;
     this.pendingFocus = null;
 
-    const start = performance.now();
-    while (performance.now() - start < 120 && sim.alpha() > 0.2) sim.tick();
+    this.prewarm(sim);
     for (const u of units) this.positions.set(u.id, { x: u.x, y: u.y, z: u.z });
     this.updateMatrices();
     this.updateLinePositions();
@@ -148,8 +147,9 @@ export class LayeredView extends GalaxyView {
 
   update(dt) {
     const moving = this.simulation && this.simulation.alpha() > this.simulation.alphaMin();
-    super.update(dt);
+    const result = super.update(dt);
     if (moving) this.updatePlanes();
+    return result;
   }
 
   /** Frames the stack of planes (their real extent, not the centre of mass of the nodes). */

@@ -22,8 +22,18 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { perf } from '../perf/stats.js';
 
-/** Renderer, camera, controls, bloom and an animation loop shared by every view. */
+/** Ambient motion (particles, pulsing halo) stops this long after the last input, to save battery. */
+const AMBIENT_TIMEOUT = 20000;
+/** Ambient-only frames run at most this often (ms): ~30 fps is plenty for drifting particles. */
+const AMBIENT_INTERVAL = 33;
+
+/**
+ * Renderer, camera, controls and bloom shared by every view. Frames are drawn on demand: when something
+ * changed (invalidate), while the camera moves or flies, and while a view says it is animating – an idle
+ * map draws nothing.
+ */
 export class Stage {
   constructor(container) {
     this.container = container;
@@ -62,10 +72,21 @@ export class Stage {
     this.stars = this.createStars();
     this.scene.add(this.stars);
 
+    this.raf = 0;
+    this.ambientTimer = 0;
+    this.dirty = true;
+    this.lastInput = performance.now();
+    this.ambientSleeping = false;
+    this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    this.controls.addEventListener('change', () => this.invalidate());
+    const input = () => this.onInput();
+    for (const type of ['pointerdown', 'pointermove', 'wheel']) this.renderer.domElement.addEventListener(type, input, { passive: true });
+    window.addEventListener('keydown', input);
+    document.addEventListener('visibilitychange', () => document.hidden || this.invalidate());
+
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.resize();
-    this.renderer.setAnimationLoop(() => this.frame());
   }
 
   onFrame(fn) {
@@ -83,36 +104,92 @@ export class Stage {
     this.bloom.setSize(w, h);
     this.width = w;
     this.height = h;
+    this.invalidate();
   }
 
   setBloom(strength, radius = 0.55, threshold = 0.18) {
     this.bloom.strength = strength;
     this.bloom.radius = radius;
     this.bloom.threshold = threshold;
+    this.invalidate();
   }
 
   setAtmosphere({ background = '#04060c', fog = 0, stars = true } = {}) {
     this.scene.background = new Color(background);
     this.scene.fog = fog > 0 ? new FogExp2(background, fog) : null;
     this.stars.visible = stars;
+    this.invalidate();
   }
 
   /** Stops drawing (e.g. while a full-screen panel covers the map) to save GPU and battery. */
   setPaused(paused) {
     this.paused = paused;
     this.lastTime = performance.now();
+    if (!paused) this.invalidate();
   }
 
+  /** Something on screen changed: draw a frame (at most one per display refresh). */
+  invalidate() {
+    this.dirty = true;
+    this.requestFrame();
+  }
+
+  requestFrame() {
+    if (this.raf || this.paused) return;
+    clearTimeout(this.ambientTimer);
+    this.ambientTimer = 0;
+    this.raf = requestAnimationFrame((now) => this.frame(now));
+  }
+
+  /** Pointer, wheel or keyboard: ambient motion wakes up again. */
+  onInput() {
+    this.lastInput = performance.now();
+    if (this.ambientSleeping) {
+      this.ambientSleeping = false;
+      this.requestFrame();
+    }
+  }
+
+  /** Ambient motion runs while the user is around, unless they asked the system for less motion. */
+  ambientAllowed(now) {
+    return !this.reducedMotion?.matches && !document.hidden && now - this.lastInput < AMBIENT_TIMEOUT;
+  }
+
+  /**
+   * One frame. Listeners (the active view) return true while something moves (layout, animation), or
+   * 'ambient' for decorative motion that may slow down and stop when the user is away.
+   */
   frame() {
+    this.raf = 0;
     if (this.paused) return;
     const now = performance.now();
     const dt = Math.min(0.1, (now - this.lastTime) / 1000);
     this.lastTime = now;
+    const flying = !!this.flight;
     this.updateFlight(now);
-    this.controls.update();
-    for (const fn of this.listeners) fn(dt, now);
-    this.stars.rotation.y += dt * 0.004;
-    this.composer.render();
+    // OrbitControls reports a change while damping (and auto-rotating); its 'change' event also invalidates.
+    let busy = this.controls.update() || flying;
+    let ambient = false;
+    const draw = this.dirty;
+    this.dirty = false;
+    for (const fn of this.listeners) {
+      const result = fn(dt, now);
+      if (result === 'ambient') ambient = true;
+      else if (result) busy = true;
+    }
+
+    const render = draw || busy || ambient || this.dirty;
+    if (render) {
+      this.stars.rotation.y += dt * 0.004;
+      this.composer.render();
+    }
+
+    perf.frame(now, performance.now() - now, render);
+    if (busy || this.dirty) this.requestFrame();
+    else if (ambient) {
+      if (this.ambientAllowed(now)) this.ambientTimer = setTimeout(() => this.requestFrame(), AMBIENT_INTERVAL);
+      else this.ambientSleeping = true;
+    }
   }
 
   /** Smoothly moves the camera so that it looks at `target` from `position`. */
@@ -125,6 +202,15 @@ export class Stage {
       fromPos: this.camera.position.clone(),
       toPos: position.clone(),
     };
+    this.invalidate();
+  }
+
+  /** Puts the camera there at once. */
+  jumpTo(target, position) {
+    this.flight = null;
+    this.controls.target.copy(target);
+    this.camera.position.copy(position);
+    this.invalidate();
   }
 
   /** Flies to a point keeping the current viewing direction, at the given distance. */

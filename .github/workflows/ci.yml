@@ -1,4 +1,4 @@
-# Tests on every push: the analyzer, and the VS Code extension (unit tests and a real VS Code under Xvfb).
+# Tests on every push: the analyzer, the viewer (smoke tests in headless Chromium) and the VS Code extension (unit tests and a real VS Code under Xvfb).
 name: CI
 
 on:
@@ -21,6 +21,27 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - run: dotnet test -c Release
+
+  viewer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: viewer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+      - run: npm ci
+      - name: Chromium for the smoke tests
+        run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: The viewer built into the CLI matches the sources
+        run: git diff --exit-code --stat -- ../src/CodeMap.Cli/Assets/viewer.html
+      - name: Smoke tests (headless Chromium without a GPU)
+        run: npm run test:smoke
 
   vscode:
     runs-on: ubuntu-latest

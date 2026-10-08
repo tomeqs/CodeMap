@@ -29,28 +29,39 @@ export class ZoomView extends GalaxyView {
 
   /** units / links: every visible type of the solution and the links between them (the base layout). */
   build(units, links, state) {
+    this.savePositions(); // the base layout if it is on screen, not the opened clusters
+    this.units = [];
     this.semantic = false;
     this.open = new Set();
     super.build(units, links, state, []);
   }
 
+  savePositions() {
+    if (!this.semantic) super.savePositions();
+  }
+
   update(dt) {
-    super.update(dt);
+    const result = super.update(dt);
     if (!this.semantic) {
       if (this.settled) this.enterSemantic();
-      return;
+      return result || this.semantic; // one more frame to show the opened clusters
     }
 
+    let busy = !!this.animation;
     if (this.animation) this.animate();
     const now = performance.now();
     const camera = this.stage.camera;
     const moved = camera.position.distanceToSquared(lastCamera) > 1e-4 || this.stage.controls.target.distanceToSquared(lastTarget) > 1e-4;
-    if (moved && now - (this.lastEvaluation ?? 0) > 110) {
-      lastCamera.copy(camera.position);
-      lastTarget.copy(this.stage.controls.target);
-      this.lastEvaluation = now;
-      this.evaluate();
+    if (moved) {
+      if (now - (this.lastEvaluation ?? 0) > 110) {
+        lastCamera.copy(camera.position);
+        lastTarget.copy(this.stage.controls.target);
+        this.lastEvaluation = now;
+        this.evaluate();
+      } else busy = true; // evaluate again once the camera has come to rest
     }
+
+    return busy || !!this.animation || result;
   }
 
   /** Members sit on a small sphere around their type: keep them smaller than in the members level. */
@@ -265,6 +276,7 @@ export class ZoomView extends GalaxyView {
     this.links = model
       .aggregateMixed(new Set(this.units.map((u) => u.id)), state)
       .map((l) => ({ ...l, s: this.byId.get(l.source), t: this.byId.get(l.target) }));
+    this.indexUnitLinks();
 
     this.hovered = null;
     this.buildMeshes();
@@ -275,6 +287,7 @@ export class ZoomView extends GalaxyView {
     this.animate();
     this.refreshParticles();
     this.onUnitsChanged?.();
+    this.stage.invalidate();
   }
 
   animate() {

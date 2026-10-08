@@ -17,8 +17,12 @@ import { ServerClient } from './data/server.js';
 import { ProjectsScreen } from './ui/projects.js';
 import { SequencePanel } from './ui/sequence.js';
 import { host } from './data/host.js';
+import { perf } from './perf/stats.js';
+import { GraphIndex } from './data/graph-index.js';
 
-const MAX_GALAXY_UNITS = 7000;
+const params = new URLSearchParams(location.search);
+/** Above this many units the layout is too slow to be pleasant (`?maxUnits=` raises it for benchmarks). */
+const MAX_GALAXY_UNITS = Number(params.get('maxUnits')) || 7000;
 const NEXT_LEVEL = { project: 'namespace', namespace: 'type', type: 'member' };
 /** Views that show one level of detail at a time (the level buttons apply). */
 const LEVEL_VIEWS = new Set(['galaxy', 'layers']);
@@ -36,6 +40,7 @@ class App {
     this.selection = null;
     this.pathPending = false;
     this.statusLine = '';
+    this.perf = perf;
     this.stage.onFrame((dt) => this.view?.update(dt));
     this.stage.controls.addEventListener('start', () => {
       if (this.view) this.view.userMoved = true;
@@ -51,13 +56,10 @@ class App {
    */
   load(doc, { preserve = false } = {}) {
     if (preserve && this.model && this.state) return this.reload(doc);
-    const model = new CodeModel(doc);
+    const model = perf.time('model', () => new CodeModel(doc));
     this.view?.deactivate();
-    this.galaxy?.dispose();
-    this.layers?.dispose();
-    this.diView?.dispose();
-    this.flowView?.dispose();
-    this.zoomView?.dispose();
+    // A new graph gets new views: free the GPU memory of the old ones.
+    for (const view of [this.galaxy, this.city, this.layers, this.diView, this.flowView, this.zoomView]) view?.dispose();
     this.sequence.hide();
     this.model = model;
     this.entryPoints = null;
@@ -102,7 +104,7 @@ class App {
     this.details.hide();
     this.activateView();
     this.sidebar.render();
-    this.rebuild();
+    perf.time('rebuild', () => this.rebuild());
   }
 
   reload(doc) {
@@ -342,8 +344,8 @@ class App {
         return this.rebuild();
       }
 
-      const { links, ghosts } = model.aggregate(units, s, { ghosts: !!s.scope });
-      this.galaxy.build(units, links, s, ghosts);
+      const { links, ghosts } = perf.time('aggregate', () => model.aggregate(units, s, { ghosts: !!s.scope }));
+      perf.time('build', () => this.galaxy.build(units, links, s, ghosts));
     } else if (s.view === 'layers') {
       const units = model.units(s);
       if (units.length > MAX_GALAXY_UNITS && s.level !== 'project') {
@@ -404,14 +406,7 @@ class App {
   }
 
   indexLinks() {
-    this.out = new Map();
-    this.in = new Map();
-    this.view.links.forEach((l, i) => {
-      if (!this.out.has(l.source)) this.out.set(l.source, []);
-      if (!this.in.has(l.target)) this.in.set(l.target, []);
-      this.out.get(l.source).push({ to: l.target, i });
-      this.in.get(l.target).push({ to: l.source, i });
-    });
+    this.graph = new GraphIndex(this.view.links);
   }
 
   // ------------------------------------------------------------------ selection & highlight
@@ -462,23 +457,14 @@ class App {
     let status = '';
 
     if (sel.mode === 'neighbors') {
-      for (const e of this.out.get(start) ?? []) (nodes.add(e.to), links.add(e.i));
-      for (const e of this.in.get(start) ?? []) (nodes.add(e.to), links.add(e.i));
-      status = `${(this.out.get(start) ?? []).length} outgoing · ${(this.in.get(start) ?? []).length} incoming links (enabled kinds)`;
+      const add = (id, i) => (nodes.add(id), links.add(i));
+      this.graph.forEach(start, 'out', add);
+      this.graph.forEach(start, 'in', add);
+      status = `${this.graph.degree(start, 'out')} outgoing · ${this.graph.degree(start, 'in')} incoming links (enabled kinds)`;
     } else if (sel.mode === 'dependencies' || sel.mode === 'dependents') {
-      const adjacency = sel.mode === 'dependencies' ? this.out : this.in;
-      const queue = [start];
-      while (queue.length) {
-        const id = queue.shift();
-        for (const e of adjacency.get(id) ?? []) {
-          links.add(e.i);
-          if (!nodes.has(e.to)) {
-            nodes.add(e.to);
-            queue.push(e.to);
-          }
-        }
-      }
-
+      const reached = this.graph.reach(start, sel.mode === 'dependencies' ? 'out' : 'in');
+      for (const id of reached.nodes) nodes.add(id);
+      for (const i of reached.links) links.add(i);
       const n = nodes.size - 1;
       status = sel.mode === 'dependencies' ? `Depends on ${n} unit(s) transitively` : `Impact: ${n} unit(s) depend on this transitively`;
     } else if (sel.mode === 'path' && sel.pathTo) {
@@ -499,27 +485,7 @@ class App {
   }
 
   findPath(from, to) {
-    const previous = new Map([[from, null]]);
-    const queue = [from];
-    while (queue.length) {
-      const id = queue.shift();
-      if (id === to) break;
-      for (const e of this.out.get(id) ?? []) {
-        if (previous.has(e.to)) continue;
-        previous.set(e.to, { from: id, link: e.i });
-        queue.push(e.to);
-      }
-    }
-
-    if (!previous.has(to)) return null;
-    const nodes = [];
-    const links = [];
-    for (let id = to; id !== null; id = previous.get(id)?.from ?? null) {
-      nodes.unshift(id);
-      if (previous.get(id)) links.push(previous.get(id).link);
-    }
-
-    return { nodes, links };
+    return this.graph.path(from, to);
   }
 
   startPath() {
@@ -1099,11 +1065,12 @@ async function boot() {
       return;
     }
 
-    const url = new URLSearchParams(location.search).get('data');
+    const url = params.get('data');
     if (url) {
       const response = await fetch(url);
       if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-      return app.load(await response.json());
+      const text = await response.text();
+      return app.load(perf.time('parse', () => JSON.parse(text)));
     }
   } catch (error) {
     app.toast(`Could not load data: ${error.message}`);

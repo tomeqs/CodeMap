@@ -312,7 +312,13 @@ docs/                 specyfikacja formatu i JSON Schema
 dotnet test                                   # testy analizatora
 cd viewer && npm install && npm run dev       # viewer z hot-reload: http://localhost:5173/?data=sample.codemap.json
 npm run build                                 # buduje dist/index.html i kopiuje go do src/CodeMap.Cli/Assets/viewer.html
+npm run test:smoke                            # smoke testy zbudowanego viewera w headless Chromium (bez GPU)
+npm run bench -- --sizes 1k,7k,20k            # benchmark na wygenerowanych grafach, porównanie z bench/baseline.json
 ```
+
+Benchmark generuje syntetyczne solucje (`node bench/generate.mjs --types 100k`) i mierzy wczytanie, model,
+czas ułożenia grafu, płynność orbity, liczbę klatek w bezczynności, picking i przejścia po grafie.
+Bez `--headed` Chromium nie ma GPU (SwiftShader), więc liczby zależne od GPU mają sens tylko z `--headed` na prawdziwym komputerze.
 
 Do trybu dev wrzuć dowolny wygenerowany graf do `viewer/public/sample.codemap.json`.
 Żeby rozwijać ekran wyboru projektów, uruchom `CODEMAP_DEV=1 codemap ui --no-open` i otwórz

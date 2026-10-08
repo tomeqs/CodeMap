@@ -22,6 +22,8 @@ import { forceCenter, forceLink, forceManyBody, forceSimulation, forceX, forceY,
 import { EDGE_KINDS } from '../data/palette.js';
 import { createLines, FlowParticles, glowMaterial } from '../scene/materials.js';
 import { dotTexture } from '../scene/stage.js';
+import { perf } from '../perf/stats.js';
+import { disposeObject } from '../scene/disposer.js';
 
 const GEOMETRIES = {
   sphere: () => new IcosahedronGeometry(1, 3),
@@ -114,23 +116,27 @@ export class GalaxyView {
     this.stage.controls.autoRotateSpeed = 0.35;
     this.stage.controls.maxPolarAngle = Math.PI;
     this.stage.controls.minDistance = 5;
+    this.stage.invalidate();
   }
 
   deactivate() {
     this.stage.scene.remove(this.group);
     this.stage.controls.autoRotate = false;
     this.labels.clear();
+    this.stage.invalidate();
   }
 
   setOptions(options) {
     Object.assign(this.options, options);
     this.stage.controls.autoRotate = this.options.autoRotate;
     this.refreshParticles();
+    this.stage.invalidate();
   }
 
   // ------------------------------------------------------------------ build
 
   build(units, links, state, ghosts = []) {
+    this.savePositions();
     this.state = state;
     const model = this.model;
     const all = [...units.map((n) => ({ node: n, ghost: false })), ...ghosts.map((n) => ({ node: n, ghost: true }))];
@@ -164,6 +170,7 @@ export class GalaxyView {
     this.links = links
       .filter((l) => byId.has(l.source) && byId.has(l.target))
       .map((l) => ({ ...l, s: byId.get(l.source), t: byId.get(l.target) }));
+    this.indexUnitLinks();
 
     // Dense graphs glow into one blob: tone bloom down as the node count grows.
     const density = Math.log10(Math.max(100, this.units.length) / 100);
@@ -176,6 +183,27 @@ export class GalaxyView {
     this.labelOrder = [...this.units].sort((a, b) => labelRank(b) - labelRank(a));
     this.setHighlight(null);
     if (cached < this.units.length * 0.5) this.fit(false);
+  }
+
+  /** Every unit knows the indices of its links (hover updates only those). */
+  indexUnitLinks() {
+    for (const u of this.units) u.linkIndices = [];
+    this.links.forEach((l, i) => {
+      l.s.linkIndices.push(i);
+      l.t.linkIndices.push(i);
+    });
+  }
+
+  /** Keeps where every unit is, for the next build (unchanged units stay put, new ones grow out of their parent). */
+  savePositions() {
+    for (const u of this.units) {
+      const p = this.positions.get(u.id);
+      if (p) {
+        p.x = u.x;
+        p.y = u.y;
+        p.z = u.z;
+      } else this.positions.set(u.id, { x: u.x, y: u.y, z: u.z });
+    }
   }
 
   /** Node size: the size metric within the node's level range. */
@@ -274,57 +302,73 @@ export class GalaxyView {
     this.pendingFocus = null;
 
     // Pre-warm: lay out most of the structure before the first frame, then animate the rest.
-    const start = performance.now();
-    while (performance.now() - start < 120 && sim.alpha() > 0.2) sim.tick();
-    for (const u of units) this.positions.set(u.id, { x: u.x, y: u.y, z: u.z });
+    this.prewarm(sim);
     this.updateMatrices();
     this.updateLinePositions();
   }
 
+  prewarm(sim) {
+    const start = performance.now();
+    this.layoutStart = start;
+    while (performance.now() - start < 120 && sim.alpha() > 0.2) {
+      sim.tick();
+      perf.ticks++;
+    }
+
+    perf.set('prewarm', performance.now() - start);
+  }
+
   // ------------------------------------------------------------------ frame
 
+  /** Advances the layout and the animations; returns true while the layout moves, 'ambient' for decoration only. */
   update(dt) {
+    let busy = false;
     const sim = this.simulation;
     if (sim && sim.alpha() > sim.alphaMin()) {
+      busy = true;
       const start = performance.now();
-      do sim.tick();
-      while (performance.now() - start < 9 && sim.alpha() > sim.alphaMin());
-      for (const u of this.units) this.positions.set(u.id, { x: u.x, y: u.y, z: u.z });
+      do {
+        sim.tick();
+        perf.ticks++;
+      } while (performance.now() - start < 9 && sim.alpha() > sim.alphaMin());
       this.updateMatrices();
       this.updateLinePositions();
       if (sim.alpha() <= sim.alphaMin() && !this.settled) {
         this.settled = true;
+        perf.set('settle', performance.now() - this.layoutStart);
+        this.savePositions();
         if (this.pendingFocus) this.focus(this.pendingFocus);
         else if (!this.userMoved) this.fit(true);
       }
     }
 
-    if (this.halo.visible && this.highlight?.primary) {
-      const u = this.byId.get(this.highlight.primary);
-      if (u) {
-        this.halo.position.set(u.x, u.y, u.z);
-        const pulse = 1 + 0.12 * Math.sin(performance.now() / 260);
-        this.halo.scale.setScalar(u.r * 3.6 * pulse);
-      }
+    const halo = this.halo.visible && this.highlight?.primary ? this.byId.get(this.highlight.primary) : null;
+    if (halo) {
+      this.halo.position.set(halo.x, halo.y, halo.z);
+      const pulse = 1 + 0.12 * Math.sin(performance.now() / 260);
+      this.halo.scale.setScalar(halo.r * 3.6 * pulse);
     }
 
-    this.particles.update(dt, tmp);
+    if (this.particles.count) this.particles.update(dt, tmp);
     if (this.options.labels) this.renderLabels();
     else this.labels.clear();
+    return busy || (halo || this.particles.count ? 'ambient' : false);
   }
 
   updateMatrices() {
-    for (const u of this.units) {
-      const s = u.r * (u.grow ?? 1) * (u === this.hovered ? 1.35 : 1);
-      matrix.makeScale(s, s, s);
-      matrix.setPosition(u.x, u.y, u.z);
-      u.mesh.setMatrixAt(u.slot, matrix);
-    }
-
+    for (const u of this.units) this.setMatrix(u);
     for (const mesh of this.meshes) {
+      mesh.instanceMatrix.clearUpdateRanges();
       mesh.instanceMatrix.needsUpdate = true;
-      mesh.computeBoundingSphere();
+      mesh.boundingSphere = null; // recomputed when a ray needs it (picking), not on every frame
     }
+  }
+
+  setMatrix(u) {
+    const s = u.r * (u.grow ?? 1) * (u === this.hovered ? 1.35 : 1);
+    matrix.makeScale(s, s, s);
+    matrix.setPosition(u.x, u.y, u.z);
+    u.mesh.setMatrixAt(u.slot, matrix);
   }
 
   updateLinePositions() {
@@ -345,59 +389,70 @@ export class GalaxyView {
   // ------------------------------------------------------------------ colours & highlight
 
   recolor() {
-    const mode = this.state?.colorMode ?? 'project';
-    const h = this.highlight;
-    for (const u of this.units) {
-      this.model.colorOf(u.node, mode, color);
-      let factor = u.ghost ? 0.45 : 1;
-      if (h) {
-        if (h.primary === u.id) factor = 1.25;
-        else if (h.nodes.has(u.id)) factor = h.secondary?.has(u.id) ? 1.15 : 1;
-        else factor = 0.1;
-      } else if (this.hovered === u) factor = 1.3;
-      color.multiplyScalar(factor);
-      u.mesh.setColorAt(u.slot, color);
+    for (const u of this.units) this.setUnitColor(u);
+    for (const mesh of this.meshes) {
+      if (!mesh.instanceColor) continue;
+      mesh.instanceColor.clearUpdateRanges();
+      mesh.instanceColor.needsUpdate = true;
     }
 
-    for (const mesh of this.meshes) if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     this.recolorLines();
   }
 
+  setUnitColor(u) {
+    const h = this.highlight;
+    this.model.colorOf(u.node, this.state?.colorMode ?? 'project', color);
+    let factor = u.ghost ? 0.45 : 1;
+    if (h) {
+      if (h.primary === u.id) factor = 1.25;
+      else if (h.nodes.has(u.id)) factor = h.secondary?.has(u.id) ? 1.15 : 1;
+      else factor = 0.1;
+    } else if (this.hovered === u) factor = 1.3;
+    color.multiplyScalar(factor);
+    u.mesh.setColorAt(u.slot, color);
+  }
+
   recolorLines() {
+    const attribute = this.lines.geometry.attributes.color;
+    this.links.forEach((l, index) => this.setLinkColor(l, index));
+    attribute.clearUpdateRanges();
+    attribute.needsUpdate = true;
+    this.stage.invalidate();
+  }
+
+  setLinkColor(l, index) {
     const col = this.lines.geometry.attributes.color.array;
     const h = this.highlight;
     const hovered = this.hovered;
-    const base = this.links.length > 4000 ? 0.09 : this.links.length > 1500 ? 0.14 : this.links.length > 500 ? 0.22 : 0.32;
-    let i = 0;
-    this.links.forEach((l, index) => {
-      color.set(l.violation ? VIOLATION_COLORS[l.violation] ?? VIOLATION_COLORS.error : EDGE_KINDS[l.kind]?.color ?? '#9fb3c8');
-      let a;
-      let b;
-      if (h) {
-        const on = h.links.has(index);
-        a = on ? 1.0 : l.violation ? 0.12 : 0.025;
-        b = on ? 0.35 : l.violation ? 0.05 : 0.01;
-      } else if (l.violation) {
-        // Problems stay visible at rest: they are what these views are about.
-        a = 1.0;
-        b = 0.45;
-      } else if (hovered && (l.s === hovered || l.t === hovered)) {
-        a = 1;
-        b = 0.35;
-      } else {
-        const w = Math.min(1, 0.6 + Math.log2(l.weight) * 0.12);
-        a = base * w;
-        b = base * 0.25 * w;
-      }
+    const count = this.links.length;
+    const base = count > 4000 ? 0.09 : count > 1500 ? 0.14 : count > 500 ? 0.22 : 0.32;
+    const c = linkColor(l);
+    let a;
+    let b;
+    if (h) {
+      const on = h.links.has(index);
+      a = on ? 1.0 : l.violation ? 0.12 : 0.025;
+      b = on ? 0.35 : l.violation ? 0.05 : 0.01;
+    } else if (l.violation) {
+      // Problems stay visible at rest: they are what these views are about.
+      a = 1.0;
+      b = 0.45;
+    } else if (hovered && (l.s === hovered || l.t === hovered)) {
+      a = 1;
+      b = 0.35;
+    } else {
+      const w = Math.min(1, 0.6 + Math.log2(l.weight) * 0.12);
+      a = base * w;
+      b = base * 0.25 * w;
+    }
 
-      col[i++] = color.r * a;
-      col[i++] = color.g * a;
-      col[i++] = color.b * a;
-      col[i++] = color.r * b;
-      col[i++] = color.g * b;
-      col[i++] = color.b * b;
-    });
-    this.lines.geometry.attributes.color.needsUpdate = true;
+    const i = index * 6;
+    col[i] = c.r * a;
+    col[i + 1] = c.g * a;
+    col[i + 2] = c.b * a;
+    col[i + 3] = c.r * b;
+    col[i + 4] = c.g * b;
+    col[i + 5] = c.b * b;
   }
 
   /** highlight: null | { primary, nodes:Set<id>, links:Set<index>, secondary?:Set<id> } */
@@ -410,12 +465,32 @@ export class GalaxyView {
   }
 
   setHovered(id) {
-    const unit = id ? this.byId.get(id) : null;
+    const unit = id ? this.byId?.get(id) ?? null : null;
     if (unit === this.hovered) return;
+    const previous = this.hovered;
     this.hovered = unit;
-    this.updateMatrices();
-    this.recolor();
+    // Only the two units (and, without a selection, their links) change: upload just those.
+    const colors = this.lines.geometry.attributes.color;
+    for (const u of [previous, unit]) {
+      if (!u || !u.mesh) continue;
+      this.setMatrix(u);
+      this.setUnitColor(u);
+      u.mesh.instanceMatrix.addUpdateRange(u.slot * 16, 16);
+      u.mesh.instanceMatrix.needsUpdate = true;
+      u.mesh.instanceColor.addUpdateRange(u.slot * 3, 3);
+      u.mesh.instanceColor.needsUpdate = true;
+      u.mesh.boundingSphere = null;
+      if (this.highlight) continue;
+      for (const i of u.linkIndices ?? []) {
+        this.setLinkColor(this.links[i], i);
+        colors.addUpdateRange(i * 6, 6);
+      }
+
+      colors.needsUpdate = true;
+    }
+
     if (!this.highlight) this.refreshParticles();
+    this.stage.invalidate();
   }
 
   refreshParticles() {
@@ -432,7 +507,7 @@ export class GalaxyView {
         count: Math.min(4, 1 + Math.floor(Math.log2(l.weight))),
         speed: 0.28 + Math.random() * 0.12,
         phase: Math.random(),
-        color: new Color(l.violation ? VIOLATION_COLORS[l.violation] ?? VIOLATION_COLORS.error : EDGE_KINDS[l.kind]?.color ?? '#ffffff').multiplyScalar(1.6),
+        color: linkColor(l).clone().multiplyScalar(1.6),
         at: (t, out) => out.set(l.s.x + (l.t.x - l.s.x) * t, l.s.y + (l.t.y - l.s.y) * t, l.s.z + (l.t.z - l.s.z) * t),
       })),
     );
@@ -516,15 +591,23 @@ export class GalaxyView {
     const dir = (this.fitDirection ?? new Vector3(0.35, 0.45, 1)).clone().normalize();
     const position = center.clone().add(dir.multiplyScalar(distance));
     if (animate) this.stage.flyTo(center, position, 1100);
-    else {
-      this.stage.controls.target.copy(center);
-      this.stage.camera.position.copy(position);
-    }
+    else this.stage.jumpTo(center, position);
   }
 
   dispose() {
     this.simulation?.stop();
+    this.simulation = null;
+    this.stage.scene.remove(this.group);
+    disposeObject(this.group);
+    for (const geometry of Object.values(this.geometries)) geometry.dispose();
+    this.units = [];
+    this.links = [];
   }
+}
+
+/** A link's base colour (its kind, or red / amber for a problem), computed once. */
+export function linkColor(l) {
+  return (l.color ??= new Color(l.violation ? VIOLATION_COLORS[l.violation] ?? VIOLATION_COLORS.error : EDGE_KINDS[l.kind]?.color ?? '#9fb3c8'));
 }
 
 function labelRank(u) {
