@@ -17,6 +17,8 @@ codemap MySolution.sln            →  MySolution.codemap.json   (graf: format d
 | ![galaxy](docs/img/galaxy.png) | ![city](docs/img/city.png) |
 | **Layers: zależności w górę (czerwone) łamią warstwy** | **DI: singleton trzymający usługę scoped (captive dependency)** |
 | ![layers](docs/img/layers.png) | ![di](docs/img/di.png) |
+| **Flow: przepływ wywołań od akcji kontrolera, z diagramem sekwencji** | **Auto: zoom semantyczny, typ rozwinięty w składowe** |
+| ![flow](docs/img/flow.png) | ![zoom](docs/img/zoom.png) |
 
 ## Szybki start
 
@@ -252,6 +254,9 @@ Formaty dodatkowe:
   **Diagram sekwencji** pokazuje ten sam przepływ jako uczestników (typy) i komunikaty (`alt` dla kilku możliwych implementacji, `loop` dla `IEnumerable<T>`).
   Można go skopiować jako **Mermaid** (wklejasz do GitHuba, GitLaba, Notion albo dokumentacji) lub pobrać jako `.mmd` / `.svg`.
   Punkt wejścia wybierasz w Insights (*Entry points*), na liście w widoku albo przyciskiem *Call flow ↘* przy dowolnej metodzie.
+* **Auto (zoom semantyczny)**: zamiast przełączać poziomy, po prostu lecisz kamerą. Z daleka namespace to jedna gwiazda
+  w środku swoich typów. Gdy się zbliżysz, rozwija się w typy, a najbliższe typy w swoje składowe (metody, właściwości, pola).
+  Po oddaleniu wszystko zwija się z powrotem. Układ liczony jest raz, więc mapa się nie przestawia, a wyszukiwarka sama doleci do składowej ukrytej w zwiniętym typie.
 * Poziomy szczegółowości: **Projects / Namespaces / Types / Members** i drill-down dwuklikiem
   (projekt → namespace’y → typy → składowe, z „duchami” sąsiadów spoza zakresu).
 * Panel szczegółów: sygnatura, dokumentacja XML, metryki, tagi, link *Open in VS Code*,
@@ -262,7 +267,7 @@ Formaty dodatkowe:
 * Kolor **DI lifetime** w każdym widoku (namespace’y i projekty dostają dominujący czas życia swoich typów),
   a w panelu szczegółów sekcje *Dependency injection* i *Changes together with*.
 * Filtry rodzajów relacji, projektów, testów, typów zewnętrznych, minimalnej siły powiązania.
-* Wyszukiwarka (`/`), skróty: `1`–`4` poziom, `G`/`C`/`L`/`D`/`E` widok (Galaxy, City, Layers, DI, Flow), `F` dopasuj, `Esc` wstecz.
+* Wyszukiwarka (`/`), skróty: `1`–`4` poziom, `Z` zoom semantyczny, `G`/`C`/`L`/`D`/`E` widok (Galaxy, City, Layers, DI, Flow), `F` dopasuj, `Esc` wstecz.
 
 Viewer można też otworzyć bez danych i przeciągnąć na niego dowolny plik `*.codemap.json`
 albo użyć parametru `?data=url.json`.

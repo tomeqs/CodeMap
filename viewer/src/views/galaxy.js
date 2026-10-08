@@ -135,15 +135,10 @@ export class GalaxyView {
     const model = this.model;
     const all = [...units.map((n) => ({ node: n, ghost: false })), ...ghosts.map((n) => ({ node: n, ghost: true }))];
     const byId = new Map();
-    const levelRange = RADIUS[state.level] ?? RADIUS.type;
 
     let cached = 0;
     this.units = all.map(({ node, ghost }) => {
-      const t = state.sizeMetric ? model.norm(node, state.sizeMetric) : 0.3;
-      const base = node.level === 'project' && state.level !== 'project' ? RADIUS.project : RADIUS[node.level] ?? levelRange;
-      let r = base[0] + (base[1] - base[0]) * Math.sqrt(t);
-      if (ghost) r *= 0.75;
-      r *= this.radiusScale;
+      const r = this.radiusFor(node, state, ghost);
       const unit = { id: node.id, node, ghost, r, x: 0, y: 0, z: 0 };
       const known = this.positions.get(node.id);
       if (known) {
@@ -181,6 +176,14 @@ export class GalaxyView {
     this.labelOrder = [...this.units].sort((a, b) => labelRank(b) - labelRank(a));
     this.setHighlight(null);
     if (cached < this.units.length * 0.5) this.fit(false);
+  }
+
+  /** Node size: the size metric within the node's level range. */
+  radiusFor(node, state, ghost = false) {
+    const t = state.sizeMetric ? this.model.norm(node, state.sizeMetric) : 0.3;
+    const base = node.level === 'project' && state.level !== 'project' ? RADIUS.project : RADIUS[node.level] ?? RADIUS[state.level] ?? RADIUS.type;
+    const r = base[0] + (base[1] - base[0]) * Math.sqrt(t);
+    return r * (ghost ? 0.75 : 1) * this.radiusScale;
   }
 
   buildMeshes() {
@@ -312,7 +315,7 @@ export class GalaxyView {
 
   updateMatrices() {
     for (const u of this.units) {
-      const s = u.r * (u === this.hovered ? 1.35 : 1);
+      const s = u.r * (u.grow ?? 1) * (u === this.hovered ? 1.35 : 1);
       matrix.makeScale(s, s, s);
       matrix.setPosition(u.x, u.y, u.z);
       u.mesh.setMatrixAt(u.slot, matrix);

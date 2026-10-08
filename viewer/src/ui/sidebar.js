@@ -150,7 +150,7 @@ export class Sidebar {
       h('div', { class: 'section small faint' },
         h('div', {}, 'Drag – rotate · right-drag – pan · wheel – zoom'),
         h('div', {}, 'Click – select · double-click – drill in · Shift+click – path'),
-        h('div', {}, 'Keys: / search · 1-4 level · G/C/L/D/E view · F fit · Esc back'),
+        h('div', {}, 'Keys: / search · 1-4 level · Z auto zoom · G/C/L/D/E view · F fit · Esc back'),
       ),
     );
   }

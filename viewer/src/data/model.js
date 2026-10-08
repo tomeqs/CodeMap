@@ -262,28 +262,46 @@ export class CodeModel {
       }
 
       if (su === tu) continue;
-      const key = su.id + '\u0000' + tu.id;
-      let link = links.get(key);
-      if (!link) {
-        link = { source: su.id, target: tu.id, weight: 0, kinds: {} };
-        links.set(key, link);
+      addLink(links, su.id, tu.id, e);
+    }
+
+    return { links: finishLinks(links, state), ghosts: [...ghostSet.values()] };
+  }
+
+  /**
+   * Like aggregate(), for units of mixed levels (semantic zoom: a namespace next to the types of another one):
+   * each endpoint goes to its deepest ancestor-or-self that is a unit.
+   */
+  aggregateMixed(unitIds, state) {
+    const resolved = new Map();
+    const resolve = (node) => {
+      let unit = resolved.get(node.id);
+      if (unit !== undefined) return unit;
+      unit = null;
+      for (let n = node; n; n = n.parent ? this.byId.get(n.parent) : null) {
+        if (unitIds.has(n.id)) {
+          unit = n;
+          break;
+        }
       }
 
-      link.weight += e.weight ?? 1;
-      link.kinds[e.kind] = (link.kinds[e.kind] ?? 0) + (e.weight ?? 1);
+      resolved.set(node.id, unit);
+      return unit;
+    };
+
+    const links = new Map();
+    for (const e of this.edges) {
+      if (!state.edgeKinds.has(e.kind)) continue;
+      const s = this.byId.get(e.source);
+      const t = this.byId.get(e.target);
+      if (!s || !t) continue;
+      const su = resolve(s);
+      const tu = resolve(t);
+      if (!su || !tu || su === tu) continue;
+      addLink(links, su.id, tu.id, e);
     }
 
-    const minWeight = state.minWeight ?? 1;
-    const result = [];
-    for (const link of links.values()) {
-      if (link.weight < minWeight) continue;
-      let best = null;
-      for (const [k, w] of Object.entries(link.kinds)) if (!best || w > link.kinds[best] || (w === link.kinds[best] && priority(k) > priority(best))) best = k;
-      link.kind = best;
-      result.push(link);
-    }
-
-    return { links: result, ghosts: [...ghostSet.values()] };
+    return finishLinks(links, state);
   }
 
   /** Raw relationships of a node grouped by direction and kind, resolved to units of the given level (or raw nodes). */
@@ -338,6 +356,33 @@ export class CodeModel {
     scored.sort((a, b) => b.score - a.score || a.node.name.length - b.node.name.length);
     return scored.slice(0, limit).map((s) => s.node);
   }
+}
+
+function addLink(links, source, target, edge) {
+  const key = source + '\u0000' + target;
+  let link = links.get(key);
+  if (!link) {
+    link = { source, target, weight: 0, kinds: {} };
+    links.set(key, link);
+  }
+
+  link.weight += edge.weight ?? 1;
+  link.kinds[edge.kind] = (link.kinds[edge.kind] ?? 0) + (edge.weight ?? 1);
+}
+
+/** Drops weak links and names each by its strongest relationship kind. */
+function finishLinks(links, state) {
+  const minWeight = state.minWeight ?? 1;
+  const result = [];
+  for (const link of links.values()) {
+    if (link.weight < minWeight) continue;
+    let best = null;
+    for (const [k, w] of Object.entries(link.kinds)) if (!best || w > link.kinds[best] || (w === link.kinds[best] && priority(k) > priority(best))) best = k;
+    link.kind = best;
+    result.push(link);
+  }
+
+  return result;
 }
 
 const PRIORITY = { inherits: 9, implements: 8, injects: 7, calls: 6, instantiates: 5, subscribes: 5, holds: 4, throws: 4, extends: 3, projectReference: 9 };
