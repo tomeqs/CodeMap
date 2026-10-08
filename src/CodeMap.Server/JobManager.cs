@@ -150,14 +150,15 @@ public sealed class JobManager : IDisposable
                 Stats = job.Stats,
             }, job.Graph);
 
+            // Watch before announcing "done": whoever reacts to "done" finds the watch in place, and no change slips in between.
+            if (job.Settings.Watch) StartWatching(job.Path, graph.Source.Root, job.Settings);
+            else if (!job.Live) StopWatching();
+
             job.Status = "done";
             job.FinishedAt = DateTimeOffset.UtcNow;
             _lastCompleted = job;
             _hub.Publish(new { type = "done", jobId = job.Id, path = job.Path, name = job.Name, stats = job.Stats, live = job.Live, key = job.Key, settings = job.Settings });
             _log($"Analyzed {job.Path} in {(job.FinishedAt - job.StartedAt)?.TotalSeconds:0.0}s");
-
-            if (job.Settings.Watch) StartWatching(job.Path, graph.Source.Root, job.Settings);
-            else if (!job.Live) StopWatching();
         }
         catch (OperationCanceledException)
         {

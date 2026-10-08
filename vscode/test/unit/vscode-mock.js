@@ -52,7 +52,7 @@ class Range {
 }
 
 function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
-  const log = { panels: [], posted: [], opened: [], errors: [], infos: [], warnings: [], clipboard: [], saved: [], external: [], commands: new Map(), quickPicks: [] };
+  const log = { panels: [], posted: [], opened: [], errors: [], infos: [], warnings: [], clipboard: [], saved: [], external: [], executed: [], commands: new Map(), quickPicks: [] };
   const saveEmitter = new Emitter();
 
   const vscode = {
@@ -71,6 +71,7 @@ function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
         log.commands.set(id, fn);
         return { dispose() {} };
       },
+      executeCommand: async (id, ...args) => void log.executed.push(id),
     },
     window: {
       activeTextEditor: undefined,
@@ -79,7 +80,10 @@ function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
       createWebviewPanel: (viewType, title, showOptions, options) => {
         const received = new Emitter();
         const disposed = new Emitter();
+        const viewState = new Emitter();
         const panel = {
+          active: true,
+          onDidChangeViewState: (listener) => viewState.event(listener),
           viewType,
           title,
           showOptions,
@@ -95,6 +99,9 @@ function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
           },
           reveal(column, preserveFocus) {
             this.revealed.push({ column, preserveFocus });
+            this.visible = true;
+            this.active = !preserveFocus;
+            setTimeout(() => viewState.fire({ webviewPanel: this }), 10);
           },
           onDidDispose: (listener) => disposed.event(listener),
           dispose: () => disposed.fire(),

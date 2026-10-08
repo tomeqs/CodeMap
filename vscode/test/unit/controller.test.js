@@ -63,7 +63,12 @@ test('opens the map, jumps between code and map, refreshes on save', { skip: !bu
     await log.commands.get('codemap.revealInMap')();
     assert.deepEqual(log.posted.at(-1), { type: 'reveal', id: 'M:Shop.Domain.Orders.Order.AddLine(Shop.Domain.Catalog.Product,System.Int32)' });
 
+    // the map hidden behind the code: it comes back beside it, pinned (a preview tab would be replaced), focus back on the code
+    panel.visible = false;
     await log.commands.get('codemap.callFlow')();
+    assert.deepEqual(panel.revealed.at(-1), { column: vscode.ViewColumn.Beside, preserveFocus: false });
+    assert.deepEqual(log.executed, ['workbench.action.keepEditor']);
+    assert.equal(log.opened.at(-1).file, orderFile, 'focus back on the code');
     assert.deepEqual(log.posted.at(-1), { type: 'flow', ids: ['M:Shop.Domain.Orders.Order.AddLine(Shop.Domain.Catalog.Product,System.Int32)'], sequence: true });
 
     // clipboard and save requests from the viewer

@@ -76,7 +76,7 @@ class CodeMapController {
   async revealAt(editor) {
     const node = await this.nodeUnderCursor(editor);
     if (!node) return;
-    this.showBeside();
+    await this.showBeside(editor);
     this.send({ type: 'reveal', id: node.id });
   }
 
@@ -90,7 +90,7 @@ class CodeMapController {
       return;
     }
 
-    this.showBeside();
+    await this.showBeside(editor);
     this.send({ type: 'flow', ids, sequence: true });
   }
 
@@ -112,9 +112,25 @@ class CodeMapController {
     return node;
   }
 
-  /** Brings the map into view next to the editor, without taking the focus away from the code. */
-  showBeside() {
-    if (!this.panel.visible) this.panel.reveal(vscode.ViewColumn.Beside, true);
+  /** Brings the map into view next to the editor, and gives the focus back to the code. */
+  async showBeside(editor) {
+    if (this.panel.visible) return;
+    // VS Code moves a webview to another group as a preview tab, which the next opened file would replace
+    // (closing the map): bring it there active, pin it, then return to the code.
+    const panel = this.panel;
+    const active = new Promise((resolve) => {
+      const subscription = panel.onDidChangeViewState(() => panel.active && done());
+      const timer = setTimeout(done, 1500);
+      function done() {
+        subscription.dispose();
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    panel.reveal(vscode.ViewColumn.Beside, false);
+    await active;
+    if (panel.active) await vscode.commands.executeCommand('workbench.action.keepEditor');
+    if (editor) await vscode.window.showTextDocument(editor.document, { viewColumn: editor.viewColumn, selection: editor.selection });
   }
 
   // ------------------------------------------------------------------ webview
