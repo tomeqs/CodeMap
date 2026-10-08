@@ -19,10 +19,14 @@ import { SequencePanel } from './ui/sequence.js';
 import { host } from './data/host.js';
 import { perf } from './perf/stats.js';
 import { GraphIndex } from './data/graph-index.js';
+import { checkWorker, workerAvailable } from './layout/worker-layout.js';
 
 const params = new URLSearchParams(location.search);
-/** Above this many units the layout is too slow to be pleasant (`?maxUnits=` raises it for benchmarks). */
-const MAX_GALAXY_UNITS = Number(params.get('maxUnits')) || 7000;
+/**
+ * Above this many units the layout is too slow to be pleasant: more when it runs in a worker (the map stays
+ * responsive while it settles). `?maxUnits=` overrides it for benchmarks.
+ */
+const maxUnits = () => Number(params.get('maxUnits')) || (workerAvailable() ? 15000 : 7000);
 const NEXT_LEVEL = { project: 'namespace', namespace: 'type', type: 'member' };
 /** Views that show one level of detail at a time (the level buttons apply). */
 const LEVEL_VIEWS = new Set(['galaxy', 'layers']);
@@ -77,7 +81,7 @@ class App {
     const typeCount = model.nodes.filter((n) => n.level === 'type' && !n.external).length;
     this.state = {
       view: 'galaxy',
-      level: typeCount <= MAX_GALAXY_UNITS ? 'type' : 'namespace',
+      level: typeCount <= maxUnits() ? 'type' : 'namespace',
       scope: null,
       colorMode: 'project',
       sizeMetric: 'loc',
@@ -142,7 +146,7 @@ class App {
   // ------------------------------------------------------------------ VS Code extension
 
   /** Inside the VS Code webview: the extension analyzes the workspace and drives the map. */
-  enableHost(host) {
+  async enableHost(host) {
     this.host = host;
     const reanalyze = document.getElementById('btn-reanalyze');
     reanalyze.classList.remove('hidden');
@@ -172,7 +176,9 @@ class App {
           break;
       }
     });
-    host.post('ready');
+    // Tell the extension how the map runs (it logs it), once the layout worker has started or failed.
+    const layout = await checkWorker();
+    host.post('ready', { renderer: this.stage.backend ?? 'webgl', adapter: this.stage.adapter, layout });
   }
 
   // ------------------------------------------------------------------ local app (codemap ui)
@@ -327,7 +333,7 @@ class App {
     if (semantic) {
       const typeState = { ...s, level: 'type', scope: null };
       const units = model.units(typeState);
-      if (units.length > MAX_GALAXY_UNITS) {
+      if (units.length > maxUnits()) {
         this.toast(`${fmt(units.length)} types is too many for semantic zoom – pick a level instead.`);
         s.semantic = false;
         this.activateView();
@@ -338,7 +344,7 @@ class App {
       this.zoomView.build(units, links, typeState);
     } else if (s.view === 'galaxy') {
       let units = model.units(s);
-      if (units.length > MAX_GALAXY_UNITS && s.level !== 'project') {
+      if (units.length > maxUnits() && s.level !== 'project') {
         this.toast(`${fmt(units.length)} ${s.level}s is too many to lay out smoothly – drill into a project or namespace first.`);
         s.level = LEVELS[Math.max(0, LEVELS.indexOf(s.level) - 1)];
         return this.rebuild();
@@ -348,7 +354,7 @@ class App {
       perf.time('build', () => this.galaxy.build(units, links, s, ghosts));
     } else if (s.view === 'layers') {
       const units = model.units(s);
-      if (units.length > MAX_GALAXY_UNITS && s.level !== 'project') {
+      if (units.length > maxUnits() && s.level !== 'project') {
         this.toast(`${fmt(units.length)} ${s.level}s is too many to lay out smoothly – drill into a project or namespace first.`);
         s.level = LEVELS[Math.max(0, LEVELS.indexOf(s.level) - 1)];
         return this.rebuild();
@@ -1040,6 +1046,7 @@ async function boot() {
   }
 
   window.codemap = app;
+  if (params.has('bench')) window.codemapLayout = await import('./layout/testing.js');
   if (host) return app.enableHost(host);
   const embedded = document.getElementById('codemap-data')?.textContent?.trim();
   const server = ServerClient.detect();

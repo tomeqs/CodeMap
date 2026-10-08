@@ -57,6 +57,7 @@ test('webview HTML gets a strict CSP and a nonce on the viewer script only', () 
   const html = webviewHtml(viewer, { cspSource: 'vscode-webview://abc', scriptNonce: 'N0nce' });
   assert.match(html, /<meta http-equiv="Content-Security-Policy" content="default-src 'none'; [^"]*script-src 'nonce-N0nce'"/);
   assert.match(html, /<script type="module" nonce="N0nce">run\(\)<\/script>/);
+  assert.match(html, /worker-src blob:;/, 'the layout worker may start');
   assert.doesNotMatch(html, /connect-src|unsafe-eval/);
   assert.throws(() => webviewHtml('<html><body>no viewer</body></html>', { cspSource: 'x' }));
 });

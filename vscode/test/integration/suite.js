@@ -50,6 +50,7 @@ async function scenario(controller) {
   controller.panel.onDidDispose(() => controller.diagnostics.push(`map panel disposed during "${step}"`));
   await until('the viewer to start in the webview', () => controller.ready || controller.fatal, 60000);
   assert.ok(controller.ready, `the map did not start: ${controller.fatal}`);
+  assert.equal(controller.mapInfo?.layout, 'worker', 'the layout runs in a worker (the CSP allows it)');
 
   mark('editor → map');
   const document = await vscode.workspace.openTextDocument(orderFile);

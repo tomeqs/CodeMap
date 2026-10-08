@@ -32,7 +32,7 @@ try {
   for (const renderer of renderers) {
     console.log(`\nrenderer: ${renderer}`);
     const query = (data) => {
-      const q = new URLSearchParams({ data });
+      const q = new URLSearchParams({ data, bench: '1' });
       if (renderer !== 'auto') q.set('renderer', renderer);
       return `${server.url}/?${q}`;
     };
@@ -118,17 +118,41 @@ try {
       await page.waitForFunction(() => window.codemap.selection?.nodeId?.includes('AddLine'), null, { timeout: 10000 });
     });
 
+    await test('the worker and the main thread compute the same layout', async () => {
+      const result = await page.evaluate(async () => {
+        const app = window.codemap;
+        const { MainThreadLayout, WorkerLayout } = window.codemapLayout;
+        const spec = () => app.galaxy.layoutSpec(app.state, 0);
+        const main = new MainThreadLayout(spec(), { prewarmMs: 0 });
+        while (!main.settled) main.step(1000);
+        const worker = new WorkerLayout(spec());
+        const start = performance.now();
+        while (!worker.settled && performance.now() - start < 30000) {
+          await new Promise((r) => setTimeout(r, 20));
+          worker.step();
+        }
+
+        let differences = 0;
+        for (let i = 0; i < main.positions.length; i++) if (main.positions[i] !== worker.positions[i]) differences++;
+        return { settled: worker.settled, ticks: [main.ticks, worker.ticks], differences, count: main.positions.length };
+      });
+      assert.ok(result.settled, 'the worker layout settled');
+      assert.equal(result.ticks[0], result.ticks[1], 'same number of ticks');
+      assert.equal(result.differences, 0, `positions that differ: ${result.differences} of ${result.count}`);
+    });
+
     await test('no errors on the page', async () => {
       assert.deepEqual(errors, []);
     });
     await page.close();
 
     const large = await open(browser, query(big));
-    await test('a generated graph with 2000 types is drawn', async () => {
-      // Without a GPU (SwiftShader) frames are slow: wait for the first frames, not for the layout to settle.
-      await large.page.waitForFunction(() => window.codemap?.view?.units?.length && window.codemap.perf.renders > 2, null, { timeout: 60000 });
-      const units = await large.page.evaluate(() => window.codemap.view.units.length);
-      assert.ok(units >= 2000, `units: ${units}`);
+    await test('a generated graph with 2000 types is laid out in a worker', async () => {
+      // The worker does not wait for frames: even without a GPU (slow frames) the layout settles quickly.
+      await settled(large.page, 60000);
+      const info = await large.page.evaluate(() => ({ units: window.codemap.view.units.length, layout: window.codemap.view.layout.kind }));
+      assert.ok(info.units >= 2000, `units: ${info.units}`);
+      assert.equal(info.layout, 'worker');
       assert.ok(await litPixels(large.page) > 400, 'the canvas shows the map');
       assert.deepEqual(large.errors, []);
     });

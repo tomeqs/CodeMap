@@ -8,7 +8,8 @@ function nonce() {
 
 /**
  * The single-file viewer as webview HTML: a strict Content-Security-Policy, and a nonce on the one
- * script it runs. The viewer receives the graph by postMessage, so it needs no network access.
+ * script it runs (plus its layout worker). The viewer receives the graph by postMessage, so it needs no
+ * network access.
  */
 function webviewHtml(viewerHtml, { cspSource, scriptNonce = nonce() }) {
   const csp = [
@@ -16,6 +17,8 @@ function webviewHtml(viewerHtml, { cspSource, scriptNonce = nonce() }) {
     `img-src ${cspSource} data: blob:`,
     `style-src ${cspSource} 'unsafe-inline'`,
     `font-src ${cspSource} data:`,
+    // the force layout runs in a worker started from a blob: URL (inlined in the single-file viewer)
+    'worker-src blob:',
     `script-src 'nonce-${scriptNonce}'`,
   ].join('; ');
 

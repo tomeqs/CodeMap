@@ -1,6 +1,6 @@
 import { CircleGeometry, Color, DoubleSide, Group, Mesh, MeshBasicMaterial, RingGeometry, Vector3 } from 'three';
-import { forceLink, forceManyBody, forceSimulation, forceX, forceZ } from 'd3-force-3d';
-import { clusterForce, GalaxyView } from './galaxy.js';
+import { createSpec } from '../layout/spec.js';
+import { GalaxyView } from './galaxy.js';
 
 const circle = new CircleGeometry(1, 96);
 const ring = new RingGeometry(0.986, 1, 160);
@@ -41,61 +41,41 @@ export class LayeredView extends GalaxyView {
     return (index - (count - 1) / 2) * this.spacing;
   }
 
-  startSimulation(state, cachedRatio) {
-    this.simulation?.stop();
+  /** Height is the layer (fixed); the layout only arranges each plane. Projects become columns through the layers. */
+  layoutSpec(state, cachedRatio) {
     const units = this.units;
+    const n = units.length;
     const layerCount = Math.max(1, this.layering.layers.length);
-    this.spacing = Math.min(240, Math.max(70, 24 * Math.sqrt(units.length / layerCount) + 40));
+    this.spacing = Math.min(240, Math.max(70, 24 * Math.sqrt(n / layerCount) + 40));
     for (const u of units) {
       u.layer = this.layering.layerOf.get(u.id) ?? 0;
-      u.fy = this.layerY(u.layer); // height is the layer; the simulation only arranges each plane
-      u.y = u.fy;
+      u.y = this.layerY(u.layer);
     }
 
-    // Projects become columns through the layers.
     const projectIds = [...new Set(units.map((u) => u.node.projectNode?.id).filter(Boolean))].sort();
-    const radius = projectIds.length > 1 ? 40 + 12 * Math.sqrt(units.length) : 0;
+    const radius = projectIds.length > 1 ? 40 + 12 * Math.sqrt(n) : 0;
     const anchors = new Map(projectIds.map((id, i) => {
       const angle = (i / projectIds.length) * Math.PI * 2;
       return [id, { x: Math.cos(angle) * radius, z: Math.sin(angle) * radius }];
     }));
-    const anchorOf = (u) => anchors.get(u.node.projectNode?.id) ?? { x: 0, z: 0 };
 
-    const degree = new Map();
-    for (const l of this.links) {
-      degree.set(l.s, (degree.get(l.s) ?? 0) + 1);
-      degree.set(l.t, (degree.get(l.t) ?? 0) + 1);
-    }
-
-    const level = state.level;
-    const groupOf = (u) => {
-      const n = u.node;
-      if (level === 'member') return n.typeNode?.id ?? n.parent;
-      if (level === 'type') return n.namespaceNode?.id ?? n.parent;
-      if (level === 'namespace') return n.projectNode?.id;
-      return null;
-    };
-
-    const simLinks = this.links.map((l) => ({ source: l.s, target: l.t }));
-    const sim = forceSimulation(units, 3)
-      .force('link', forceLink(simLinks).distance((l) => l.source.r + l.target.r + 16).strength((l) => 0.3 / Math.min(degree.get(l.source) ?? 1, degree.get(l.target) ?? 1)))
-      .force('charge', forceManyBody().strength((u) => -16 - u.r * u.r * 2.6).theta(0.9).distanceMax(520))
-      .force('x', forceX((u) => anchorOf(u).x).strength(0.045))
-      .force('z', forceZ((u) => anchorOf(u).z).strength(0.045))
-      .force('cluster', clusterForce(groupOf, 0.16))
-      .alpha(cachedRatio > 0.8 ? 0.4 : 1)
-      .alphaDecay(units.length > 3000 ? 0.035 : 0.024)
-      .velocityDecay(0.38)
-      .stop();
-
-    this.simulation = sim;
-    this.settled = false;
-    this.pendingFocus = null;
-
-    this.prewarm(sim);
-    for (const u of units) this.positions.set(u.id, { x: u.x, y: u.y, z: u.z });
-    this.updateMatrices();
-    this.updateLinePositions();
+    const spec = createSpec(n, this.links.length, {
+      alpha: cachedRatio > 0.8 ? 0.4 : 1,
+      alphaDecay: n > 3000 ? 0.035 : 0.024,
+      velocityDecay: 0.38,
+      theta: 0.9,
+      distanceMax: 520,
+      anchorStrength: [0.045, 0, 0.045],
+      clusterStrength: 0.16,
+      center: false,
+    });
+    this.fillSpec(spec, state, (u) => anchors.get(u.node.projectNode?.id) ?? { x: 0, z: 0 });
+    units.forEach((u, i) => {
+      spec.fixedY[i] = u.y;
+      spec.charge[i] = -16 - u.r * u.r * 2.6;
+    });
+    this.fillLinks(spec, (l) => l.s.r + l.t.r + 16, 0.3);
+    return spec;
   }
 
   // ------------------------------------------------------------------ planes
@@ -146,7 +126,7 @@ export class LayeredView extends GalaxyView {
   }
 
   update(dt) {
-    const moving = this.simulation && this.simulation.alpha() > this.simulation.alphaMin();
+    const moving = !this.settled;
     const result = super.update(dt);
     if (moving) this.updatePlanes();
     return result;

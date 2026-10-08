@@ -188,6 +188,8 @@ class CodeMapController {
       case 'ready':
         this.ready = true;
         clearTimeout(this.readyTimer);
+        if (message.renderer) this.output.appendLine(`Map started: ${message.renderer} renderer (${message.adapter ?? 'unknown GPU'}), layout ${message.layout ?? 'unknown'}.`);
+        this.mapInfo = { renderer: message.renderer, adapter: message.adapter, layout: message.layout };
         for (const queued of this.queue.splice(0)) this.panel.webview.postMessage(queued);
         break;
       case 'fatal':

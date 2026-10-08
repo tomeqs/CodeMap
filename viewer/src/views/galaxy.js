@@ -18,12 +18,13 @@ import {
   TorusGeometry,
   Vector3,
 } from 'three';
-import { forceCenter, forceLink, forceManyBody, forceSimulation, forceX, forceY, forceZ } from 'd3-force-3d';
 import { EDGE_KINDS } from '../data/palette.js';
 import { createLines, FlowParticles, glowMaterial } from '../scene/materials.js';
 import { dotTexture } from '../scene/stage.js';
 import { perf } from '../perf/stats.js';
 import { disposeObject } from '../scene/disposer.js';
+import { createSpec } from '../layout/spec.js';
+import { startLayout } from '../layout/engine.js';
 
 const GEOMETRIES = {
   sphere: () => new IcosahedronGeometry(1, 3),
@@ -233,7 +234,7 @@ export class GalaxyView {
       mesh.userData.units = list;
       list.forEach((unit, i) => {
         unit.mesh = mesh;
-        unit.slot = i; // d3-force owns `index` on simulation nodes
+        unit.slot = i; // its instance in the mesh (`index` is its place in the layout)
       });
       mesh.frustumCulled = false;
       this.meshes.push(mesh);
@@ -252,70 +253,110 @@ export class GalaxyView {
   }
 
   startSimulation(state, cachedRatio) {
-    this.simulation?.stop();
+    this.layout?.stop();
+    const spec = this.layoutSpec(state, cachedRatio);
+    this.layoutStart = performance.now();
+    this.layout = startLayout(spec);
+    this.settled = false;
+    this.pendingFocus = null;
+    // A fresh layout in the worker: show it once its first (pre-warmed) frame is back, not the starting cloud.
+    this.setLayoutVisible(this.layout.kind === 'main' || cachedRatio >= 0.5);
+    this.applyLayout();
+  }
+
+  setLayoutVisible(visible) {
+    for (const mesh of this.meshes) mesh.visible = visible;
+    this.lines.visible = visible;
+    this.layoutHidden = !visible;
+  }
+
+  /** The force layout of the galaxy: projects are "solar systems" on a sphere, groups (namespaces, types) clump. */
+  layoutSpec(state, cachedRatio) {
     const units = this.units;
+    const n = units.length;
     const level = state.level;
+    const projectIds = [...new Set(units.map((u) => u.node.projectNode?.id).filter(Boolean))];
+    const anchors = new Map();
+    const radius = level === 'project' ? 0 : 50 + 22 * Math.sqrt(n / Math.max(1, projectIds.length)) * Math.cbrt(projectIds.length);
+    projectIds.forEach((id, i) => anchors.set(id, fibonacciSphere(i, projectIds.length, projectIds.length > 1 ? radius : 0)));
+    const anchor = level === 'project' ? 0 : 0.035;
+    const spec = createSpec(n, this.links.length, {
+      alpha: cachedRatio > 0.8 ? 0.35 : 1,
+      alphaDecay: n > 3000 ? 0.035 : 0.022,
+      velocityDecay: 0.35,
+      theta: 0.9,
+      distanceMax: 700,
+      anchorStrength: [anchor, anchor, anchor],
+      clusterStrength: 0.22,
+      center: true,
+    });
+    this.fillSpec(spec, state, (u) => anchors.get(u.node.projectNode?.id));
+    spec.charge.forEach((_, i) => (spec.charge[i] = -14 - units[i].r * units[i].r * 2.2));
+    this.fillLinks(spec, (l) => l.s.r + l.t.r + 14 + (l.s.node.projectNode !== l.t.node.projectNode ? 26 : 0), 0.55);
+    return spec;
+  }
 
-    const degree = new Map();
-    for (const l of this.links) {
-      degree.set(l.s, (degree.get(l.s) ?? 0) + 1);
-      degree.set(l.t, (degree.get(l.t) ?? 0) + 1);
-    }
-
-    const simLinks = this.links.map((l) => ({ source: l.s, target: l.t, weight: l.weight }));
-    const groupOf = (u) => {
-      const n = u.node;
+  /** Positions, sizes, anchors and groups (namespace of a type, type of a member…) of the units. */
+  fillSpec(spec, state, anchorOf) {
+    const level = state.level;
+    const groupOf = (n) => {
       if (level === 'member') return n.typeNode?.id ?? n.parent;
       if (level === 'type') return n.namespaceNode?.id ?? n.parent;
       if (level === 'namespace') return n.projectNode?.id;
       return null;
     };
+    const groups = new Map();
+    this.units.forEach((u, i) => {
+      u.index = i;
+      spec.position[i * 3] = u.x;
+      spec.position[i * 3 + 1] = u.y;
+      spec.position[i * 3 + 2] = u.z;
+      spec.radius[i] = u.r;
+      const a = anchorOf(u);
+      if (a) {
+        spec.anchor[i * 3] = a.x ?? 0;
+        spec.anchor[i * 3 + 1] = a.y ?? 0;
+        spec.anchor[i * 3 + 2] = a.z ?? 0;
+      }
 
-    // Projects become "solar systems" spread on a sphere.
-    const projectIds = [...new Set(units.map((u) => u.node.projectNode?.id).filter(Boolean))];
-    const anchors = new Map();
-    const radius = level === 'project' ? 0 : 50 + 22 * Math.sqrt(units.length / Math.max(1, projectIds.length)) * Math.cbrt(projectIds.length);
-    projectIds.forEach((id, i) => anchors.set(id, fibonacciSphere(i, projectIds.length, projectIds.length > 1 ? radius : 0)));
-    const anchorOf = (u) => anchors.get(u.node.projectNode?.id) ?? { x: 0, y: 0, z: 0 };
-    const anchorStrength = level === 'project' ? 0 : 0.035;
-
-    const sim = forceSimulation(units, 3)
-      .force(
-        'link',
-        forceLink(simLinks)
-          .distance((l) => l.source.r + l.target.r + 14 + (l.source.node.projectNode !== l.target.node.projectNode ? 26 : 0))
-          .strength((l) => 0.55 / Math.min(degree.get(l.source) ?? 1, degree.get(l.target) ?? 1)),
-      )
-      .force('charge', forceManyBody().strength((u) => -14 - u.r * u.r * 2.2).theta(0.9).distanceMax(700))
-      .force('x', forceX((u) => anchorOf(u).x).strength(anchorStrength))
-      .force('y', forceY((u) => anchorOf(u).y).strength(anchorStrength))
-      .force('z', forceZ((u) => anchorOf(u).z).strength(anchorStrength))
-      .force('cluster', clusterForce(groupOf, 0.22))
-      .force('center', forceCenter(0, 0, 0))
-      .alpha(cachedRatio > 0.8 ? 0.35 : 1)
-      .alphaDecay(units.length > 3000 ? 0.035 : 0.022)
-      .velocityDecay(0.35)
-      .stop();
-
-    this.simulation = sim;
-    this.settled = false;
-    this.pendingFocus = null;
-
-    // Pre-warm: lay out most of the structure before the first frame, then animate the rest.
-    this.prewarm(sim);
-    this.updateMatrices();
-    this.updateLinePositions();
+      const g = groupOf(u.node);
+      if (g) {
+        if (!groups.has(g)) groups.set(g, groups.size);
+        spec.group[i] = groups.get(g);
+      }
+    });
+    spec.groupCount = groups.size;
   }
 
-  prewarm(sim) {
-    const start = performance.now();
-    this.layoutStart = start;
-    while (performance.now() - start < 120 && sim.alpha() > 0.2) {
-      sim.tick();
-      perf.ticks++;
+  /** Links pull their ends to `distance`, hubs more gently (strength / smaller degree). */
+  fillLinks(spec, distance, strength) {
+    const degree = new Int32Array(this.units.length);
+    for (const l of this.links) {
+      degree[l.s.index]++;
+      degree[l.t.index]++;
     }
 
-    perf.set('prewarm', performance.now() - start);
+    this.links.forEach((l, k) => {
+      spec.linkSource[k] = l.s.index;
+      spec.linkTarget[k] = l.t.index;
+      spec.linkDistance[k] = distance(l);
+      spec.linkStrength[k] = strength / Math.min(degree[l.s.index], degree[l.t.index]);
+    });
+  }
+
+  /** Takes the newest positions of the layout. */
+  applyLayout() {
+    const p = this.layout.positions;
+    const units = this.units;
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      u.x = p[i * 3];
+      u.y = p[i * 3 + 1];
+      u.z = p[i * 3 + 2];
+    }
+
+    this.updateMatrices();
+    this.updateLinePositions();
   }
 
   // ------------------------------------------------------------------ frame
@@ -323,17 +364,14 @@ export class GalaxyView {
   /** Advances the layout and the animations; returns true while the layout moves, 'ambient' for decoration only. */
   update(dt) {
     let busy = false;
-    const sim = this.simulation;
-    if (sim && sim.alpha() > sim.alphaMin()) {
+    const layout = this.layout;
+    if (layout && !this.settled) {
       busy = true;
-      const start = performance.now();
-      do {
-        sim.tick();
-        perf.ticks++;
-      } while (performance.now() - start < 9 && sim.alpha() > sim.alphaMin());
-      this.updateMatrices();
-      this.updateLinePositions();
-      if (sim.alpha() <= sim.alphaMin() && !this.settled) {
+      if (layout.step(9)) {
+        this.applyLayout();
+        if (this.layoutHidden) this.setLayoutVisible(true);
+      }
+      if (layout.settled) {
         this.settled = true;
         perf.set('settle', performance.now() - this.layoutStart);
         this.savePositions();
@@ -595,8 +633,8 @@ export class GalaxyView {
   }
 
   dispose() {
-    this.simulation?.stop();
-    this.simulation = null;
+    this.layout?.stop();
+    this.layout = null;
     this.stage.scene.remove(this.group);
     disposeObject(this.group);
     for (const geometry of Object.values(this.geometries)) geometry.dispose();
@@ -621,35 +659,4 @@ function fibonacciSphere(i, n, radius) {
   const r = Math.sqrt(1 - y * y);
   const theta = Math.PI * (3 - Math.sqrt(5)) * i;
   return { x: Math.cos(theta) * r * radius, y: y * radius * 0.7, z: Math.sin(theta) * r * radius };
-}
-
-/** Pulls nodes toward the centroid of their group (namespace, type...). */
-export function clusterForce(groupOf, strength) {
-  let nodes = [];
-  const force = (alpha) => {
-    const centroids = new Map();
-    for (const n of nodes) {
-      const g = groupOf(n);
-      if (!g) continue;
-      let c = centroids.get(g);
-      if (!c) centroids.set(g, (c = { x: 0, y: 0, z: 0, w: 0 }));
-      const w = n.r;
-      c.x += n.x * w;
-      c.y += n.y * w;
-      c.z += n.z * w;
-      c.w += w;
-    }
-
-    const k = strength * alpha;
-    for (const n of nodes) {
-      const c = centroids.get(groupOf(n));
-      if (!c || c.w === 0) continue;
-      n.vx += (c.x / c.w - n.x) * k;
-      n.vy += (c.y / c.w - n.y) * k;
-      n.vz += (c.z / c.w - n.z) * k;
-    }
-  };
-
-  force.initialize = (n) => (nodes = n);
-  return force;
 }
