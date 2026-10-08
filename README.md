@@ -19,14 +19,52 @@ codemap MySolution.sln            →  MySolution.codemap.json   (graf: format d
 
 ## Szybki start
 
+### Gotowy program (bez instalowania czegokolwiek)
+
+Z zakładki [Releases](https://github.com/tomeqs/CodeMap/releases) pobierz plik dla swojego systemu,
+rozpakuj go i uruchom `codemap` (na Windows wystarczy dwuklik na `codemap.exe`). Otworzy się przeglądarka z ekranem wyboru projektu.
+
+| System | Plik |
+|---|---|
+| Windows (Intel/AMD, ARM) | `codemap-<wersja>-win-x64.zip`, `…-win-arm64.zip` |
+| macOS (Apple Silicon, Intel) | `codemap-<wersja>-osx-arm64.tar.gz`, `…-osx-x64.tar.gz` |
+| Linux | `codemap-<wersja>-linux-x64.tar.gz`, `…-linux-arm64.tar.gz` |
+
+To jeden plik wykonywalny (około 50 MB) z wbudowanym środowiskiem .NET, więc działa bez .NET. Jeśli .NET SDK
+jest zainstalowany, `codemap` i tak go znajdzie i użyje jego bibliotek (najnowszej wersji) do rozwiązywania
+typów frameworka. `codemap --version` pokazuje, skąd je bierze.
+
+* **Windows**: plik nie jest podpisany, więc SmartScreen może pokazać ostrzeżenie (*Więcej informacji → Uruchom mimo to*).
+* **macOS**: po pobraniu z przeglądarki zdejmij kwarantannę: `xattr -d com.apple.quarantine ./codemap`.
+* Warto dodać folder z programem do `PATH`, żeby `codemap` działał z każdego terminala i w skrótach IDE.
+
+### Jako narzędzie .NET
+
 Wymagany jest .NET SDK 8 lub nowszy. Node.js jest potrzebny tylko do przebudowania viewera.
 
 ```bash
-# instalacja jako globalne narzędzie
+# z pliku .nupkg z Releases albo zbudowanego lokalnie
 dotnet pack src/CodeMap.Cli -o nupkg
 dotnet tool install -g CodeMap.Tool --add-source nupkg
 
 codemap            # otwiera aplikację w przeglądarce
+```
+
+### Wydawanie nowej wersji
+
+Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) uruchamia testy i buduje programy
+dla 6 platform. Dla każdej sprawdza, czy program uruchamia się i analizuje przykładową solucję, a do tego pakuje narzędzie .NET.
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0     # GitHub release z plikami i sumami SHA256
+```
+
+Workflow można też uruchomić ręcznie (*Actions → Release → Run workflow*): wtedy pliki trafiają tylko do artefaktów.
+Jeśli w ustawieniach repozytorium jest sekret `NUGET_API_KEY`, narzędzie trafia też do nuget.org
+(`dotnet tool install -g CodeMap.Tool`). Lokalnie program dla wybranej platformy buduje:
+
+```bash
+dotnet publish src/CodeMap.Cli -c Release -r win-x64 -o dist/win-x64     # albo linux-x64, osx-arm64…
 ```
 
 ### Aplikacja w przeglądarce (najwygodniej)
@@ -55,7 +93,7 @@ przez `codemap`. Inne strony otwarte w przeglądarce nie mogą więc z niego kor
 ### Skrót w IDE
 
 **Visual Studio**: *Tools → External Tools… → Add*
-* Command: `%USERPROFILE%\.dotnet\tools\codemap.exe`
+* Command: `%USERPROFILE%\.dotnet\tools\codemap.exe` (albo ścieżka do pobranego `codemap.exe`)
 * Arguments: `ui "$(SolutionDir)$(SolutionFileName)" --watch`
 
 **JetBrains Rider**: *Settings → Tools → External Tools*, Program `codemap`, Arguments `ui "$SolutionPath$" --watch`.
@@ -230,7 +268,7 @@ src/CodeMap.Core      analizator (Roslyn), model grafu, metryki, eksportery
   Analysis/           deklaracje, walker referencji, metryki, cykle, warstwy, DI, git (churn, change coupling), tagi
   Export/             JSON, DGML, GraphML, Cypher, Markdown, HTML
 src/CodeMap.Server    lokalna aplikacja: API (ASP.NET Core), przeglądarka folderów, klonowanie, cache, tryb live
-src/CodeMap.Cli       narzędzie `codemap` (dotnet tool), osadza zbudowany viewer
+src/CodeMap.Cli       narzędzie `codemap` (dotnet tool albo samodzielny plik wykonywalny), osadza zbudowany viewer
 viewer/               mapa 3D: Vite + three.js + d3-force-3d + d3-hierarchy, budowana do jednego pliku HTML
 tests/CodeMap.Tests   testy xUnit analizatora i eksporterów
 samples/Shop          przykładowa solucja (DDD, DI, zdarzenia, celowy cykl i martwy kod)
@@ -256,7 +294,8 @@ generowało HTML bez Node.js. Po zmianach w `viewer/` trzeba uruchomić `npm run
 1. `ProjectLoader` czyta solucję i pliki `.csproj` (z `Directory.Build.props`, `Compile Remove`,
    `ImplicitUsings`, `<Using>`, referencjami projektów i paczek).
 2. `CompilationFactory` buduje kompilację Roslyn dla każdego projektu w kolejności topologicznej:
-   referencje frameworka z działającego runtime’u (plus ASP.NET Core / WindowsDesktop, gdy są potrzebne),
+   referencje frameworka z działającego runtime’u albo, w samodzielnym pliku wykonywalnym, z zainstalowanego .NET
+   lub z runtime’u wbudowanego w program (`FrameworkLocator`), plus ASP.NET Core / WindowsDesktop, gdy są potrzebne,
    paczki z `project.assets.json`, a projekty jako `CompilationReference`.
 3. `TypeAnalyzer` + `ReferenceWalker` przechodzą równolegle drzewa składni: deklarują węzły i każdą
    referencję w kodzie rozwiązują przez model semantyczny na krawędź z odpowiednim rodzajem.
