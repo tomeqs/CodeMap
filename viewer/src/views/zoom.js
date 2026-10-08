@@ -301,7 +301,6 @@ export class ZoomView extends GalaxyView {
     }
 
     this.updateMatrices();
-    this.updateLinePositions();
     if (t >= 1) this.animation = null;
   }
 

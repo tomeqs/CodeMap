@@ -10,7 +10,7 @@ import {
   PointsNodeMaterial,
   Sprite,
 } from 'three/webgpu';
-import { abs, diffuseColor, float, floor, fract, hash, instancedBufferAttribute, normalLocal, positionWorld, step, texture, uniform, uv, vec2, vec4 } from 'three/tsl';
+import { abs, attribute, diffuseColor, float, floor, fract, hash, instancedBufferAttribute, normalLocal, positionLocal, positionWorld, step, texture, uniform, uv, vec2, vec4 } from 'three/tsl';
 import { dotTexture } from './textures.js';
 
 /**
@@ -20,6 +20,20 @@ import { dotTexture } from './textures.js';
 export function glowMaterial(glow = 0.55, options = {}) {
   const material = new MeshStandardNodeMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.15, ...options });
   material.userData.glow = uniform(glow);
+  material.emissiveNode = diffuseColor.rgb.mul(material.userData.glow);
+  return material;
+}
+
+/**
+ * Glowing units (galaxy, layers, semantic zoom) drawn straight from the position store: per instance the
+ * unit's index into the store, its colour and its size. A moving layout only uploads the store.
+ */
+export function unitMaterial(store, glow = 0.36) {
+  const material = new MeshStandardNodeMaterial({ roughness: 0.35, metalness: 0.15 });
+  material.userData.glow = uniform(glow);
+  const center = store.positionAt(attribute('aUnit', 'float')).xyz;
+  material.positionNode = positionLocal.mul(attribute('aScale', 'float')).add(center);
+  material.colorNode = attribute('aColor', 'vec3');
   material.emissiveNode = diffuseColor.rgb.mul(material.userData.glow);
   return material;
 }

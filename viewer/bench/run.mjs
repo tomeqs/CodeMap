@@ -35,7 +35,11 @@ try {
     if (renderer !== 'auto') query.set('renderer', renderer);
     const { page, errors } = await open(browser, `${server.url}/?${query}`);
     const started = Date.now();
+    // Frames while the layout settles: what the main thread spends per frame while things move.
+    await page.waitForFunction(() => window.codemap?.view?.units?.length, null, { timeout, polling: 50 });
+    await page.evaluate(() => window.codemap.perf.startSampling());
     await settled(page, timeout);
+    const layoutFrames = await page.evaluate(() => window.codemap.perf.stopSampling());
     if (view !== 'galaxy') {
       await page.evaluate((v) => (v === 'auto' ? window.codemap.setLevel('auto') : window.codemap.setView(v)), view);
       await page.waitForFunction(() => window.codemap.view.settled !== false && (window.codemap.view !== window.codemap.zoomView || window.codemap.zoomView.semantic), null, { timeout, polling: 100 });
@@ -44,6 +48,7 @@ try {
 
     const loadMs = Date.now() - started;
     const result = await measure(page);
+    result.layoutFrames = layoutFrames;
     result.size = sizeName(size);
     result.view = view;
     result.loadMs = loadMs;
@@ -134,6 +139,7 @@ function print(r) {
   const f = (v) => (v === null || v === undefined ? '–' : typeof v === 'number' ? (Math.round(v * 10) / 10).toString() : v);
   console.log(`\n${r.size} ${r.view} (${r.renderer}): ${r.units} units, ${r.links} links, heap ${f(r.heapMb)} MB`);
   console.log(`  load ${r.loadMs} ms · parse ${f(t.parse)} · model ${f(t.model)} · aggregate ${f(t.aggregate)} · build ${f(t.build)} · prewarm ${f(t.prewarm)} · settle ${f(t.settle)} ms`);
+  console.log(`  while laying out: ${r.layoutFrames?.frames ?? '–'} frames · interval p50 ${f(r.layoutFrames?.interval?.p50)} ms · JS per frame p50 ${f(r.layoutFrames?.work?.p50)} / p95 ${f(r.layoutFrames?.work?.p95)} ms`);
   console.log(`  idle 2 s: ${r.idle.frames} frames, ${r.idle.renders} renders`);
   console.log(`  orbit: interval p50 ${f(r.orbit.interval?.p50)} / p95 ${f(r.orbit.interval?.p95)} ms · JS per frame p50 ${f(r.orbit.work?.p50)} / p95 ${f(r.orbit.work?.p95)} ms`);
   console.log(`  pick ${f(r.pickMs)} ms · dependents ${f(r.dependentsMs)} ms`);
@@ -147,6 +153,7 @@ function compare(baseline, results) {
     if (!b) continue;
     const delta = (name, a, c) => rows.push(`${r.size} ${name.padEnd(22)} ${String(Math.round(a ?? 0)).padStart(7)} → ${String(Math.round(c ?? 0)).padStart(7)}`);
     delta('settle ms', b.perf.timings.settle, r.perf.timings.settle);
+    if (b.layoutFrames) delta('layout JS p95 ms', b.layoutFrames.work?.p95, r.layoutFrames?.work?.p95);
     delta('idle renders / 2 s', b.idle.renders, r.idle.renders);
     delta('orbit JS p95 ms', b.orbit.work?.p95, r.orbit.work?.p95);
     delta('orbit interval p95 ms', b.orbit.interval?.p95, r.orbit.interval?.p95);

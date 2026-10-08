@@ -10,21 +10,21 @@ import {
   Mesh,
   MeshStandardMaterial,
   PlaneGeometry,
-  QuadraticBezierCurve3,
   Vector3,
 } from 'three';
 import { hierarchy, treemap, treemapSquarify } from 'd3-hierarchy';
 import { EDGE_KINDS } from '../data/palette.js';
-import { buildingMaterial, createLines, FlowParticles } from '../scene/materials.js';
+import { buildingMaterial } from '../scene/materials.js';
+import { LinkMesh } from '../scene/link-mesh.js';
+import { GpuParticles } from '../scene/particles.js';
+import { PositionStore } from '../gpu/position-store.js';
 import { disposeObject } from '../scene/disposer.js';
 
-const SEGMENTS = 18;
 const PROJECT_SLAB = 2.2;
 const NAMESPACE_SLAB = 1.4;
 
 const matrix = new Matrix4();
 const color = new Color();
-const tmp = new Vector3();
 
 /**
  * Code city: every project is a district, every namespace a block, every type a building.
@@ -45,8 +45,11 @@ export class CityView {
     this.boxGeometry = new BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     this.buildingMaterial = buildingMaterial();
     this.districtMaterial = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0 });
-    this.arcs = createLines(1);
-    this.particles = new FlowParticles(6000, 3.5);
+    // Arcs and particles read the roof of each building from the store and bend on the GPU.
+    this.store = new PositionStore();
+    this.arcMesh = new LinkMesh(this.store, { arc: true });
+    this.arcs = this.arcMesh.mesh;
+    this.particles = new GpuParticles(this.store, { max: 30000, size: 3.5, arc: true });
 
     this.ground = new Mesh(new PlaneGeometry(1, 1), new MeshStandardMaterial({ color: '#070b16', roughness: 1 }));
     this.ground.rotation.x = -Math.PI / 2;
@@ -184,6 +187,9 @@ export class CityView {
       this.byId.set(node.id, unit);
       return unit;
     });
+    this.store.ensure(this.units.length);
+    for (const u of this.units) this.store.set(u.index, u.x, u.top, u.z);
+    this.store.upload();
     this.updateMatrices();
     this.group.add(this.buildingMesh);
 
@@ -202,7 +208,6 @@ export class CityView {
     this.links = links
       .filter((l) => this.byId.has(l.source) && this.byId.has(l.target))
       .map((l) => ({ ...l, s: this.byId.get(l.source), t: this.byId.get(l.target) }));
-    this.links.forEach((l) => (l.curve = arcCurve(l.s, l.t)));
 
     this.labelOrder = [...this.units].sort((a, b) => b.height - a.height);
     this.recolor();
@@ -282,55 +287,34 @@ export class CityView {
     if (h) selected = this.links.filter((_, i) => h.links.has(i));
     else if (this.hovered) selected = this.links.filter((l) => l.s === this.hovered || l.t === this.hovered);
     else if (this.options.allArcs) {
-      selected = [...this.links].sort((a, b) => b.weight - a.weight).slice(0, 3000);
+      selected = [...this.links].sort((a, b) => b.weight - a.weight).slice(0, 20000);
       intensity = selected.length > 800 ? 0.3 : 0.55;
     } else selected = [];
 
-    this.group.remove(this.arcs);
-    this.arcs.geometry.dispose();
-    this.arcs = createLines(Math.max(1, selected.length * SEGMENTS));
-    const pos = this.arcs.geometry.attributes.position.array;
-    const col = this.arcs.geometry.attributes.color.array;
-    let i = 0;
-    const point = new Vector3();
-    const next = new Vector3();
-    for (const l of selected) {
-      color.set(EDGE_KINDS[l.kind]?.color ?? '#ffffff');
-      for (let s = 0; s < SEGMENTS; s++) {
-        const t0 = s / SEGMENTS;
-        const t1 = (s + 1) / SEGMENTS;
-        l.curve.getPoint(t0, point);
-        l.curve.getPoint(t1, next);
-        const a = intensity * (1 - t0 * 0.7);
-        const b = intensity * (1 - t1 * 0.7);
-        pos.set([point.x, point.y, point.z, next.x, next.y, next.z], i * 6);
-        col.set([color.r * a, color.g * a, color.b * a, color.r * b, color.g * b, color.b * b], i * 6);
-        i++;
-      }
-    }
+    const arcs = this.arcMesh;
+    arcs.setCount(selected.length);
+    selected.forEach((l, i) => {
+      arcs.setEnds(i, l.s.index, l.t.index);
+      arcs.setStyle(i, color.set(EDGE_KINDS[l.kind]?.color ?? '#ffffff'), intensity, intensity * 0.3, 1.6);
+    });
+    arcs.flush();
 
-    this.arcs.geometry.setDrawRange(0, i * 2);
-    this.arcs.geometry.attributes.position.needsUpdate = true;
-    this.arcs.geometry.attributes.color.needsUpdate = true;
-    this.group.add(this.arcs);
-    this.stage.invalidate();
-
-    const flowing = selected.length > 1200 ? selected.slice(0, 1200) : selected;
+    const flowing = selected.length > 6000 ? selected.slice(0, 6000) : selected;
     this.particles.setPaths(
       flowing.map((l) => ({
+        source: l.s.index,
+        target: l.t.index,
         count: Math.min(3, 1 + Math.floor(Math.log2(l.weight))),
         speed: 0.22 + Math.random() * 0.1,
-        phase: Math.random(),
         color: new Color(EDGE_KINDS[l.kind]?.color ?? '#ffffff').multiplyScalar(1.8 * intensity),
-        at: (t, out) => l.curve.getPoint(t, out),
       })),
     );
+    this.stage.invalidate();
   }
 
   // ------------------------------------------------------------------ frame
 
-  update(dt) {
-    if (this.particles.count) this.particles.update(dt, tmp);
+  update() {
     if (this.options.labels) this.renderLabels();
     else this.labels.clear();
     return this.particles.count ? 'ambient' : false;
@@ -404,18 +388,10 @@ export class CityView {
     this.stage.scene.remove(this.group);
     disposeObject(this.group);
     this.boxGeometry.dispose();
+    this.store.dispose();
     this.units = [];
     this.links = [];
   }
-}
-
-function arcCurve(s, t) {
-  const start = new Vector3(s.x, s.top, s.z);
-  const end = new Vector3(t.x, t.top, t.z);
-  const distance = start.distanceTo(end);
-  const mid = start.clone().lerp(end, 0.5);
-  mid.y = Math.max(start.y, end.y) + 12 + distance * 0.42;
-  return new QuadraticBezierCurve3(start, mid, end);
 }
 
 function shortNamespace(name) {

@@ -72,11 +72,20 @@ try {
       await page.waitForFunction(() => window.codemap.view === window.codemap.galaxy && window.codemap.galaxy.settled, null, { timeout: 60000 });
       await page.waitForTimeout(1300); // the camera flies to fit
       const target = await page.evaluate(() => {
+        // The unit farthest from its neighbours on screen (and clear of the panels): nothing else is under it.
         const app = window.codemap;
-        const unit = [...app.view.units].sort((a, b) => b.r - a.r)[0];
-        const p = app.stage.project(app.view.positionOf(unit.id));
+        app.select(null);
         const rect = app.stage.canvas.getBoundingClientRect();
-        return { id: unit.id, x: rect.left + p.x, y: rect.top + p.y };
+        const points = app.view.units.map((u) => ({ id: u.id, p: app.stage.project(app.view.positionOf(u.id)) })).filter((x) => x.p);
+        const inside = points.filter(({ p }) => p.x > 320 && p.x < rect.width - 380 && p.y > 90 && p.y < rect.height - 130);
+        let best = null;
+        for (const a of inside) {
+          let clearance = Infinity;
+          for (const b of points) if (b !== a) clearance = Math.min(clearance, Math.hypot(a.p.x - b.p.x, a.p.y - b.p.y));
+          if (!best || clearance > best.clearance) best = { ...a, clearance };
+        }
+
+        return { id: best.id, x: rect.left + best.p.x, y: rect.top + best.p.y };
       });
       await page.mouse.click(target.x, target.y);
       const selected = await page.evaluate(() => window.codemap.selection?.nodeId);
@@ -110,6 +119,8 @@ try {
         const rect = app.stage.canvas.getBoundingClientRect();
         return { id: u.id, selected: units[0].id, x: Math.round(rect.left + p.x), y: Math.round(rect.top + p.y) };
       });
+      // Only the canvas counts: hide the HTML labels drawn over it.
+      await page.evaluate(() => (document.getElementById('labels').style.visibility = 'hidden'));
       await page.waitForTimeout(400);
       const before = await brightness(other);
       // As if the user had been away: no ambient frames (pulsing halo) that would hide a missing frame.
@@ -119,7 +130,10 @@ try {
       }, other.selected);
       await page.waitForTimeout(400);
       const after = await brightness(other);
-      await page.evaluate(() => window.codemap.select(null));
+      await page.evaluate(() => {
+        window.codemap.select(null);
+        document.getElementById('labels').style.visibility = '';
+      });
       assert.ok(after < before * 0.7, `brightness of an unrelated node: ${before} before, ${after} after selecting`);
     });
 

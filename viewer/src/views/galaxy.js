@@ -6,10 +6,11 @@ import {
   ConeGeometry,
   DirectionalLight,
   DodecahedronGeometry,
+  BufferGeometry,
   Group,
   IcosahedronGeometry,
-  InstancedMesh,
-  Matrix4,
+  InstancedBufferAttribute,
+  Mesh,
   OctahedronGeometry,
   PointLight,
   Sprite,
@@ -19,16 +20,20 @@ import {
   Vector3,
 } from 'three';
 import { EDGE_KINDS } from '../data/palette.js';
-import { createLines, FlowParticles, glowMaterial } from '../scene/materials.js';
+import { unitMaterial } from '../scene/materials.js';
+import { LinkMesh } from '../scene/link-mesh.js';
+import { GpuParticles } from '../scene/particles.js';
+import { PositionStore } from '../gpu/position-store.js';
 import { dotTexture } from '../scene/textures.js';
 import { perf } from '../perf/stats.js';
 import { disposeObject } from '../scene/disposer.js';
 import { createSpec } from '../layout/spec.js';
 import { startLayout } from '../layout/engine.js';
 
+/** Shapes by kind; `detail` (0–3) is how round the spheres are (fewer triangles for big graphs). */
 const GEOMETRIES = {
-  sphere: () => new IcosahedronGeometry(1, 3),
-  orb: () => new IcosahedronGeometry(1, 2),
+  sphere: (detail) => new IcosahedronGeometry(1, detail),
+  orb: (detail) => new IcosahedronGeometry(1, Math.max(0, detail - 1)),
   octa: () => new OctahedronGeometry(1.15, 0),
   box: () => new BoxGeometry(1.5, 1.5, 1.5),
   dodeca: () => new DodecahedronGeometry(1.1, 0),
@@ -66,10 +71,10 @@ const RADIUS = {
 /** Edge colours for problems: dependencies against the layering, DI lifetime errors / warnings. */
 export const VIOLATION_COLORS = { error: '#ff4545', warning: '#ffb02e', true: '#ff4545' };
 
-const matrix = new Matrix4();
 const color = new Color();
 const tmp = new Vector3();
 const tmp2 = new Vector3();
+const tmp3 = new Vector3();
 
 /** 3D force-directed "galaxy": projects form solar systems, namespaces clusters, types stars. */
 export class GalaxyView {
@@ -85,10 +90,13 @@ export class GalaxyView {
     this.highlight = null;
     this.hovered = null;
     this.options = { flowAll: false, labels: true, autoRotate: false };
-    this.geometries = Object.fromEntries(Object.entries(GEOMETRIES).map(([k, f]) => [k, f()]));
-    this.material = glowMaterial(0.36);
-    this.lines = createLines(1);
-    this.particles = new FlowParticles(8000, 2.6);
+    this.detail = -1;
+    // Everything reads unit positions from the store on the GPU: nodes, links and particles.
+    this.store = new PositionStore();
+    this.material = unitMaterial(this.store, 0.36);
+    this.linkMesh = new LinkMesh(this.store);
+    this.lines = this.linkMesh.mesh;
+    this.particles = new GpuParticles(this.store, { max: 60000, size: 2.6 });
     this.halo = new Sprite(new SpriteMaterial({ map: dotTexture(), color: 0xffffff, transparent: true, opacity: 0.4, blending: AdditiveBlending, depthWrite: false }));
     this.halo.visible = false;
 
@@ -166,6 +174,8 @@ export class GalaxyView {
       byId.set(node.id, unit);
       return unit;
     });
+    this.units.forEach((u, i) => (u.index = i)); // place in the position store and in the layout
+    this.store.ensure(this.units.length);
     this.byId = byId;
 
     this.links = links
@@ -218,7 +228,7 @@ export class GalaxyView {
   buildMeshes() {
     for (const mesh of this.meshes) {
       this.group.remove(mesh);
-      mesh.dispose();
+      mesh.geometry.dispose();
     }
 
     this.meshes = [];
@@ -229,12 +239,35 @@ export class GalaxyView {
       groups.get(shape).push(unit);
     }
 
+    // Level of detail: a sphere is 1280 triangles at full detail; tens of thousands of them are too many,
+    // more so without a GPU (software rendering).
+    const n = this.units.length;
+    const detail = Math.max(0, (n < 2500 ? 3 : n < 12000 ? 2 : 1) - (this.stage.software ? 1 : 0));
+    if (detail !== this.detail) {
+      for (const geometry of Object.values(this.geometries ?? {})) geometry.dispose();
+      this.geometries = Object.fromEntries(Object.entries(GEOMETRIES).map(([k, f]) => [k, f(detail)]));
+      this.detail = detail;
+    }
+
+    // One instanced mesh per shape: the shape's vertices plus, per instance, the unit's store index,
+    // colour and size.
     for (const [shape, list] of groups) {
-      const mesh = new InstancedMesh(this.geometries[shape], this.material, list.length);
+      const base = this.geometries[shape];
+      const geometry = new BufferGeometry();
+      geometry.setIndex(base.index);
+      geometry.setAttribute('position', base.attributes.position);
+      geometry.setAttribute('normal', base.attributes.normal);
+      const unitIndex = new InstancedBufferAttribute(new Float32Array(list.length), 1);
+      geometry.setAttribute('aUnit', unitIndex);
+      geometry.setAttribute('aColor', new InstancedBufferAttribute(new Float32Array(list.length * 3), 3));
+      geometry.setAttribute('aScale', new InstancedBufferAttribute(new Float32Array(list.length), 1));
+      const mesh = new Mesh(geometry, this.material);
+      mesh.count = list.length;
       mesh.userData.units = list;
       list.forEach((unit, i) => {
         unit.mesh = mesh;
-        unit.slot = i; // its instance in the mesh (`index` is its place in the layout)
+        unit.slot = i; // its instance in the mesh (`index` is its place in the store and the layout)
+        unitIndex.array[i] = unit.index;
       });
       mesh.frustumCulled = false;
       this.meshes.push(mesh);
@@ -245,11 +278,10 @@ export class GalaxyView {
   }
 
   buildLines() {
-    this.group.remove(this.lines);
-    this.lines.geometry.dispose();
-    this.lines = createLines(Math.max(1, this.links.length));
-    this.lines.geometry.setDrawRange(0, this.links.length * 2);
-    this.group.add(this.lines);
+    const links = this.linkMesh;
+    links.setCount(this.links.length);
+    this.links.forEach((l, i) => links.setEnds(i, l.s.index, l.t.index));
+    links.flush();
   }
 
   startSimulation(state, cachedRatio) {
@@ -266,7 +298,7 @@ export class GalaxyView {
 
   setLayoutVisible(visible) {
     for (const mesh of this.meshes) mesh.visible = visible;
-    this.lines.visible = visible;
+    this.linkMesh.mesh.visible = visible;
     this.layoutHidden = !visible;
   }
 
@@ -344,7 +376,7 @@ export class GalaxyView {
     });
   }
 
-  /** Takes the newest positions of the layout. */
+  /** Takes the newest positions of the layout: to the GPU in one upload, and to the units (labels, picking, camera). */
   applyLayout() {
     const p = this.layout.positions;
     const units = this.units;
@@ -355,8 +387,9 @@ export class GalaxyView {
       u.z = p[i * 3 + 2];
     }
 
-    this.updateMatrices();
-    this.updateLinePositions();
+    this.store.setAll(p, units.length);
+    this.store.upload();
+    this.stage.invalidate();
   }
 
   // ------------------------------------------------------------------ frame
@@ -387,41 +420,30 @@ export class GalaxyView {
       this.halo.scale.setScalar(halo.r * 3.6 * pulse);
     }
 
-    if (this.particles.count) this.particles.update(dt, tmp);
     if (this.options.labels) this.renderLabels();
     else this.labels.clear();
     return busy || (halo || this.particles.count ? 'ambient' : false);
   }
 
+  /** Positions (to the store) and sizes of every unit, e.g. after an animation step. */
   updateMatrices() {
-    for (const u of this.units) this.setMatrix(u);
+    for (const u of this.units) {
+      this.store.set(u.index, u.x, u.y, u.z);
+      this.setScale(u);
+    }
+
+    this.store.upload();
     for (const mesh of this.meshes) {
-      mesh.instanceMatrix.clearUpdateRanges();
-      mesh.instanceMatrix.needsUpdate = true;
-      mesh.boundingSphere = null; // recomputed when a ray needs it (picking), not on every frame
-    }
-  }
-
-  setMatrix(u) {
-    const s = u.r * (u.grow ?? 1) * (u === this.hovered ? 1.35 : 1);
-    matrix.makeScale(s, s, s);
-    matrix.setPosition(u.x, u.y, u.z);
-    u.mesh.setMatrixAt(u.slot, matrix);
-  }
-
-  updateLinePositions() {
-    const pos = this.lines.geometry.attributes.position.array;
-    let i = 0;
-    for (const l of this.links) {
-      pos[i++] = l.s.x;
-      pos[i++] = l.s.y;
-      pos[i++] = l.s.z;
-      pos[i++] = l.t.x;
-      pos[i++] = l.t.y;
-      pos[i++] = l.t.z;
+      const scale = mesh.geometry.attributes.aScale;
+      scale.clearUpdateRanges();
+      scale.needsUpdate = true;
     }
 
-    this.lines.geometry.attributes.position.needsUpdate = true;
+    this.stage.invalidate();
+  }
+
+  setScale(u) {
+    u.mesh.geometry.attributes.aScale.array[u.slot] = u.r * (u.grow ?? 1) * (u === this.hovered ? 1.35 : 1);
   }
 
   // ------------------------------------------------------------------ colours & highlight
@@ -429,9 +451,9 @@ export class GalaxyView {
   recolor() {
     for (const u of this.units) this.setUnitColor(u);
     for (const mesh of this.meshes) {
-      if (!mesh.instanceColor) continue;
-      mesh.instanceColor.clearUpdateRanges();
-      mesh.instanceColor.needsUpdate = true;
+      const colors = mesh.geometry.attributes.aColor;
+      colors.clearUpdateRanges();
+      colors.needsUpdate = true;
     }
 
     this.recolorLines();
@@ -447,19 +469,17 @@ export class GalaxyView {
       else factor = 0.1;
     } else if (this.hovered === u) factor = 1.3;
     color.multiplyScalar(factor);
-    u.mesh.setColorAt(u.slot, color);
+    color.toArray(u.mesh.geometry.attributes.aColor.array, u.slot * 3);
   }
 
   recolorLines() {
-    const attribute = this.lines.geometry.attributes.color;
     this.links.forEach((l, index) => this.setLinkColor(l, index));
-    attribute.clearUpdateRanges();
-    attribute.needsUpdate = true;
+    this.linkMesh.flush();
     this.stage.invalidate();
   }
 
+  /** A link's colour, how bright it is at its source and target, and its width. */
   setLinkColor(l, index) {
-    const col = this.lines.geometry.attributes.color.array;
     const h = this.highlight;
     const hovered = this.hovered;
     const count = this.links.length;
@@ -484,13 +504,11 @@ export class GalaxyView {
       b = base * 0.25 * w;
     }
 
-    const i = index * 6;
-    col[i] = c.r * a;
-    col[i + 1] = c.g * a;
-    col[i + 2] = c.b * a;
-    col[i + 3] = c.r * b;
-    col[i + 4] = c.g * b;
-    col[i + 5] = c.b * b;
+    // Ribbons with soft edges: highlighted and heavier links are wider, the rest stays a faint thread.
+    const on = (h && h.links.has(index)) || (!h && hovered && (l.s === hovered || l.t === hovered));
+    const width = (on ? 1.9 : l.violation ? 1.6 : 1.1) * Math.min(1.6, 1 + Math.log2(l.weight) * 0.1);
+    const gain = on ? 1 : 0.75;
+    this.linkMesh.setStyle(index, c, a * gain, b * gain, width);
   }
 
   /** highlight: null | { primary, nodes:Set<id>, links:Set<index>, secondary?:Set<id> } */
@@ -508,25 +526,24 @@ export class GalaxyView {
     const previous = this.hovered;
     this.hovered = unit;
     // Only the two units (and, without a selection, their links) change: upload just those.
-    const colors = this.lines.geometry.attributes.color;
+    const restyled = [];
     for (const u of [previous, unit]) {
       if (!u || !u.mesh) continue;
-      this.setMatrix(u);
+      this.setScale(u);
       this.setUnitColor(u);
-      u.mesh.instanceMatrix.addUpdateRange(u.slot * 16, 16);
-      u.mesh.instanceMatrix.needsUpdate = true;
-      u.mesh.instanceColor.addUpdateRange(u.slot * 3, 3);
-      u.mesh.instanceColor.needsUpdate = true;
-      u.mesh.boundingSphere = null;
+      const { aScale, aColor } = u.mesh.geometry.attributes;
+      aScale.addUpdateRange(u.slot, 1);
+      aScale.needsUpdate = true;
+      aColor.addUpdateRange(u.slot * 3, 3);
+      aColor.needsUpdate = true;
       if (this.highlight) continue;
       for (const i of u.linkIndices ?? []) {
         this.setLinkColor(this.links[i], i);
-        colors.addUpdateRange(i * 6, 6);
+        restyled.push(i);
       }
-
-      colors.needsUpdate = true;
     }
 
+    if (restyled.length) this.linkMesh.flushStyle(restyled);
     if (!this.highlight) this.refreshParticles();
     this.stage.invalidate();
   }
@@ -538,17 +555,19 @@ export class GalaxyView {
     else if (this.hovered) selected = this.links.filter((l) => l.s === this.hovered || l.t === this.hovered);
     else if (this.options.flowAll) selected = this.links;
     else selected = this.links.filter((l) => l.violation);
-    selected = selected.slice(0, 2500);
+    // The GPU animates them all; only the budget for very large selections is limited.
+    selected = selected.slice(0, 20000);
 
     this.particles.setPaths(
       selected.map((l) => ({
+        source: l.s.index,
+        target: l.t.index,
         count: Math.min(4, 1 + Math.floor(Math.log2(l.weight))),
         speed: 0.28 + Math.random() * 0.12,
-        phase: Math.random(),
         color: linkColor(l).clone().multiplyScalar(1.6),
-        at: (t, out) => out.set(l.s.x + (l.t.x - l.s.x) * t, l.s.y + (l.t.y - l.s.y) * t, l.s.z + (l.t.z - l.s.z) * t),
       })),
     );
+    this.stage.invalidate();
   }
 
   // ------------------------------------------------------------------ labels
@@ -563,16 +582,36 @@ export class GalaxyView {
       items.push({ text: this.labelText?.(u.node) ?? u.node.name, position: tmp2.clone(), cls, offsetY: 4 + (u.r * 300) / Math.max(distance, 1), opacity, force });
     };
 
+    // Label budgets go to units on screen: zoomed into a big graph, the nearby names still show.
+    const { width, height } = this.stage;
+    const onScreen = (u) => {
+      const p = this.stage.project(tmp2.set(u.x, u.y, u.z), tmp3);
+      return p && p.x > -40 && p.y > -20 && p.x < width + 40 && p.y < height + 20;
+    };
+
     if (h?.primary && this.byId.has(h.primary)) push(this.byId.get(h.primary), 'l-selected', true);
     if (this.hovered) push(this.hovered, 'l-selected', true);
-    if (h) for (const id of h.nodes) if (id !== h.primary && this.byId.has(id)) push(this.byId.get(id), '');
+    if (h) {
+      let shown = 0;
+      for (const id of h.nodes) {
+        if (shown >= 60) break;
+        const u = id !== h.primary && this.byId.get(id);
+        if (u && onScreen(u)) {
+          push(u, '');
+          shown++;
+        }
+      }
+    }
 
     const budget = h ? 25 : 70;
     let n = 0;
+    let scanned = 0;
     for (const u of this.labelOrder) {
-      if (n++ > budget) break;
+      if (n >= budget || scanned++ > 5000) break;
       if (h && !h.nodes.has(u.id)) continue;
+      if (!onScreen(u)) continue;
       push(u, u.node.level === 'project' ? 'l-project' : u.node.level === 'namespace' ? 'l-namespace' : '');
+      n++;
     }
 
     items.unshift(...this.extraLabels());
@@ -586,14 +625,37 @@ export class GalaxyView {
 
   // ------------------------------------------------------------------ interaction
 
+  /**
+   * The unit under the pointer: the nearest one whose projected sphere contains it (at least a few pixels
+   * wide, so tiny far-away units can still be clicked). Positions come from the units, not the GPU.
+   */
   pick(event) {
-    const hits = this.stage.pick(event, this.meshes);
-    for (const hit of hits) {
-      const unit = hit.object.userData.units?.[hit.instanceId];
-      if (unit) return unit.id;
+    const canvas = this.stage.canvas;
+    const rect = canvas.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    const camera = this.stage.camera;
+    camera.updateMatrixWorld();
+    const m = camera.projectionMatrix.clone().multiply(camera.matrixWorldInverse).elements;
+    const pixelScale = rect.height / 2 / Math.tan((camera.fov * Math.PI) / 360);
+    let best = null;
+    let bestDepth = Infinity;
+    for (const u of this.units) {
+      if (!u.mesh?.visible) continue;
+      const w = m[3] * u.x + m[7] * u.y + m[11] * u.z + m[15];
+      if (w <= camera.near) continue;
+      const sx = ((m[0] * u.x + m[4] * u.y + m[8] * u.z + m[12]) / w * 0.5 + 0.5) * rect.width;
+      const sy = (-(m[1] * u.x + m[5] * u.y + m[9] * u.z + m[13]) / w * 0.5 + 0.5) * rect.height;
+      const radius = Math.max(4, (u.r * (u.grow ?? 1) * (u === this.hovered ? 1.35 : 1) * 1.1 * pixelScale) / w);
+      const dx = sx - px;
+      const dy = sy - py;
+      if (dx * dx + dy * dy <= radius * radius && w < bestDepth) {
+        best = u;
+        bestDepth = w;
+      }
     }
 
-    return null;
+    return best?.id ?? null;
   }
 
   positionOf(id) {
@@ -637,7 +699,8 @@ export class GalaxyView {
     this.layout = null;
     this.stage.scene.remove(this.group);
     disposeObject(this.group);
-    for (const geometry of Object.values(this.geometries)) geometry.dispose();
+    for (const geometry of Object.values(this.geometries ?? {})) geometry.dispose();
+    this.store.dispose();
     this.units = [];
     this.links = [];
   }

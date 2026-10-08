@@ -298,6 +298,9 @@ albo użyć parametru `?data=url.json`.
   albo ustawieniem `codemap.renderer` w VS Code.
 * Układ siłowy liczy się w **Web Workerze**, więc mapa i interfejs zostają płynne, a duży graf układa się wielokrotnie szybciej.
   Do 15 000 elementów na poziom; bez workera, na przykład gdy CSP go blokuje, wraca na główny wątek z limitem 7000.
+* Pozycje elementów leżą w teksturze na GPU. Węzły, relacje (wstęgi o miękkich krawędziach, w City łuki)
+  i płynące cząsteczki odczytują je w shaderach, więc ruch grafu to jedno przesłanie tekstury na klatkę,
+  zamiast przepisywania macierzy i wierzchołków. Przy 20 000 elementów koszt CPU klatki spadł z 5 ms do 0,25 ms.
 * Klatki rysowane są tylko wtedy, gdy coś się zmienia: ruch kamery, układanie grafu, animacja.
   Nieruchoma mapa nie zużywa GPU ani baterii. Cząsteczki i pulsowanie zaznaczenia zatrzymują się po 20 s bez ruchu myszy
   i przy systemowym *ogranicz ruch*.

@@ -1,0 +1,191 @@
+import { AdditiveBlending, BufferAttribute, BufferGeometry, DoubleSide, InstancedBufferAttribute, Mesh, MeshBasicNodeMaterial } from 'three/webgpu';
+import {
+  abs,
+  attribute,
+  cameraProjectionMatrix,
+  distance,
+  float,
+  max,
+  min,
+  mix,
+  modelViewMatrix,
+  normalize,
+  screenDPR,
+  screenSize,
+  select,
+  smoothstep,
+  varying,
+  vec2,
+  vec3,
+  vec4,
+} from 'three/tsl';
+
+/** Smallest clip-space w kept in front of the camera when a link crosses it. */
+const NEAR_W = 0.05;
+
+/**
+ * Links as thick glowing ribbons: one instanced strip per link, widened in screen space in the vertex
+ * shader, with soft edges. Both ends are read from the position store, so a moving layout costs nothing
+ * here. `arc` bends every link up into a quadratic curve (the code city).
+ *
+ * Per link: the two unit indices, a colour, head and tail intensities (fading along the link) and a
+ * width in pixels.
+ */
+export class LinkMesh {
+  constructor(store, { arc = false, segments = arc ? 18 : 1 } = {}) {
+    this.store = store;
+    this.arc = arc;
+    this.segments = segments;
+    this.capacity = 0;
+    this.count = 0;
+    this.material = linkMaterial(store, { arc, segments });
+    this.mesh = new Mesh(stripGeometry(segments), this.material);
+    this.mesh.frustumCulled = false;
+    this.mesh.count = 0;
+    this.mesh.renderOrder = 1;
+  }
+
+  /** Room for `count` links (attributes are reallocated only when growing). */
+  setCount(count) {
+    this.count = count;
+    if (count > this.capacity || !this.ends) {
+      const capacity = Math.max(count, Math.ceil(this.capacity * 1.5), 16);
+      const geometry = this.mesh.geometry;
+      const grow = (name, size) => {
+        const attr = new InstancedBufferAttribute(new Float32Array(capacity * size), size);
+        geometry.setAttribute(name, attr);
+        return attr;
+      };
+      this.ends = grow('aEnds', 2);
+      this.colors = grow('aColor', 3);
+      this.intensity = grow('aIntensity', 2);
+      this.widths = grow('aWidth', 1);
+      this.capacity = capacity;
+      geometry.dispose(); // the old GPU buffers go; new ones are made at the next frame
+    }
+
+    this.mesh.count = count;
+  }
+
+  setEnds(i, source, target) {
+    this.ends.array[i * 2] = source;
+    this.ends.array[i * 2 + 1] = target;
+  }
+
+  /** Colour with the intensity at the source (`head`) and at the target (`tail`), and the width in pixels. */
+  setStyle(i, color, head, tail, width) {
+    const c = this.colors.array;
+    c[i * 3] = color.r;
+    c[i * 3 + 1] = color.g;
+    c[i * 3 + 2] = color.b;
+    this.intensity.array[i * 2] = head;
+    this.intensity.array[i * 2 + 1] = tail;
+    this.widths.array[i] = width;
+  }
+
+  /** Uploads everything (after setCount / a full restyle). */
+  flush() {
+    for (const attr of [this.ends, this.colors, this.intensity, this.widths]) {
+      if (!attr) continue;
+      attr.clearUpdateRanges();
+      attr.needsUpdate = true;
+    }
+  }
+
+  /** Uploads the style of a few links only (hover). */
+  flushStyle(indices) {
+    for (const [attr, size] of [[this.colors, 3], [this.intensity, 2], [this.widths, 1]]) {
+      for (const i of indices) attr.addUpdateRange(i * size, size);
+      attr.needsUpdate = true;
+    }
+  }
+
+  dispose() {
+    this.mesh.geometry.dispose();
+    this.material.dispose();
+  }
+}
+
+/** A strip along t = 0..1 with two vertices (sides -1, +1) per step. */
+function stripGeometry(segments) {
+  const n = segments + 1;
+  const t = new Float32Array(n * 2);
+  const side = new Float32Array(n * 2);
+  const index = [];
+  for (let i = 0; i < n; i++) {
+    t[i * 2] = t[i * 2 + 1] = i / segments;
+    side[i * 2] = -1;
+    side[i * 2 + 1] = 1;
+    if (i < segments) {
+      const a = i * 2;
+      index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array(n * 2 * 3), 3)); // unused, required
+  geometry.setAttribute('aT', new BufferAttribute(t, 1));
+  geometry.setAttribute('aSide', new BufferAttribute(side, 1));
+  geometry.setIndex(index);
+  return geometry;
+}
+
+/** Point on a link at t: straight, or a quadratic arc that rises with the distance (code city). */
+export function linkPoint(p0, p1, t, arc) {
+  if (!arc) return mix(p0, p1, t);
+  const mid = p0.add(p1).mul(0.5);
+  const control = vec3(mid.x, max(p0.y, p1.y).add(12).add(distance(p0, p1).mul(0.42)), mid.z);
+  const u = float(1).sub(t);
+  return p0.mul(u.mul(u)).add(control.mul(u.mul(t).mul(2))).add(p1.mul(t.mul(t)));
+}
+
+function linkMaterial(store, { arc, segments }) {
+  // Double-sided: which way a ribbon's triangles wind depends on the link's direction on screen.
+  const material = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: AdditiveBlending, fog: false, side: DoubleSide });
+  const ends = attribute('aEnds', 'vec2');
+  const t = attribute('aT', 'float');
+  const side = attribute('aSide', 'float');
+  const width = attribute('aWidth', 'float');
+  const vSide = varying(side, 'vLinkSide');
+  const vT = varying(t, 'vLinkT');
+
+  // Clip-space position, built from plain expressions (no Fn: an inline Fn cannot return a value).
+  const p0 = store.positionAt(ends.x).xyz;
+  const p1 = store.positionAt(ends.y).xyz;
+  const mvp = cameraProjectionMatrix.mul(modelViewMatrix);
+  let clip;
+  let a;
+  let b;
+  let behind;
+  if (!arc) {
+    // Straight: clip the segment at the near plane, so a link reaching behind the camera stays drawn.
+    const c0 = mvp.mul(vec4(p0, 1));
+    const c1 = mvp.mul(vec4(p1, 1));
+    const w0 = c0.w;
+    const w1 = c1.w;
+    a = select(w0.lessThan(NEAR_W), mix(c0, c1, float(NEAR_W).sub(w0).div(w1.sub(w0))), c0);
+    b = select(w1.lessThan(NEAR_W), mix(c1, c0, float(NEAR_W).sub(w1).div(w0.sub(w1))), c1);
+    behind = max(w0, w1).lessThan(NEAR_W);
+    clip = mix(a, b, t);
+  } else {
+    const step = 0.5 / segments;
+    clip = mvp.mul(vec4(linkPoint(p0, p1, t, true), 1));
+    a = mvp.mul(vec4(linkPoint(p0, p1, max(t.sub(step), 0), true), 1));
+    b = mvp.mul(vec4(linkPoint(p0, p1, min(t.add(step), 1), true), 1));
+    // Arc vertices behind the camera are dropped (the city is seen from above).
+    behind = clip.w.lessThan(NEAR_W);
+  }
+
+  // Direction on screen, and the ribbon's sideways offset in pixels.
+  const sa = a.xy.div(max(a.w, NEAR_W)).mul(screenSize);
+  const sb = b.xy.div(max(b.w, NEAR_W)).mul(screenSize);
+  const direction = normalize(sb.sub(sa).add(vec2(1e-6, 0)));
+  const normal = vec2(direction.y.negate(), direction.x);
+  const offset = normal.mul(side).mul(width).mul(screenDPR).div(screenSize).mul(2);
+  material.vertexNode = select(behind, vec4(0, 0, 2, 1), vec4(clip.xy.add(offset.mul(clip.w)), clip.z, clip.w));
+
+  const edge = float(1).sub(smoothstep(0.25, 1, abs(vSide)));
+  const intensity = mix(attribute('aIntensity', 'vec2').x, attribute('aIntensity', 'vec2').y, vT);
+  material.colorNode = vec4(attribute('aColor', 'vec3').mul(intensity).mul(edge), 1);
+  return material;
+}
