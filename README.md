@@ -3,7 +3,8 @@
 **Mapa kodu dla projektów C#**: analizator oparty na Roslynie, który zamienia solucję w graf powiązań
 (klasy, interfejsy, metody, wywołania, dziedziczenie, wstrzykiwanie zależności…), oraz interaktywna
 **mapa 3D** z czterema widokami: *Galaxy* (graf siłowy w przestrzeni), *City* (miasto kodu, w którym typy są budynkami),
-*Layers* (warstwy architektury wyliczone z kodu) i *DI* (kontener zależności z czasami życia usług).
+*Layers* (warstwy architektury wyliczone z kodu), *DI* (kontener zależności z czasami życia usług)
+i *Flow* (przepływ wywołań od punktu wejścia, z diagramem sekwencji).
 
 ```
 codemap MySolution.sln            →  MySolution.codemap.json   (graf: format do dalszego przetwarzania)
@@ -245,17 +246,23 @@ Formaty dodatkowe:
 * **DI**: typy budowane przez kontener na płaszczyznach *Singleton / Scoped / Transient / Not registered*.
   Zdrowa zależność wskazuje w dół albo w bok (do czegoś, co żyje co najmniej tak długo),
   captive dependency jest czerwona, a brakująca rejestracja pomarańczowa.
+* **Flow**: co się dzieje, gdy wywołasz akcję kontrolera, handler albo `ExecuteAsync` usługi w tle.
+  Wywołania są śledzone w kolejności z kodu, przez interfejsy aż do implementacji, którą wstrzyknie kontener DI
+  (`IEnumerable<T>` → wszystkie). Górna płaszczyzna to punkt wejścia, a każda niższa to jedno wywołanie głębiej.
+  **Diagram sekwencji** pokazuje ten sam przepływ jako uczestników (typy) i komunikaty (`alt` dla kilku możliwych implementacji, `loop` dla `IEnumerable<T>`).
+  Można go skopiować jako **Mermaid** (wklejasz do GitHuba, GitLaba, Notion albo dokumentacji) lub pobrać jako `.mmd` / `.svg`.
+  Punkt wejścia wybierasz w Insights (*Entry points*), na liście w widoku albo przyciskiem *Call flow ↘* przy dowolnej metodzie.
 * Poziomy szczegółowości: **Projects / Namespaces / Types / Members** i drill-down dwuklikiem
   (projekt → namespace’y → typy → składowe, z „duchami” sąsiadów spoza zakresu).
 * Panel szczegółów: sygnatura, dokumentacja XML, metryki, tagi, link *Open in VS Code*,
   relacje wychodzące i przychodzące pogrupowane według rodzaju, lista składowych.
 * **Neighbours / Dependencies ↓ / Impact ↑ / Path to…** (albo Shift+klik na drugim elemencie).
-* Zakładka **Insights**: problemy DI, zależności w górę, ukryte powiązania z gita, cykle, hotspoty,
+* Zakładka **Insights**: punkty wejścia (kontrolery, handlery, usługi w tle, `Main`), problemy DI, zależności w górę, ukryte powiązania z gita, cykle, hotspoty,
   najbardziej złożone typy, najczęściej używane typy, możliwy martwy kod. Kliknięcie przenosi do właściwego widoku.
 * Kolor **DI lifetime** w każdym widoku (namespace’y i projekty dostają dominujący czas życia swoich typów),
   a w panelu szczegółów sekcje *Dependency injection* i *Changes together with*.
 * Filtry rodzajów relacji, projektów, testów, typów zewnętrznych, minimalnej siły powiązania.
-* Wyszukiwarka (`/`), skróty: `1`–`4` poziom, `G`/`C`/`L`/`D` widok (Galaxy, City, Layers, DI), `F` dopasuj, `Esc` wstecz.
+* Wyszukiwarka (`/`), skróty: `1`–`4` poziom, `G`/`C`/`L`/`D`/`E` widok (Galaxy, City, Layers, DI, Flow), `F` dopasuj, `Esc` wstecz.
 
 Viewer można też otworzyć bez danych i przeciągnąć na niego dowolny plik `*.codemap.json`
 albo użyć parametru `?data=url.json`.

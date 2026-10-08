@@ -105,6 +105,7 @@ JSON Schema: [`codemap.schema.json`](codemap.schema.json).
 | `target` | id węzła docelowego, czyli tego, od którego zależy źródło |
 | `kind` | rodzaj relacji |
 | `weight` | liczba wystąpień w kodzie (np. liczba miejsc wywołania) |
+| `line` | tylko `calls` i `instantiates`: linia pierwszego wystąpienia w pliku metody źródłowej. Daje kolejność wywołań (widok Flow, diagram sekwencji) |
 
 Krawędzie są zapisywane na najdokładniejszym możliwym poziomie: `calls` łączy metody, a `injects`
 łączy typ z typem. Aby otrzymać graf zależności typów, wystarczy podmienić każdą składową na jej

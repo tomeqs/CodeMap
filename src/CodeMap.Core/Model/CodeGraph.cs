@@ -148,6 +148,10 @@ public sealed class GraphEdge
     /// <summary>How many times the relationship occurs in code (e.g. number of call sites).</summary>
     public int Weight { get; set; } = 1;
 
+    /// <summary>Calls and instantiations: line of the first occurrence in the source member's file (gives the call order).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int Line { get; set; }
+
     public override string ToString() => $"{Source} -{Kind}-> {Target}";
 }
 

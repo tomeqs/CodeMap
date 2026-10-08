@@ -362,6 +362,57 @@ a:hover { text-decoration: underline; }
 }
 #right:not(.hidden) ~ #hud { right: 384px; }
 
+/* ---------------------------------------------------------------- call flow / sequence diagram */
+.flow-roots { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.flow-roots .chip { margin: 0; }
+.entry-select { width: 100%; }
+.chip.role { font-size: 10px; padding: 0 6px; margin: 0 6px 0 0; color: var(--muted); }
+#sequence {
+  position: absolute;
+  left: 330px;
+  right: 12px;
+  bottom: calc(12px + var(--safe-bottom));
+  height: 46%;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  background: rgba(9, 13, 26, 0.94);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.45);
+}
+#left.collapsed ~ #sequence { left: 12px; }
+#right:not(.hidden) ~ #sequence { right: 384px; }
+.seq-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--panel-border); }
+.seq-head .spacer { flex: 1; }
+.seq-head .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seq-body { flex: 1; overflow: auto; padding: 4px 4px 8px; }
+.seq-copy { width: 100%; height: 120px; font: 11px var(--mono); background: var(--panel-solid); color: var(--text); border: 1px solid var(--panel-border); border-radius: 8px; }
+.seq-svg { display: block; font: 12px var(--sans); }
+.seq-life { stroke: #3b4766; stroke-dasharray: 4 4; }
+.seq-actor { cursor: pointer; }
+.seq-actor rect { fill: #121a30; stroke-width: 1.5; }
+.seq-actor:hover rect { fill: #1b2644; }
+.seq-actor-text { fill: var(--text); font-weight: 600; }
+.seq-bar { fill: #24304f; stroke: var(--accent); }
+.seq-line { stroke: #cfd8ff; fill: none; stroke-width: 1.3; }
+.seq-msg { cursor: pointer; }
+.seq-hit { fill: transparent; }
+.seq-msg:hover .seq-hit { fill: rgba(110, 168, 255, 0.07); }
+.seq-msg.create .seq-line { stroke-dasharray: 5 4; }
+.seq-msg .seq-label { fill: var(--text); }
+.seq-msg.noted .seq-label { fill: var(--warn); }
+.seq-msg:hover .seq-line, .seq-msg:focus .seq-line { stroke: var(--accent); stroke-width: 2; }
+.seq-msg:hover .seq-label, .seq-msg:focus .seq-label { fill: var(--accent); }
+.seq-msg:focus { outline: none; }
+.seq-start { fill: var(--accent-2); font-weight: 600; }
+.seq-frame { fill: rgba(110, 168, 255, 0.04); stroke: var(--faint); }
+.seq-frame-tag { fill: #1a2440; stroke: var(--faint); }
+.seq-frame-text { fill: var(--muted); font-size: 11px; }
+.seq-sep { stroke: var(--faint); stroke-dasharray: 5 4; }
+
 /* ---------------------------------------------------------------- welcome / drop */
 #welcome, #drop-overlay { position: absolute; inset: 0; display: grid; place-items: center; z-index: 30; }
 #welcome { background: radial-gradient(ellipse at center, rgba(20, 30, 60, 0.6), rgba(4, 6, 12, 0.95)); }
@@ -383,6 +434,7 @@ a:hover { text-decoration: underline; }
   #legend .li.faint { display: none; }
   .panel-toggle, .panel-toggle.collapsed { left: auto; right: 12px; }
   #right:not(.hidden) ~ #hud { right: 16px; }
+  #sequence, #left.collapsed ~ #sequence, #right:not(.hidden) ~ #sequence { left: 12px; right: 12px; height: 55%; z-index: 10; }
 }
 
 /* Phones: the toolbar wraps onto two rows, everything below moves down with it. */

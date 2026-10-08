@@ -78,7 +78,7 @@ internal sealed class ReferenceWalker : CSharpSyntaxWalker
             case IMethodSymbol method:
                 if (method.MethodKind is MethodKind.LocalFunction or MethodKind.AnonymousFunction or MethodKind.Constructor
                     or MethodKind.StaticConstructor or MethodKind.LambdaMethod) return;
-                AddMemberEdge(method, EdgeKinds.Calls);
+                AddMemberEdge(method, EdgeKinds.Calls, node);
                 return;
             case IPropertySymbol property:
                 AddMemberEdge(property, EdgeKinds.Accesses);
@@ -134,7 +134,7 @@ internal sealed class ReferenceWalker : CSharpSyntaxWalker
         var parent = node.Parent;
         while (parent is ParenthesizedExpressionSyntax) parent = parent.Parent;
         var kind = parent is ThrowStatementSyntax or ThrowExpressionSyntax ? EdgeKinds.Throws : EdgeKinds.Instantiates;
-        AddTypeEdge(type, kind);
+        AddTypeEdge(type, kind, kind == EdgeKinds.Instantiates ? node : null);
     }
 
     public override void VisitCatchDeclaration(CatchDeclarationSyntax node)
@@ -204,18 +204,21 @@ internal sealed class ReferenceWalker : CSharpSyntaxWalker
                && assignment.Kind() is SyntaxKind.AddAssignmentExpression or SyntaxKind.SubtractAssignmentExpression;
     }
 
-    private void AddTypeEdge(ITypeSymbol? type, string kind)
+    /// <param name="at">Where the reference occurs; given for calls and instantiations so the call order is known.</param>
+    private void AddTypeEdge(ITypeSymbol? type, string kind, SyntaxNode? at = null)
     {
         var named = GraphBuilder.UnwrapType(type);
         if (named == null) return;
         if (IsSelf(named) && kind is not (EdgeKinds.Inherits or EdgeKinds.Implements)) return;
-        _builder.AddEdge(_source, _builder.TypeKey(named), kind);
+        _builder.AddEdge(_source, _builder.TypeKey(named), kind, LineOf(at));
     }
 
-    private void AddMemberEdge(ISymbol member, string kind)
+    private void AddMemberEdge(ISymbol member, string kind, SyntaxNode? at = null)
     {
-        _builder.AddEdge(_source, _builder.MemberKey(member), kind);
+        _builder.AddEdge(_source, _builder.MemberKey(member), kind, LineOf(at));
     }
+
+    private static int LineOf(SyntaxNode? node) => node == null ? 0 : node.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
 
     private bool IsSelf(INamedTypeSymbol type)
     {

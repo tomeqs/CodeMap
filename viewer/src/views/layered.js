@@ -152,6 +152,28 @@ export class LayeredView extends GalaxyView {
     if (moving) this.updatePlanes();
   }
 
+  /** Frames the stack of planes (their real extent, not the centre of mass of the nodes). */
+  fit(animate = true) {
+    if (!this.units.length) return;
+    const min = new Vector3(Infinity, Infinity, Infinity);
+    const max = new Vector3(-Infinity, -Infinity, -Infinity);
+    for (const plane of this.planes) {
+      min.min(new Vector3(plane.center.x - plane.radius, plane.center.y, plane.center.z - plane.radius));
+      max.max(new Vector3(plane.center.x + plane.radius, plane.center.y, plane.center.z + plane.radius));
+    }
+
+    for (const u of this.units) {
+      min.min(new Vector3(u.x - u.r, u.y - u.r, u.z - u.r));
+      max.max(new Vector3(u.x + u.r, u.y + u.r, u.z + u.r));
+    }
+
+    const center = min.clone().add(max).multiplyScalar(0.5);
+    // Planes are seen at an angle: their far rims sit inside the bounding sphere, the vertical extent matters most.
+    const halfHeight = (max.y - min.y) / 2 + 20;
+    const halfWidth = Math.max(max.x - min.x, max.z - min.z) / 2;
+    this.fitSphere(center, Math.max(halfHeight * 1.15, halfWidth * 0.85, 40), animate, 1);
+  }
+
   extraLabels() {
     if (!this.options.labels) return [];
     return this.planes.map((plane) => ({

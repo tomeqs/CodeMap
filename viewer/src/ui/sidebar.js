@@ -46,6 +46,8 @@ export class Sidebar {
       ...metricOptions.map(([k, m]) => [k, m.label]),
     ];
 
+    if (state.view === 'flow') el.append(this.flowSection());
+
     const appearance = h('div', { class: 'section' }, h('h3', {}, 'Appearance'));
     appearance.append(h('div', { class: 'row' }, h('label', {}, 'Colour'), select(state.colorMode, colorOptions, (v) => app.setState({ colorMode: v }, 'recolor'))));
     if (state.view !== 'city') {
@@ -148,9 +150,41 @@ export class Sidebar {
       h('div', { class: 'section small faint' },
         h('div', {}, 'Drag – rotate · right-drag – pan · wheel – zoom'),
         h('div', {}, 'Click – select · double-click – drill in · Shift+click – path'),
-        h('div', {}, 'Keys: / search · 1-4 level · G/C view · F fit · Esc back'),
+        h('div', {}, 'Keys: / search · 1-4 level · G/C/L/D/E view · F fit · Esc back'),
       ),
     );
+  }
+
+  /** Call-flow controls: the entry point, how deep to follow calls, the sequence diagram. */
+  flowSection() {
+    const { app } = this;
+    const { model, state } = app;
+    const roots = state.flowRoots.map((id) => model.get(id)).filter(Boolean);
+    const entries = app.getEntryPoints();
+    const section = h('div', { class: 'section' },
+      h('h3', { title: 'Calls followed in source order, through interfaces to the implementation the DI container injects' }, 'Call flow'),
+      h('div', { class: 'flow-roots' }, roots.map((n) => h('span', { class: 'chip', title: n.fullName ?? n.name }, shortName(n)))),
+      h('div', { class: 'row', title: 'How many calls deep to follow' },
+        h('label', {}, `Depth limit: ${state.flowDepth}`),
+        h('input', { type: 'range', min: 1, max: 16, value: state.flowDepth, onChange: (e) => app.setState({ flowDepth: Number(e.target.value) }) }),
+      ),
+      h('div', { class: 'btns' },
+        h('button', { class: 'small primary', onClick: () => app.sequence.show(app.flow) }, 'Sequence diagram'),
+      ),
+    );
+
+    if (entries.length) {
+      section.append(h('div', { class: 'small faint', style: { margin: '10px 0 4px' } }, 'Entry points (or select a method → “Call flow”):'));
+      const select = h('select', { class: 'entry-select', onChange: (e) => e.target.value && app.showFlow([e.target.value]) },
+        h('option', { value: '' }, 'Choose an entry point…'),
+        groupBy(entries, (e) => e.title).map(([title, list]) =>
+          h('optgroup', { label: title }, list.map((e) => h('option', { value: e.node.id, selected: roots.length && roots.every((r) => r.typeNode?.id === e.node.id || r.id === e.node.id) }, `${e.node.name} · ${e.methods.length} → ${e.reach} methods`))),
+        ),
+      );
+      section.append(select);
+    }
+
+    return section;
   }
 
   // ------------------------------------------------------------------ insights
@@ -161,6 +195,7 @@ export class Sidebar {
     const analysis = model.doc.analysis ?? {};
     const el = clear(this.insights);
 
+    this.renderEntryInsights(el);
     this.renderDiInsights(el, analysis.di);
     this.renderLayerInsights(el, analysis.layers ?? []);
     this.renderCouplingInsights(el, analysis.changeCoupling ?? []);
@@ -237,6 +272,28 @@ export class Sidebar {
       );
       el.append(section);
     }
+  }
+
+  renderEntryInsights(el) {
+    const { app } = this;
+    const entries = app.getEntryPoints();
+    if (!entries.length) return;
+    const section = h('div', { class: 'section' },
+      h('h3', { title: 'Where requests and jobs start: follow what they call, down to the database' }, `Entry points (${entries.length})`,
+        h('span', { class: 'links' }, h('button', { onClick: () => app.setView('flow') }, 'open view')),
+      ),
+    );
+    for (const entry of entries.slice(0, 12)) {
+      section.append(
+        h('div', { class: 'insight', title: `${entry.node.fullName}: ${entry.methods.map((m) => m.name).join(', ')}`, onClick: () => app.showFlow([entry.node.id]) },
+          h('span', { class: 'chip role' }, entry.role),
+          h('span', { class: 'name' }, entry.node.name),
+          h('span', { class: 'score', title: 'methods reached' }, `→ ${entry.reach}`),
+        ),
+      );
+    }
+
+    el.append(section);
   }
 
   renderDiInsights(el, di) {
@@ -364,6 +421,17 @@ export class Sidebar {
   }
 }
 
+function groupBy(items, key) {
+  const groups = new Map();
+  for (const item of items) {
+    const k = key(item);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(item);
+  }
+
+  return [...groups];
+}
+
 /** Bottom legend for the current colour mode. */
 export function renderLegend(el, app) {
   const { model, state } = app;
@@ -401,6 +469,10 @@ export function renderLegend(el, app) {
 
   if (state.view === 'layers') {
     el.append(line(VIOLATION_COLORS.error, 'upward dependency (against the layering)'));
+  } else if (state.view === 'flow') {
+    el.append(line(EDGE_KINDS.calls.color, 'calls'), line(EDGE_KINDS.implements.color, 'dispatch to implementation'), line(VIOLATION_COLORS.warning, 'recursion'));
+    el.append(h('span', { class: 'li faint' }, 'top plane = entry point · each plane = one call deeper'));
+    return;
   } else if (state.view === 'di') {
     for (const l of LIFETIMES) el.append(item(l.color, `${l.title} plane`));
     el.append(line(VIOLATION_COLORS.error, 'captive (singleton → scoped)'), line(VIOLATION_COLORS.warning, 'warning'));

@@ -90,6 +90,41 @@ public class AnalyzerTests
     }
 
     [Fact]
+    public void Calls_and_instantiations_remember_the_line_of_their_first_occurrence()
+    {
+        using var ws = new TestWorkspace()
+            .Project("App")
+            .File("App/Flow.cs", """
+                namespace App;
+                public class Line { public void Add() { } }
+                public class Flow
+                {
+                    public void Run()
+                    {
+                        Second();
+                        var line = new Line();
+                        First();
+                        line.Add();
+                        Second();
+                    }
+
+                    void First() { }
+                    void Second() { }
+                }
+                """);
+
+        var graph = ws.Analyze();
+
+        int LineOf(string target, string kind) => graph.Edges.Single(e => e.Source == "M:App.Flow.Run" && e.Target == target && e.Kind == kind).Line;
+        Assert.Equal(7, LineOf("M:App.Flow.Second", EdgeKinds.Calls)); // first of two call sites
+        Assert.Equal(8, LineOf("T:App.Line", EdgeKinds.Instantiates));
+        Assert.Equal(9, LineOf("M:App.Flow.First", EdgeKinds.Calls));
+        Assert.Equal(10, LineOf("M:App.Line.Add", EdgeKinds.Calls));
+        Assert.Equal(2, graph.Edges.Single(e => e.Source == "M:App.Flow.Run" && e.Target == "M:App.Flow.Second").Weight);
+        Assert.All(graph.Edges.Where(e => e.Kind is EdgeKinds.Holds or EdgeKinds.Accepts), e => Assert.Equal(0, e.Line));
+    }
+
+    [Fact]
     public void Records_dependency_injection_signatures_and_records()
     {
         using var ws = new TestWorkspace()
