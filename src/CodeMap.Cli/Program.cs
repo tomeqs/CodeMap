@@ -4,6 +4,7 @@ using System.Text;
 using CodeMap;
 using CodeMap.Analysis;
 using CodeMap.Export;
+using CodeMap.Loading;
 using CodeMap.Model;
 using CodeMap.Server;
 
@@ -103,6 +104,7 @@ internal static class Cli
                     return null;
                 case "--version":
                     Console.WriteLine(typeof(CodeGraph).Assembly.GetName().Version?.ToString(3));
+                    Console.WriteLine($"Framework references: {FrameworkLocator.Describe()}");
                     return null;
                 case "-o" or "--output":
                     options.Output = Next();

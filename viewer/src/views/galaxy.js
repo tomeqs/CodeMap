@@ -100,6 +100,10 @@ export class GalaxyView {
 
     this.group.add(this.lines, this.particles.points, this.halo, this.lightGroup);
     this.userMoved = false;
+    /** Optional (node) => label text; the call-flow view labels methods with their type. */
+    this.labelText = null;
+    /** Node size multiplier (the call-flow view shows methods, normally the smallest nodes, as the main actors). */
+    this.radiusScale = 1;
   }
 
   activate() {
@@ -131,14 +135,10 @@ export class GalaxyView {
     const model = this.model;
     const all = [...units.map((n) => ({ node: n, ghost: false })), ...ghosts.map((n) => ({ node: n, ghost: true }))];
     const byId = new Map();
-    const levelRange = RADIUS[state.level] ?? RADIUS.type;
 
     let cached = 0;
     this.units = all.map(({ node, ghost }) => {
-      const t = state.sizeMetric ? model.norm(node, state.sizeMetric) : 0.3;
-      const base = node.level === 'project' && state.level !== 'project' ? RADIUS.project : RADIUS[node.level] ?? levelRange;
-      let r = base[0] + (base[1] - base[0]) * Math.sqrt(t);
-      if (ghost) r *= 0.75;
+      const r = this.radiusFor(node, state, ghost);
       const unit = { id: node.id, node, ghost, r, x: 0, y: 0, z: 0 };
       const known = this.positions.get(node.id);
       if (known) {
@@ -176,6 +176,14 @@ export class GalaxyView {
     this.labelOrder = [...this.units].sort((a, b) => labelRank(b) - labelRank(a));
     this.setHighlight(null);
     if (cached < this.units.length * 0.5) this.fit(false);
+  }
+
+  /** Node size: the size metric within the node's level range. */
+  radiusFor(node, state, ghost = false) {
+    const t = state.sizeMetric ? this.model.norm(node, state.sizeMetric) : 0.3;
+    const base = node.level === 'project' && state.level !== 'project' ? RADIUS.project : RADIUS[node.level] ?? RADIUS[state.level] ?? RADIUS.type;
+    const r = base[0] + (base[1] - base[0]) * Math.sqrt(t);
+    return r * (ghost ? 0.75 : 1) * this.radiusScale;
   }
 
   buildMeshes() {
@@ -307,7 +315,7 @@ export class GalaxyView {
 
   updateMatrices() {
     for (const u of this.units) {
-      const s = u.r * (u === this.hovered ? 1.35 : 1);
+      const s = u.r * (u.grow ?? 1) * (u === this.hovered ? 1.35 : 1);
       matrix.makeScale(s, s, s);
       matrix.setPosition(u.x, u.y, u.z);
       u.mesh.setMatrixAt(u.slot, matrix);
@@ -439,7 +447,7 @@ export class GalaxyView {
     const push = (u, cls, force = false) => {
       const distance = camera.distanceTo(tmp2.set(u.x, u.y, u.z));
       const opacity = force ? 1 : Math.max(0.25, Math.min(1, (u.r * 90) / distance));
-      items.push({ text: u.node.name, position: tmp2.clone(), cls, offsetY: 4 + (u.r * 300) / Math.max(distance, 1), opacity, force });
+      items.push({ text: this.labelText?.(u.node) ?? u.node.name, position: tmp2.clone(), cls, offsetY: 4 + (u.r * 300) / Math.max(distance, 1), opacity, force });
     };
 
     if (h?.primary && this.byId.has(h.primary)) push(this.byId.get(h.primary), 'l-selected', true);
@@ -496,10 +504,15 @@ export class GalaxyView {
     center.divideScalar(this.units.length);
     let radius = 10;
     for (const u of this.units) radius = Math.max(radius, tmp.set(u.x, u.y, u.z).distanceTo(center) + u.r);
+    this.fitSphere(center, radius, animate, 0.95);
+  }
+
+  /** Moves the camera so that a sphere fills the view (looking from `fitDirection`). */
+  fitSphere(center, radius, animate, tightness) {
     // Fit the narrower of the two fields of view (portrait phones are narrow, not short).
     const vFov = (this.stage.camera.fov * Math.PI) / 180;
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * this.stage.camera.aspect);
-    const distance = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 0.95;
+    const distance = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * tightness;
     const dir = (this.fitDirection ?? new Vector3(0.35, 0.45, 1)).clone().normalize();
     const position = center.clone().add(dir.multiplyScalar(distance));
     if (animate) this.stage.flyTo(center, position, 1100);

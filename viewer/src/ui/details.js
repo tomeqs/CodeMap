@@ -1,6 +1,7 @@
 import { EDGE_KINDS, KIND_COLORS } from '../data/palette.js';
 import { MEMBER_KINDS, METRICS } from '../data/model.js';
 import { LIFETIME_COLORS } from '../data/di.js';
+import { entryMethodsOf, flowIndex } from '../data/flow.js';
 import { clear, fmt, h, shortName } from './dom.js';
 
 const METRICS_BY_LEVEL = {
@@ -109,6 +110,12 @@ export class DetailsPanel {
       buttons.push(h('button', { class: 'small', title: 'Everything this depends on, transitively', onClick: () => app.highlightMode('dependencies') }, 'Dependencies ↓'));
       buttons.push(h('button', { class: 'small', title: 'Everything that depends on this – what breaks if it changes', onClick: () => app.highlightMode('dependents') }, 'Impact ↑'));
       buttons.push(h('button', { class: 'small', title: 'Then click (or Shift+click) another node', onClick: () => app.startPath() }, 'Path to…'));
+    }
+
+    if (!node.external && (node.kind === 'method' || node.kind === 'constructor' || node.kind === 'property') && flowIndex(model).calls.has(node.id)) {
+      buttons.push(h('button', { class: 'small', title: 'Follow what this method calls, step by step (E)', onClick: () => app.showFlow([node.id]) }, 'Call flow ↘'));
+    } else if (node.level === 'type' && !node.external && entryMethodsOf(model, node).length) {
+      buttons.push(h('button', { class: 'small', title: 'Follow the calls of its entry methods (actions, ExecuteAsync…)', onClick: () => app.showFlow([node.id]) }, 'Call flow ↘'));
     }
 
     if (node.level === 'project' && node.kind === 'project') buttons.push(h('button', { class: 'small', onClick: () => app.drill(node.id) }, 'Open namespaces ⤵'));

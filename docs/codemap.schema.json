@@ -142,7 +142,8 @@
             "accepts", "injects", "extends", "decoratedWith", "changesWith"
           ]
         },
-        "weight": { "type": "integer", "minimum": 1 }
+        "weight": { "type": "integer", "minimum": 1 },
+        "line": { "type": "integer", "minimum": 1, "description": "calls / instantiates: line of the first occurrence in the source member's file" }
       }
     },
     "location": {

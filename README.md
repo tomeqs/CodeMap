@@ -3,7 +3,8 @@
 **Mapa kodu dla projektów C#**: analizator oparty na Roslynie, który zamienia solucję w graf powiązań
 (klasy, interfejsy, metody, wywołania, dziedziczenie, wstrzykiwanie zależności…), oraz interaktywna
 **mapa 3D** z czterema widokami: *Galaxy* (graf siłowy w przestrzeni), *City* (miasto kodu, w którym typy są budynkami),
-*Layers* (warstwy architektury wyliczone z kodu) i *DI* (kontener zależności z czasami życia usług).
+*Layers* (warstwy architektury wyliczone z kodu), *DI* (kontener zależności z czasami życia usług)
+i *Flow* (przepływ wywołań od punktu wejścia, z diagramem sekwencji).
 
 ```
 codemap MySolution.sln            →  MySolution.codemap.json   (graf: format do dalszego przetwarzania)
@@ -16,17 +17,57 @@ codemap MySolution.sln            →  MySolution.codemap.json   (graf: format d
 | ![galaxy](docs/img/galaxy.png) | ![city](docs/img/city.png) |
 | **Layers: zależności w górę (czerwone) łamią warstwy** | **DI: singleton trzymający usługę scoped (captive dependency)** |
 | ![layers](docs/img/layers.png) | ![di](docs/img/di.png) |
+| **Flow: przepływ wywołań od akcji kontrolera, z diagramem sekwencji** | **Auto: zoom semantyczny, typ rozwinięty w składowe** |
+| ![flow](docs/img/flow.png) | ![zoom](docs/img/zoom.png) |
 
 ## Szybki start
+
+### Gotowy program (bez instalowania czegokolwiek)
+
+Z zakładki [Releases](https://github.com/tomeqs/CodeMap/releases) pobierz plik dla swojego systemu,
+rozpakuj go i uruchom `codemap` (na Windows wystarczy dwuklik na `codemap.exe`). Otworzy się przeglądarka z ekranem wyboru projektu.
+
+| System | Plik |
+|---|---|
+| Windows (Intel/AMD, ARM) | `codemap-<wersja>-win-x64.zip`, `…-win-arm64.zip` |
+| macOS (Apple Silicon, Intel) | `codemap-<wersja>-osx-arm64.tar.gz`, `…-osx-x64.tar.gz` |
+| Linux | `codemap-<wersja>-linux-x64.tar.gz`, `…-linux-arm64.tar.gz` |
+
+To jeden plik wykonywalny (około 50 MB) z wbudowanym środowiskiem .NET, więc działa bez .NET. Jeśli .NET SDK
+jest zainstalowany, `codemap` i tak go znajdzie i użyje jego bibliotek (najnowszej wersji) do rozwiązywania
+typów frameworka. `codemap --version` pokazuje, skąd je bierze.
+
+* **Windows**: plik nie jest podpisany, więc SmartScreen może pokazać ostrzeżenie (*Więcej informacji → Uruchom mimo to*).
+* **macOS**: po pobraniu z przeglądarki zdejmij kwarantannę: `xattr -d com.apple.quarantine ./codemap`.
+* Warto dodać folder z programem do `PATH`, żeby `codemap` działał z każdego terminala i w skrótach IDE.
+
+### Jako narzędzie .NET
 
 Wymagany jest .NET SDK 8 lub nowszy. Node.js jest potrzebny tylko do przebudowania viewera.
 
 ```bash
-# instalacja jako globalne narzędzie
+# z pliku .nupkg z Releases albo zbudowanego lokalnie
 dotnet pack src/CodeMap.Cli -o nupkg
 dotnet tool install -g CodeMap.Tool --add-source nupkg
 
 codemap            # otwiera aplikację w przeglądarce
+```
+
+### Wydawanie nowej wersji
+
+Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) uruchamia testy i buduje programy
+dla 6 platform. Dla każdej sprawdza, czy program uruchamia się i analizuje przykładową solucję, a do tego pakuje narzędzie .NET.
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0     # GitHub release z plikami i sumami SHA256
+```
+
+Workflow można też uruchomić ręcznie (*Actions → Release → Run workflow*): wtedy pliki trafiają tylko do artefaktów.
+Jeśli w ustawieniach repozytorium jest sekret `NUGET_API_KEY`, narzędzie trafia też do nuget.org
+(`dotnet tool install -g CodeMap.Tool`). Lokalnie program dla wybranej platformy buduje:
+
+```bash
+dotnet publish src/CodeMap.Cli -c Release -r win-x64 -o dist/win-x64     # albo linux-x64, osx-arm64…
 ```
 
 ### Aplikacja w przeglądarce (najwygodniej)
@@ -55,7 +96,7 @@ przez `codemap`. Inne strony otwarte w przeglądarce nie mogą więc z niego kor
 ### Skrót w IDE
 
 **Visual Studio**: *Tools → External Tools… → Add*
-* Command: `%USERPROFILE%\.dotnet\tools\codemap.exe`
+* Command: `%USERPROFILE%\.dotnet\tools\codemap.exe` (albo ścieżka do pobranego `codemap.exe`)
 * Arguments: `ui "$(SolutionDir)$(SolutionFileName)" --watch`
 
 **JetBrains Rider**: *Settings → Tools → External Tools*, Program `codemap`, Arguments `ui "$SolutionPath$" --watch`.
@@ -207,17 +248,26 @@ Formaty dodatkowe:
 * **DI**: typy budowane przez kontener na płaszczyznach *Singleton / Scoped / Transient / Not registered*.
   Zdrowa zależność wskazuje w dół albo w bok (do czegoś, co żyje co najmniej tak długo),
   captive dependency jest czerwona, a brakująca rejestracja pomarańczowa.
+* **Flow**: co się dzieje, gdy wywołasz akcję kontrolera, handler albo `ExecuteAsync` usługi w tle.
+  Wywołania są śledzone w kolejności z kodu, przez interfejsy aż do implementacji, którą wstrzyknie kontener DI
+  (`IEnumerable<T>` → wszystkie). Górna płaszczyzna to punkt wejścia, a każda niższa to jedno wywołanie głębiej.
+  **Diagram sekwencji** pokazuje ten sam przepływ jako uczestników (typy) i komunikaty (`alt` dla kilku możliwych implementacji, `loop` dla `IEnumerable<T>`).
+  Można go skopiować jako **Mermaid** (wklejasz do GitHuba, GitLaba, Notion albo dokumentacji) lub pobrać jako `.mmd` / `.svg`.
+  Punkt wejścia wybierasz w Insights (*Entry points*), na liście w widoku albo przyciskiem *Call flow ↘* przy dowolnej metodzie.
+* **Auto (zoom semantyczny)**: zamiast przełączać poziomy, po prostu lecisz kamerą. Z daleka namespace to jedna gwiazda
+  w środku swoich typów. Gdy się zbliżysz, rozwija się w typy, a najbliższe typy w swoje składowe (metody, właściwości, pola).
+  Po oddaleniu wszystko zwija się z powrotem. Układ liczony jest raz, więc mapa się nie przestawia, a wyszukiwarka sama doleci do składowej ukrytej w zwiniętym typie.
 * Poziomy szczegółowości: **Projects / Namespaces / Types / Members** i drill-down dwuklikiem
   (projekt → namespace’y → typy → składowe, z „duchami” sąsiadów spoza zakresu).
 * Panel szczegółów: sygnatura, dokumentacja XML, metryki, tagi, link *Open in VS Code*,
   relacje wychodzące i przychodzące pogrupowane według rodzaju, lista składowych.
 * **Neighbours / Dependencies ↓ / Impact ↑ / Path to…** (albo Shift+klik na drugim elemencie).
-* Zakładka **Insights**: problemy DI, zależności w górę, ukryte powiązania z gita, cykle, hotspoty,
+* Zakładka **Insights**: punkty wejścia (kontrolery, handlery, usługi w tle, `Main`), problemy DI, zależności w górę, ukryte powiązania z gita, cykle, hotspoty,
   najbardziej złożone typy, najczęściej używane typy, możliwy martwy kod. Kliknięcie przenosi do właściwego widoku.
 * Kolor **DI lifetime** w każdym widoku (namespace’y i projekty dostają dominujący czas życia swoich typów),
   a w panelu szczegółów sekcje *Dependency injection* i *Changes together with*.
 * Filtry rodzajów relacji, projektów, testów, typów zewnętrznych, minimalnej siły powiązania.
-* Wyszukiwarka (`/`), skróty: `1`–`4` poziom, `G`/`C`/`L`/`D` widok (Galaxy, City, Layers, DI), `F` dopasuj, `Esc` wstecz.
+* Wyszukiwarka (`/`), skróty: `1`–`4` poziom, `Z` zoom semantyczny, `G`/`C`/`L`/`D`/`E` widok (Galaxy, City, Layers, DI, Flow), `F` dopasuj, `Esc` wstecz.
 
 Viewer można też otworzyć bez danych i przeciągnąć na niego dowolny plik `*.codemap.json`
 albo użyć parametru `?data=url.json`.
@@ -230,7 +280,7 @@ src/CodeMap.Core      analizator (Roslyn), model grafu, metryki, eksportery
   Analysis/           deklaracje, walker referencji, metryki, cykle, warstwy, DI, git (churn, change coupling), tagi
   Export/             JSON, DGML, GraphML, Cypher, Markdown, HTML
 src/CodeMap.Server    lokalna aplikacja: API (ASP.NET Core), przeglądarka folderów, klonowanie, cache, tryb live
-src/CodeMap.Cli       narzędzie `codemap` (dotnet tool), osadza zbudowany viewer
+src/CodeMap.Cli       narzędzie `codemap` (dotnet tool albo samodzielny plik wykonywalny), osadza zbudowany viewer
 viewer/               mapa 3D: Vite + three.js + d3-force-3d + d3-hierarchy, budowana do jednego pliku HTML
 tests/CodeMap.Tests   testy xUnit analizatora i eksporterów
 samples/Shop          przykładowa solucja (DDD, DI, zdarzenia, celowy cykl i martwy kod)
@@ -256,7 +306,8 @@ generowało HTML bez Node.js. Po zmianach w `viewer/` trzeba uruchomić `npm run
 1. `ProjectLoader` czyta solucję i pliki `.csproj` (z `Directory.Build.props`, `Compile Remove`,
    `ImplicitUsings`, `<Using>`, referencjami projektów i paczek).
 2. `CompilationFactory` buduje kompilację Roslyn dla każdego projektu w kolejności topologicznej:
-   referencje frameworka z działającego runtime’u (plus ASP.NET Core / WindowsDesktop, gdy są potrzebne),
+   referencje frameworka z działającego runtime’u albo, w samodzielnym pliku wykonywalnym, z zainstalowanego .NET
+   lub z runtime’u wbudowanego w program (`FrameworkLocator`), plus ASP.NET Core / WindowsDesktop, gdy są potrzebne,
    paczki z `project.assets.json`, a projekty jako `CompilationReference`.
 3. `TypeAnalyzer` + `ReferenceWalker` przechodzą równolegle drzewa składni: deklarują węzły i każdą
    referencję w kodzie rozwiązują przez model semantyczny na krawędź z odpowiednim rodzajem.

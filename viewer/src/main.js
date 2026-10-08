@@ -6,13 +6,16 @@ import { KIND_COLORS } from './data/palette.js';
 import { GalaxyView } from './views/galaxy.js';
 import { CityView } from './views/city.js';
 import { LayeredView } from './views/layered.js';
+import { ZoomView } from './views/zoom.js';
 import { computeLayers } from './data/layering.js';
 import { buildDiGraph } from './data/di.js';
+import { buildCallFlow, findEntryPoints } from './data/flow.js';
 import { DetailsPanel } from './ui/details.js';
 import { Sidebar, renderLegend } from './ui/sidebar.js';
 import { clear, debounce, fmt, h, shortName } from './ui/dom.js';
 import { ServerClient } from './data/server.js';
 import { ProjectsScreen } from './ui/projects.js';
+import { SequencePanel } from './ui/sequence.js';
 
 const MAX_GALAXY_UNITS = 7000;
 const NEXT_LEVEL = { project: 'namespace', namespace: 'type', type: 'member' };
@@ -25,6 +28,7 @@ class App {
     this.labels = new LabelLayer(document.getElementById('labels'), this.stage);
     this.details = new DetailsPanel(document.getElementById('right'), this);
     this.sidebar = new Sidebar(this);
+    this.sequence = new SequencePanel(this);
     this.tooltip = document.getElementById('tooltip');
     this.hud = document.getElementById('hud');
     this.legend = document.getElementById('legend');
@@ -51,11 +55,20 @@ class App {
     this.galaxy?.dispose();
     this.layers?.dispose();
     this.diView?.dispose();
+    this.flowView?.dispose();
+    this.zoomView?.dispose();
+    this.sequence.hide();
     this.model = model;
+    this.entryPoints = null;
     this.galaxy = new GalaxyView(this.stage, model, this.labels);
     this.city = new CityView(this.stage, model, this.labels);
     this.layers = new LayeredView(this.stage, model, this.labels);
     this.diView = new LayeredView(this.stage, model, this.labels);
+    this.flowView = new LayeredView(this.stage, model, this.labels);
+    this.flowView.labelText = shortName;
+    this.flowView.radiusScale = 2.4;
+    this.zoomView = new ZoomView(this.stage, model, this.labels);
+    this.zoomView.onUnitsChanged = () => this.onZoomUnits();
     document.querySelector('#view-toggle [data-view="di"]').disabled = !model.doc.analysis?.di;
 
     const typeCount = model.nodes.filter((n) => n.level === 'type' && !n.external).length;
@@ -76,6 +89,9 @@ class App {
       flowAll: false,
       autoRotate: false,
       allArcs: false,
+      flowRoots: [],
+      flowDepth: 8,
+      semantic: false,
     };
 
     document.getElementById('source-name').textContent = doc.source?.name ?? '';
@@ -97,16 +113,18 @@ class App {
     const removed = [...before].filter((id) => !after.has(id)).length;
 
     this.model = model;
-    for (const view of [this.galaxy, this.city, this.layers, this.diView]) view.model = model;
+    this.entryPoints = null;
+    for (const view of [this.galaxy, this.city, this.layers, this.diView, this.flowView, this.zoomView]) view.model = model;
     const s = this.state;
     if (s.scope && !model.get(s.scope)) s.scope = null;
+    s.flowRoots = s.flowRoots.filter((id) => model.get(id));
     for (const id of [...s.hiddenProjects]) if (!model.get(id)) s.hiddenProjects.delete(id);
     if (this.selection && !model.get(this.selection.nodeId)) {
       this.selection = null;
       this.details.hide();
     }
 
-    for (const view of [this.galaxy, this.layers, this.diView]) view.userMoved = true; // keep the camera where the user left it
+    for (const view of [this.galaxy, this.layers, this.diView, this.flowView, this.zoomView]) view.userMoved = true; // keep the camera where the user left it
     this.city.keepCamera = true;
     this.sidebar.render();
     this.rebuild();
@@ -166,11 +184,12 @@ class App {
 
   activateView() {
     this.view?.deactivate();
-    this.view = { galaxy: this.galaxy, city: this.city, layers: this.layers, di: this.diView }[this.state.view] ?? this.galaxy;
+    const galaxy = this.state.semantic ? this.zoomView : this.galaxy;
+    this.view = { galaxy, city: this.city, layers: this.layers, di: this.diView, flow: this.flowView }[this.state.view] ?? galaxy;
     this.view.activate();
     this.applyOptions();
     document.querySelectorAll('#view-toggle button').forEach((b) => b.classList.toggle('active', b.dataset.view === this.state.view));
-    document.querySelectorAll('#level-toggle button').forEach((b) => (b.disabled = !LEVEL_VIEWS.has(this.state.view)));
+    document.querySelectorAll('#level-toggle button').forEach((b) => (b.disabled = !LEVEL_VIEWS.has(this.state.view) || (b.dataset.level === 'auto' && this.state.view !== 'galaxy')));
   }
 
   // ------------------------------------------------------------------ state
@@ -196,13 +215,20 @@ class App {
 
   applyOptions() {
     const s = this.state;
-    for (const view of [this.galaxy, this.layers, this.diView]) view.setOptions({ flowAll: s.flowAll, labels: s.labels, autoRotate: s.autoRotate });
+    for (const view of [this.galaxy, this.layers, this.diView, this.flowView, this.zoomView]) view.setOptions({ flowAll: s.flowAll, labels: s.labels, autoRotate: s.autoRotate });
     this.city.setOptions({ allArcs: s.allArcs, labels: s.labels });
   }
 
   setView(view) {
     if (view === this.state.view) return;
     if (view === 'di' && !this.model.doc.analysis?.di) return this.toast('No dependency-injection registrations were found in this code.');
+    if (view === 'flow' && !this.state.flowRoots.length) {
+      const entry = this.getEntryPoints()[0];
+      if (!entry) return this.toast('No method calls were found to follow.');
+      this.state.flowRoots = [entry.node.id];
+    }
+
+    if (view !== 'flow') this.sequence.hide();
     this.state.view = view;
     this.statusLine = '';
     this.activateView();
@@ -212,18 +238,65 @@ class App {
 
   setLevel(level) {
     if (!LEVEL_VIEWS.has(this.state.view)) return;
+    if (level === 'auto') return this.setSemantic(true);
+    if (this.state.semantic && this.state.view === 'galaxy') {
+      this.state.semantic = false;
+      this.activateView();
+    }
+
     const scope = this.state.scope ? this.model.get(this.state.scope) : null;
     // A scope deeper than (or equal to) the requested level makes no sense: widen it.
     const keepScope = scope && scope.levelIndex < LEVELS.indexOf(level);
     this.setState({ level, scope: keepScope ? scope.id : null });
   }
 
+  /** Semantic zoom (the "Auto" level): one layout of every type, opened and closed by the camera distance. */
+  setSemantic(on) {
+    const s = this.state;
+    if (s.semantic === on && s.view === 'galaxy') return;
+    s.semantic = on;
+    s.scope = null;
+    if (s.view !== 'galaxy') s.view = 'galaxy';
+    this.statusLine = '';
+    this.sequence.hide();
+    this.activateView();
+    this.view.userMoved = false;
+    this.rebuild();
+    this.sidebar.renderFilters();
+  }
+
+  /** The semantic zoom opened or closed clusters: links, highlight and HUD follow the new set of nodes. */
+  onZoomUnits() {
+    if (this.view !== this.zoomView) return;
+    this.indexLinks();
+    if (this.selection && this.selection.mode !== 'cycle') {
+      this.selection.unitId = this.unitFor(this.model.get(this.selection.nodeId));
+      if (this.selection.mode === 'path' && !this.view.byId?.has(this.selection.pathTo)) this.selection.mode = 'neighbors';
+    }
+
+    if (this.selection) this.applyHighlight();
+    this.updateHud();
+  }
+
   rebuild() {
     const s = this.state;
     const model = this.model;
-    document.querySelectorAll('#level-toggle button').forEach((b) => b.classList.toggle('active', b.dataset.level === s.level));
+    const semantic = s.semantic && s.view === 'galaxy';
+    document.querySelectorAll('#level-toggle button').forEach((b) => b.classList.toggle('active', semantic ? b.dataset.level === 'auto' : b.dataset.level === s.level));
 
-    if (s.view === 'galaxy') {
+    if (semantic) {
+      const typeState = { ...s, level: 'type', scope: null };
+      const units = model.units(typeState);
+      if (units.length > MAX_GALAXY_UNITS) {
+        this.toast(`${fmt(units.length)} types is too many for semantic zoom – pick a level instead.`);
+        s.semantic = false;
+        this.activateView();
+        return this.rebuild();
+      }
+
+      const { links } = model.aggregate(units, typeState);
+      this.zoomView.build(units, links, typeState);
+    } else if (s.view === 'galaxy') {
       let units = model.units(s);
       if (units.length > MAX_GALAXY_UNITS && s.level !== 'project') {
         this.toast(`${fmt(units.length)} ${s.level}s is too many to lay out smoothly – drill into a project or namespace first.`);
@@ -258,6 +331,21 @@ class App {
       const graph = buildDiGraph(model, s);
       this.diStats = graph.stats;
       this.diView.build(graph.units, graph.links, { ...s, level: 'type' }, graph.layering);
+    } else if (s.view === 'flow') {
+      const flow = buildCallFlow(model, s.flowRoots, { maxDepth: s.flowDepth, showTests: s.showTests || s.flowRoots.some((id) => model.get(id)?.isTest), hiddenProjects: s.hiddenProjects });
+      this.flow = flow;
+      // Entry methods on the top plane, every call one plane lower; calling back up the chain is recursion.
+      const top = flow.stats.depth;
+      const layerOf = new Map([...flow.depthOf].map(([id, depth]) => [id, top - depth]));
+      const counts = new Array(top + 1).fill(0);
+      for (const depth of flow.depthOf.values()) counts[depth]++;
+      const layers = counts.map((_, i) => {
+        const depth = top - i;
+        return { title: `${depth === 0 ? 'Entry' : `Call depth ${depth}`} · ${counts[depth]}`, color: flowColor(depth, top + 1) };
+      });
+      for (const link of flow.links) link.violation = link.recursive ? 'warning' : null;
+      this.flowView.build([...flow.nodes.values()], flow.links, { ...s, level: 'member' }, { layerOf, layers });
+      this.sequence.update(flow);
     } else {
       const scope = s.scope ? model.get(s.scope) : null;
       const cityState = { ...s, level: 'type', scope: scope && scope.levelIndex <= 1 ? scope.id : null };
@@ -422,6 +510,12 @@ class App {
   showCycle(cycle) {
     const level = cycle.level === 'project' ? 'project' : cycle.level === 'namespace' ? 'namespace' : 'type';
     let rebuild = false;
+    if (this.state.semantic) {
+      this.state.semantic = false;
+      this.activateView();
+      rebuild = true;
+    }
+
     if (!LEVEL_VIEWS.has(this.state.view)) {
       this.state.view = 'galaxy';
       this.activateView();
@@ -488,7 +582,8 @@ class App {
   showCoupling(pair) {
     const s = this.state;
     if (!s.edgeKinds.has('changesWith')) s.edgeKinds = new Set([...s.edgeKinds, 'changesWith']);
-    if (s.view !== 'galaxy') {
+    s.semantic = false;
+    if (s.view !== 'galaxy' || this.view === this.zoomView) {
       s.view = 'galaxy';
       this.activateView();
     }
@@ -507,6 +602,37 @@ class App {
     }
   }
 
+  /** Likely entry points (controllers, handlers, background services, Main…), computed once per model. */
+  getEntryPoints() {
+    this.entryPoints ??= findEntryPoints(this.model);
+    return this.entryPoints;
+  }
+
+  /** Call flow starting at the given methods (a type stands for its entry methods: controller actions…). */
+  showFlow(rootIds, { sequence = false } = {}) {
+    const s = this.state;
+    s.flowRoots = rootIds.filter((id) => this.model.get(id));
+    if (!s.flowRoots.length) return;
+    this.statusLine = '';
+    if (s.view !== 'flow') {
+      s.view = 'flow';
+      this.activateView();
+    }
+
+    this.flowView.userMoved = false;
+    this.rebuild();
+    this.sidebar.renderFilters();
+    if (!this.flow.links.length) this.toast('This method calls nothing in the analyzed code.', 'info');
+    if (sequence) this.sequence.show(this.flow);
+  }
+
+  /** From the sequence diagram: select a method in the 3D flow (or wherever it is visible). */
+  selectInFlow(id) {
+    // Created types are not methods of the flow: show their details without leaving it.
+    if (this.state.view === 'flow') this.select(id, { focus: this.flowView.byId?.has(id) });
+    else this.reveal(id);
+  }
+
   /** Makes a node visible (switching level / scope / filters if needed), selects and focuses it. */
   reveal(id) {
     const node = this.model.get(id);
@@ -521,15 +647,28 @@ class App {
     if (node.isTest && !s.showTests) (s.showTests = true), (changed = true);
     if (node.external && !s.showExternal) (s.showExternal = true), (changed = true);
 
-    if (s.view === 'di' && !this.diView.byId?.has(id)) {
-      // Not part of the container graph: show it in the galaxy instead.
+    if (this.view === this.zoomView) {
+      if (changed) {
+        this.rebuild();
+        this.sidebar.renderFilters();
+        // the layout restarts: fly there once it has settled
+        return setTimeout(() => this.reveal(id), 600);
+      }
+
+      if (!this.zoomView.semantic) return setTimeout(() => this.reveal(id), 300);
+      this.zoomView.reveal(id);
+      return this.select(id);
+    }
+
+    if ((s.view === 'di' || s.view === 'flow') && !this.view.byId?.has(id)) {
+      // Not part of the container graph / the call flow: show it in the galaxy instead.
       s.view = 'galaxy';
       this.activateView();
       changed = true;
     }
 
-    if (s.view === 'di') {
-      // nothing to adjust: the DI view always shows every container-built type
+    if (s.view === 'di' || s.view === 'flow') {
+      // nothing to adjust: these views show a fixed set of nodes
     } else if (LEVEL_VIEWS.has(s.view)) {
       const visible = this.view.byId?.has(id) && !changed;
       if (!visible) {
@@ -568,9 +707,10 @@ class App {
       return;
     }
 
+    if (this.view === this.zoomView) return this.zoomView.zoomInto(id);
     const next = NEXT_LEVEL[node.level];
     if (!next || node.external) return;
-    if (this.state.view === 'di') return this.view.focus(id);
+    if (this.state.view === 'di' || this.state.view === 'flow') return this.view.focus(id);
     this.state.level = next;
     this.state.scope = node.id;
     this.view.userMoved = false;
@@ -583,6 +723,7 @@ class App {
 
   goUp() {
     const s = this.state;
+    if (this.view === this.zoomView) return this.view.fit(true);
     if (!s.scope) {
       if (LEVEL_VIEWS.has(s.view) && s.level !== 'project') this.setLevel(LEVELS[LEVELS.indexOf(s.level) - 1]);
       return;
@@ -631,7 +772,13 @@ class App {
     const units = this.view.units?.length ?? 0;
     const links = this.view.links?.length ?? 0;
     const view = this.state.view;
-    const lines = [`${fmt(units)} ${view === 'city' ? 'buildings' : view === 'di' ? 'services' : this.state.level + 's'} · ${fmt(links)} links`];
+    const semantic = this.view === this.zoomView;
+    const lines = [`${fmt(units)} ${view === 'city' ? 'buildings' : view === 'di' ? 'services' : semantic ? 'nodes' : this.state.level + 's'} · ${fmt(links)} links`];
+    if (semantic) {
+      const open = this.zoomView.semantic ? this.zoomView.open.size : 0;
+      lines.unshift(open ? `Semantic zoom · ${open} cluster${open === 1 ? '' : 's'} open` : 'Semantic zoom: fly into a cluster to open it');
+    }
+
     if (view === 'layers' && this.layerStats) {
       const { layers, upward } = this.layerStats;
       lines.unshift(`${layers} layers · ${upward ? `${upward} upward dependenc${upward === 1 ? 'y' : 'ies'} (red)` : 'no upward dependencies'}`);
@@ -640,6 +787,14 @@ class App {
     if (view === 'di' && this.diStats) {
       const { errors, warnings } = this.diStats;
       lines.unshift(errors || warnings ? `${errors} lifetime error(s) · ${warnings} warning(s)` : 'No DI problems found');
+    }
+
+    if (view === 'flow' && this.flow) {
+      const { methods, types, depth, truncated, maxDepth } = this.flow.stats;
+      const roots = this.flow.roots;
+      const from = roots.length === 1 ? shortName(roots[0]) : `${roots[0]?.typeNode?.name ?? ''} (${roots.length} entry methods)`;
+      lines[lines.length - 1] = `${fmt(methods)} methods in ${fmt(types)} types · depth ${depth}${truncated ? ` (cut at ${maxDepth})` : ''}`;
+      lines.unshift(`Call flow from ${from}`);
     }
 
     if (this.pathPending) lines.unshift('Click the target node to find a dependency path…');
@@ -742,9 +897,12 @@ class App {
       else if (e.key === 'c' || e.key === 'C') this.setView('city');
       else if (e.key === 'l' || e.key === 'L') this.setView('layers');
       else if (e.key === 'd' || e.key === 'D') this.setView('di');
+      else if (e.key === 'e' || e.key === 'E') this.setView('flow');
+      else if (e.key === 'z' || e.key === 'Z') this.setLevel(this.state.semantic && this.state.view === 'galaxy' ? 'type' : 'auto');
       else if (e.key === 'f' || e.key === 'F') this.view.fit(true);
       else if (e.key === 'Escape') {
-        if (this.pathPending) {
+        if (this.sequence.visible) this.sequence.hide();
+        else if (this.pathPending) {
           this.pathPending = false;
           this.updateHud();
         } else if (this.selection) this.select(null);
@@ -791,13 +949,14 @@ class App {
     if (m.types !== undefined) parts.push(`${fmt(m.types)} types`);
     if (m.ca !== undefined) parts.push(`used by ${fmt(m.ca)} · uses ${fmt(m.ce)}`);
     if (m.commits) parts.push(`${fmt(m.commits)} commits`);
-    clear(this.tooltip).append(
+    // DOM append() would print "null" for the missing rows.
+    clear(this.tooltip).append(...[
       h('div', { class: 't-kind', style: { color: KIND_COLORS[node.kind] } }, node.kind + (node.external ? ' · external' : '')),
       h('div', { class: 't-name' }, shortName(node)),
       node.fullName && node.fullName !== node.name ? h('div', { class: 't-full' }, node.fullName) : null,
       parts.length ? h('div', { class: 't-metrics' }, parts.join(' · ')) : null,
       node.tags.length ? h('div', { class: 't-metrics' }, node.tags.slice(0, 4).join(' · ')) : null,
-    );
+    ].filter(Boolean));
     this.tooltip.classList.remove('hidden');
     const x = Math.min(e.clientX + 16, window.innerWidth - this.tooltip.offsetWidth - 8);
     const y = Math.min(e.clientY + 16, window.innerHeight - this.tooltip.offsetHeight - 8);
@@ -906,6 +1065,12 @@ boot();
 function samePath(a, b) {
   const norm = (p) => (p ?? '').replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
   return norm(a) === norm(b);
+}
+
+/** Call-depth tints: warm at the entry point, cooling down the call chain. */
+function flowColor(depth, count) {
+  const t = count <= 1 ? 0 : depth / (count - 1);
+  return `hsl(${38 + t * 172}, 80%, 62%)`;
 }
 
 /** Layer tints from teal (foundation) to violet (top). */

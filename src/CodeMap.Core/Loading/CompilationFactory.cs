@@ -9,8 +9,8 @@ using Microsoft.CodeAnalysis.Text;
 namespace CodeMap.Loading;
 
 /// <summary>
-/// Builds Roslyn compilations straight from source files. Framework assemblies come from the
-/// running .NET installation, NuGet assemblies from obj/project.assets.json when the project was
+/// Builds Roslyn compilations straight from source files. Framework assemblies come from a .NET
+/// installation (see <see cref="FrameworkLocator"/>), NuGet assemblies from obj/project.assets.json when the project was
 /// restored. Anything that cannot be resolved simply stays unresolved – the analysis is best effort.
 /// </summary>
 public sealed class CompilationFactory
@@ -76,6 +76,14 @@ public sealed class CompilationFactory
         foreach (var path in FrameworkAssemblies(project))
         {
             if (names.Add(Path.GetFileNameWithoutExtension(path)) && GetReference(path) is { } reference) references.Add(reference);
+        }
+
+        if (FrameworkLocator.RuntimeDirectory == null)
+        {
+            foreach (var (name, reference) in FrameworkLocator.BundledReferences)
+            {
+                if (names.Add(name)) references.Add(reference);
+            }
         }
 
         foreach (var path in PackageAssemblies(project))
@@ -195,12 +203,10 @@ public sealed class CompilationFactory
 
     // ---------------------------------------------------------------- framework assemblies
 
-    private static readonly Lazy<string> RuntimeDirectory = new(() =>
-        Path.GetDirectoryName(typeof(object).Assembly.Location) ?? AppContext.BaseDirectory);
-
     private static IEnumerable<string> FrameworkAssemblies(ProjectInfo project)
     {
-        foreach (var file in SafeGetDlls(RuntimeDirectory.Value)) yield return file;
+        if (FrameworkLocator.RuntimeDirectory is not { } runtimeDirectory) yield break;
+        foreach (var file in SafeGetDlls(runtimeDirectory)) yield return file;
 
         var frameworks = new HashSet<string>(project.FrameworkReferences, StringComparer.OrdinalIgnoreCase);
         if (IsWebSdk(project.Sdk ?? "")) frameworks.Add("Microsoft.AspNetCore.App");
@@ -208,27 +214,10 @@ public sealed class CompilationFactory
 
         foreach (var framework in frameworks)
         {
-            var dir = FindSharedFramework(framework);
+            var dir = FrameworkLocator.FindSharedFramework(framework);
             if (dir == null) continue;
             foreach (var file in SafeGetDlls(dir)) yield return file;
         }
-    }
-
-    /// <summary>Finds dotnet/shared/{framework}/{version} next to the running runtime, preferring the same major version.</summary>
-    private static string? FindSharedFramework(string framework)
-    {
-        var runtimeDir = new DirectoryInfo(RuntimeDirectory.Value);
-        var sharedDir = runtimeDir.Parent?.Parent;
-        if (sharedDir == null) return null;
-        var frameworkDir = Path.Combine(sharedDir.FullName, framework);
-        if (!Directory.Exists(frameworkDir)) return null;
-
-        var runtimeMajor = runtimeDir.Name.Split('.')[0];
-        var versions = Directory.GetDirectories(frameworkDir)
-            .Select(d => (Dir: d, Version: Version.TryParse(Path.GetFileName(d).Split('-')[0], out var v) ? v : new Version(0, 0)))
-            .OrderByDescending(x => x.Version)
-            .ToList();
-        return versions.FirstOrDefault(v => v.Version.Major.ToString() == runtimeMajor).Dir ?? versions.FirstOrDefault().Dir;
     }
 
     private static IEnumerable<string> SafeGetDlls(string dir)

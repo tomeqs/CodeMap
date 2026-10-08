@@ -1,0 +1,125 @@
+# Builds the standalone executables (Windows, Linux, macOS) and the dotnet tool package.
+# Push a tag such as v0.2.0 to publish a GitHub release; run it by hand to just get the files as artifacts.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet test -c Release
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64, os: windows-latest, smoke: true }
+          - { rid: win-arm64, os: windows-latest }
+          - { rid: linux-x64, os: ubuntu-latest, smoke: true }
+          - { rid: linux-arm64, os: ubuntu-latest }
+          - { rid: osx-arm64, os: macos-latest, smoke: true }
+          - { rid: osx-x64, os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then v="${GITHUB_REF_NAME#v}"; else v="0.0.0-dev.$GITHUB_RUN_NUMBER"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Publish single-file executable
+        run: dotnet publish src/CodeMap.Cli -c Release -r ${{ matrix.rid }} -p:Version=${{ steps.version.outputs.version }} -p:DebugType=none -o publish
+
+      - name: Smoke test
+        if: matrix.smoke
+        run: |
+          exe=./publish/codemap${{ runner.os == 'Windows' && '.exe' || '' }}
+          "$exe" --version
+          "$exe" samples/Shop/Shop.sln -o smoke -f json,html -q
+          test -s smoke/Shop.codemap.json
+          test -s smoke/Shop.html
+
+      - name: Archive
+        run: |
+          name="codemap-${{ steps.version.outputs.version }}-${{ matrix.rid }}"
+          cd publish
+          if [[ "${{ matrix.rid }}" == win-* ]]; then 7z a -tzip "../$name.zip" codemap.exe; else tar -czf "../$name.tar.gz" codemap; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codemap-${{ matrix.rid }}
+          path: |
+            codemap-*.zip
+            codemap-*.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then v="${GITHUB_REF_NAME#v}"; else v="0.0.0-dev.$GITHUB_RUN_NUMBER"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Pack dotnet tool
+        run: dotnet pack src/CodeMap.Cli -c Release -p:Version=${{ steps.version.outputs.version }} -o dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: codemap-*
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: GitHub release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+      - name: Keep the files (manual run)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: codemap-${{ steps.version.outputs.version }}
+          path: dist/*
+
+      - name: Publish the dotnet tool to NuGet
+        if: github.ref_type == 'tag' && env.NUGET_API_KEY != ''
+        run: dotnet nuget push "dist/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate

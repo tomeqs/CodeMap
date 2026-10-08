@@ -12,6 +12,7 @@ internal sealed class GraphBuilder
 {
     private readonly ConcurrentDictionary<string, NodeDraft> _nodes = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<EdgeKey, int> _edges = new();
+    private readonly ConcurrentDictionary<EdgeKey, int> _edgeLines = new(); // first line of calls / instantiations
     private readonly ConcurrentDictionary<string, string> _fallbacks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _onceFlags = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _assemblyToProject;
@@ -238,11 +239,13 @@ internal sealed class GraphBuilder
 
     // ------------------------------------------------------------------ edges
 
-    public void AddEdge(string? source, string? target, string kind)
+    public void AddEdge(string? source, string? target, string kind, int line = 0)
     {
         if (source == null || target == null) return;
         if (source == target && kind != EdgeKinds.Calls) return;
-        _edges.AddOrUpdate(new EdgeKey(source, target, kind), 1, static (_, w) => w + 1);
+        var key = new EdgeKey(source, target, kind);
+        _edges.AddOrUpdate(key, 1, static (_, w) => w + 1);
+        if (line > 0) _edgeLines.AddOrUpdate(key, line, (_, existing) => Math.Min(existing, line));
     }
 
     // ------------------------------------------------------------------ build
@@ -274,7 +277,7 @@ internal sealed class GraphBuilder
             graph.Nodes.Add(node);
         }
 
-        var edges = new Dictionary<EdgeKey, int>();
+        var edges = new Dictionary<EdgeKey, (int Weight, int Line)>();
         foreach (var (edge, weight) in _edges)
         {
             if (!ids.TryGetValue(edge.Source, out var source)) continue;
@@ -282,10 +285,13 @@ internal sealed class GraphBuilder
             if (target == null) continue;
             if (source == target && (edge.Kind != EdgeKinds.Calls || edge.Source != edge.Target)) continue;
             var key = new EdgeKey(source, target, edge.Kind);
-            edges[key] = edges.TryGetValue(key, out var existing) ? existing + weight : weight;
+            var line = _edgeLines.GetValueOrDefault(edge);
+            edges[key] = edges.TryGetValue(key, out var existing)
+                ? (existing.Weight + weight, existing.Line == 0 ? line : line == 0 ? existing.Line : Math.Min(existing.Line, line))
+                : (weight, line);
         }
 
-        graph.Edges.AddRange(edges.Select(e => new GraphEdge { Source = e.Key.Source, Target = e.Key.Target, Kind = e.Key.Kind, Weight = e.Value }));
+        graph.Edges.AddRange(edges.Select(e => new GraphEdge { Source = e.Key.Source, Target = e.Key.Target, Kind = e.Key.Kind, Weight = e.Value.Weight, Line = e.Value.Line }));
 
         graph.Nodes.Sort((a, b) =>
         {
