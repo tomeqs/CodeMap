@@ -53,10 +53,27 @@ dotnet tool install -g CodeMap.Tool --add-source nupkg
 codemap            # otwiera aplikację w przeglądarce
 ```
 
+### Rozszerzenie VS Code
+
+Mapa otwiera się w karcie edytora, a z kodu do mapy i z powrotem przechodzisz jednym kliknięciem:
+
+* **CodeMap: Open Code Map** z palety poleceń albo prawym przyciskiem na `.sln` / `.slnx` / `.csproj` / folderze w Explorerze;
+* **Open** w panelu szczegółów (albo dwuklik na metodzie) otwiera kod w edytorze obok;
+* **Show in Code Map** (`Ctrl+Alt+M`) zaznacza na mapie metodę albo klasę spod kursora;
+* **Show Call Flow** (menu kontekstowe edytora) pokazuje przepływ wywołań i diagram sekwencji metody spod kursora;
+* po zapisaniu pliku `.cs` mapa sama się odświeża i nie gubi kamery ani zaznaczenia;
+* Mermaid i JSON zapisujesz przez okno zapisu VS Code.
+
+Instalacja: plik `codemap-<wersja>.vsix` z [Releases](https://github.com/tomeqs/CodeMap/releases), potem
+*Extensions → … → Install from VSIX…* albo `code --install-extension codemap-0.2.0.vsix`. Rozszerzenie ma w sobie
+analizator (wymaga .NET SDK 8+, który i tak masz do C#). Bez .NET ustaw `codemap.analyzerPath` na samodzielny plik `codemap`.
+Kod rozszerzenia jest w [`vscode/`](vscode/).
+
 ### Wydawanie nowej wersji
 
 Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) uruchamia testy i buduje programy
-dla 6 platform. Dla każdej sprawdza, czy program uruchamia się i analizuje przykładową solucję, a do tego pakuje narzędzie .NET.
+dla 6 platform. Dla każdej sprawdza, czy program uruchamia się i analizuje przykładową solucję, a do tego pakuje narzędzie .NET
+i rozszerzenie VS Code (`.vsix`).
 
 ```bash
 git tag v0.2.0 && git push origin v0.2.0     # GitHub release z plikami i sumami SHA256
@@ -64,8 +81,8 @@ git tag v0.2.0 && git push origin v0.2.0     # GitHub release z plikami i sumami
 
 Workflow można też uruchomić ręcznie (*Actions → Release → Run workflow*). Z podaną wersją (np. `0.2.0`) sam tworzy tag `v0.2.0`
 i release. Bez wersji pliki trafiają tylko do artefaktów.
-Jeśli w ustawieniach repozytorium jest sekret `NUGET_API_KEY`, narzędzie trafia też do nuget.org
-(`dotnet tool install -g CodeMap.Tool`). Lokalnie program dla wybranej platformy buduje:
+Opcjonalne sekrety repozytorium publikują dalej: `NUGET_API_KEY` wysyła narzędzie do nuget.org
+(`dotnet tool install -g CodeMap.Tool`), `VSCE_PAT` rozszerzenie do VS Code Marketplace, a `OVSX_PAT` do Open VSX (VSCodium, Cursor). Lokalnie program dla wybranej platformy buduje:
 
 ```bash
 dotnet publish src/CodeMap.Cli -c Release -r win-x64 -o dist/win-x64     # albo linux-x64, osx-arm64…
@@ -282,6 +299,7 @@ src/CodeMap.Core      analizator (Roslyn), model grafu, metryki, eksportery
   Export/             JSON, DGML, GraphML, Cypher, Markdown, HTML
 src/CodeMap.Server    lokalna aplikacja: API (ASP.NET Core), przeglądarka folderów, klonowanie, cache, tryb live
 src/CodeMap.Cli       narzędzie `codemap` (dotnet tool albo samodzielny plik wykonywalny), osadza zbudowany viewer
+vscode/               rozszerzenie VS Code: mapa w webview, przejścia kod ↔ mapa, odświeżanie na żywo
 viewer/               mapa 3D: Vite + three.js + d3-force-3d + d3-hierarchy, budowana do jednego pliku HTML
 tests/CodeMap.Tests   testy xUnit analizatora i eksporterów
 samples/Shop          przykładowa solucja (DDD, DI, zdarzenia, celowy cykl i martwy kod)

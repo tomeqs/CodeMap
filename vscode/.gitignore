@@ -1,0 +1,5 @@
+node_modules/
+analyzer/
+media/viewer.html
+*.vsix
+.vscode-test/
