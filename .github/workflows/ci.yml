@@ -43,7 +43,7 @@ jobs:
       - name: Sample graph for the smoke tests (the analyzer on samples/Shop)
         run: |
           dotnet run --project ../src/CodeMap.Cli -c Release -- ../samples/Shop/Shop.sln -f json --no-git -o "$RUNNER_TEMP/shop"
-          cp "$RUNNER_TEMP/shop/Shop.codemap.json" public/sample.codemap.json
+          mkdir -p public && cp "$RUNNER_TEMP/shop/Shop.codemap.json" public/sample.codemap.json
       - run: npm run build
       - name: The viewer built into the CLI matches the sources
         run: git diff --exit-code --stat -- ../src/CodeMap.Cli/Assets/viewer.html
