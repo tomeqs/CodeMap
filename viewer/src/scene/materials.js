@@ -1,28 +1,39 @@
+import { AdditiveBlending, InstancedBufferAttribute, MeshStandardNodeMaterial, PointsNodeMaterial, Sprite } from 'three/webgpu';
 import {
-  AdditiveBlending,
-  BufferAttribute,
-  BufferGeometry,
-  Color,
-  InstancedBufferAttribute,
-  LineBasicMaterial,
-  LineSegments,
-  MeshStandardNodeMaterial,
-  PointsNodeMaterial,
-  Sprite,
-} from 'three/webgpu';
-import { abs, attribute, diffuseColor, float, floor, fract, hash, instancedBufferAttribute, normalLocal, positionLocal, positionWorld, step, texture, uniform, uv, vec2, vec4 } from 'three/tsl';
+  abs,
+  attribute,
+  diffuseColor,
+  float,
+  floor,
+  fract,
+  hash,
+  instancedBufferAttribute,
+  mrt,
+  normalLocal,
+  output,
+  positionLocal,
+  positionWorld,
+  step,
+  texture,
+  uniform,
+  uv,
+  vec2,
+  vec4,
+} from 'three/tsl';
 import { dotTexture } from './textures.js';
 
 /**
- * Standard material whose instance colour also feeds the emissive term, so nodes look self-lit
- * and pick up bloom. `glow` controls how much they shine.
+ * Lets a material feed the bloom with its own colour (× `amount`, 0: none). Only what glows blooms: the
+ * stage blooms the emissive output (see Stage), which lit materials fill with their emissive colour and
+ * unlit ones (links, particles, sprites, planes) through this.
  */
-export function glowMaterial(glow = 0.55, options = {}) {
-  const material = new MeshStandardNodeMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.15, ...options });
-  material.userData.glow = uniform(glow);
-  material.emissiveNode = diffuseColor.rgb.mul(material.userData.glow);
+export function feedsBloom(material, amount = 1) {
+  material.mrtNode = mrt({ emissive: vec4(output.rgb.mul(amount), output.a) });
   return material;
 }
+
+/** How much of a unit's colour goes into the bloom. */
+const UNIT_BLOOM = 0.8;
 
 /**
  * Glowing units (galaxy, layers, semantic zoom) drawn straight from the position store: per instance the
@@ -35,6 +46,8 @@ export function unitMaterial(store, glow = 0.36) {
   material.positionNode = positionLocal.mul(attribute('aScale', 'float')).add(center);
   material.colorNode = attribute('aColor', 'vec3');
   material.emissiveNode = diffuseColor.rgb.mul(material.userData.glow);
+  // The bloom gets more than the surface shows: a soft halo around every unit, its own colour.
+  material.mrtNode = mrt({ emissive: vec4(diffuseColor.rgb.mul(UNIT_BLOOM), 1) });
   return material;
 }
 
@@ -56,30 +69,11 @@ export function buildingMaterial() {
   return material;
 }
 
-/** Line segments with per-vertex colours, rendered additively ("glowing threads"). */
-export function createLines(maxSegments) {
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(new Float32Array(maxSegments * 6), 3));
-  geometry.setAttribute('color', new BufferAttribute(new Float32Array(maxSegments * 6), 3));
-  geometry.setDrawRange(0, 0);
-  const material = new LineBasicMaterial({
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.9,
-    depthWrite: false,
-    blending: AdditiveBlending,
-    fog: false,
-  });
-  const lines = new LineSegments(geometry, material);
-  lines.frustumCulled = false;
-  return lines;
-}
-
 /**
  * Round sprites, one instance each, with a size in pixels (or world units with `sizeAttenuation`).
  * WebGPU draws point primitives one pixel wide, so points are instanced quads.
  */
-export function createDots(max, { size = 3, sizeAttenuation = true, opacity = 1 } = {}) {
+export function createDots(max, { size = 3, sizeAttenuation = true, opacity = 1, glow = 1 } = {}) {
   const positions = new InstancedBufferAttribute(new Float32Array(max * 3), 3);
   const colors = new InstancedBufferAttribute(new Float32Array(max * 3), 3);
   const material = new PointsNodeMaterial({
@@ -92,60 +86,9 @@ export function createDots(max, { size = 3, sizeAttenuation = true, opacity = 1 
   material.positionNode = instancedBufferAttribute(positions);
   material.colorNode = texture(dotTexture(), uv()).mul(vec4(instancedBufferAttribute(colors), opacity));
   material.sizeNode = uniform(size);
+  feedsBloom(material, glow);
   const sprite = new Sprite(material);
   sprite.count = 0;
   sprite.frustumCulled = false;
   return { sprite, positions, colors };
 }
-
-/** Points that travel along edges to show direction of the relationship. */
-export class FlowParticles {
-  constructor(max = 6000, size = 3.2) {
-    this.max = max;
-    const { sprite, positions, colors } = createDots(max, { size });
-    this.points = sprite;
-    this.positionAttribute = positions;
-    this.colorAttribute = colors;
-    this.positions = positions.array;
-    this.colors = colors.array;
-    this.paths = [];
-    this.time = 0;
-    this.count = 0;
-  }
-
-  /** paths: [{ at(t, out) -> Vector3, color: Color, count, speed }] */
-  setPaths(paths) {
-    this.paths = paths;
-    let total = 0;
-    for (const p of paths) total += p.count;
-    this.count = Math.min(this.max, total);
-    this.points.count = this.count;
-  }
-
-  update(dt, tmp) {
-    this.time += dt;
-    let i = 0;
-    for (const path of this.paths) {
-      for (let k = 0; k < path.count && i < this.count; k++, i++) {
-        const t = (this.time * path.speed + k / path.count + path.phase) % 1;
-        path.at(t, tmp);
-        this.positions[i * 3] = tmp.x;
-        this.positions[i * 3 + 1] = tmp.y;
-        this.positions[i * 3 + 2] = tmp.z;
-        const fade = Math.sin(Math.PI * t);
-        this.colors[i * 3] = path.color.r * fade;
-        this.colors[i * 3 + 1] = path.color.g * fade;
-        this.colors[i * 3 + 2] = path.color.b * fade;
-      }
-    }
-
-    this.positionAttribute.needsUpdate = true;
-    this.colorAttribute.needsUpdate = true;
-  }
-
-  dispose() {
-    this.points.material.dispose();
-  }
-}
-
-export const WHITE = new Color(1, 1, 1);

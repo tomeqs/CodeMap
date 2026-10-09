@@ -5,6 +5,7 @@ import {
   cameraProjectionMatrix,
   distance,
   float,
+  fract,
   max,
   min,
   mix,
@@ -14,22 +15,28 @@ import {
   screenSize,
   select,
   smoothstep,
+  time,
   varying,
   vec2,
   vec3,
   vec4,
 } from 'three/tsl';
+import { feedsBloom } from './materials.js';
 
 /** Smallest clip-space w kept in front of the camera when a link crosses it. */
 const NEAR_W = 0.05;
+/** Flowing dashes: one every this many CSS pixels along the link, moving this many dashes per second. */
+const DASH = 18;
+const DASH_SPEED = 1.6;
 
 /**
  * Links as thick glowing ribbons: one instanced strip per link, widened in screen space in the vertex
  * shader, with soft edges. Both ends are read from the position store, so a moving layout costs nothing
  * here. `arc` bends every link up into a quadratic curve (the code city).
  *
- * Per link: the two unit indices, a colour, head and tail intensities (fading along the link) and a
- * width in pixels.
+ * Per link: the two unit indices, a colour, head and tail intensities (fading along the link), a
+ * width in pixels and how much it flows: dashes running from the source to the target (the direction of
+ * the dependency; they move with the clock, so a view showing them keeps drawing ambient frames).
  */
 export class LinkMesh {
   constructor(store, { arc = false, segments = arc ? 18 : 1 } = {}) {
@@ -38,6 +45,8 @@ export class LinkMesh {
     this.segments = segments;
     this.capacity = 0;
     this.count = 0;
+    /** Links with dashes: while there are any, the view keeps drawing (ambient frames). */
+    this.flowing = 0;
     this.material = linkMaterial(store, { arc, segments });
     this.mesh = new Mesh(stripGeometry(segments), this.material);
     this.mesh.frustumCulled = false;
@@ -45,9 +54,11 @@ export class LinkMesh {
     this.mesh.renderOrder = 1;
   }
 
-  /** Room for `count` links (attributes are reallocated only when growing). */
+  /** Room for `count` links (attributes are reallocated only when growing); styles start over. */
   setCount(count) {
     this.count = count;
+    this.flows?.array.fill(0);
+    this.flowing = 0;
     if (count > this.capacity || !this.ends) {
       const capacity = Math.max(count, Math.ceil(this.capacity * 1.5), 16);
       const geometry = this.mesh.geometry;
@@ -60,6 +71,7 @@ export class LinkMesh {
       this.colors = grow('aColor', 3);
       this.intensity = grow('aIntensity', 2);
       this.widths = grow('aWidth', 1);
+      this.flows = grow('aFlow', 1);
       this.capacity = capacity;
       geometry.dispose(); // the old GPU buffers go; new ones are made at the next frame
     }
@@ -72,8 +84,11 @@ export class LinkMesh {
     this.ends.array[i * 2 + 1] = target;
   }
 
-  /** Colour with the intensity at the source (`head`) and at the target (`tail`), and the width in pixels. */
-  setStyle(i, color, head, tail, width) {
+  /**
+   * Colour with the intensity at the source (`head`) and at the target (`tail`), the width in pixels, and
+   * the flow: 0 a steady ribbon, 1 bright dashes running along it.
+   */
+  setStyle(i, color, head, tail, width, flow = 0) {
     const c = this.colors.array;
     c[i * 3] = color.r;
     c[i * 3 + 1] = color.g;
@@ -81,11 +96,13 @@ export class LinkMesh {
     this.intensity.array[i * 2] = head;
     this.intensity.array[i * 2 + 1] = tail;
     this.widths.array[i] = width;
+    if (flow > 0 !== this.flows.array[i] > 0) this.flowing += flow > 0 ? 1 : -1;
+    this.flows.array[i] = flow;
   }
 
   /** Uploads everything (after setCount / a full restyle). */
   flush() {
-    for (const attr of [this.ends, this.colors, this.intensity, this.widths]) {
+    for (const attr of [this.ends, this.colors, this.intensity, this.widths, this.flows]) {
       if (!attr) continue;
       attr.clearUpdateRanges();
       attr.needsUpdate = true;
@@ -94,7 +111,7 @@ export class LinkMesh {
 
   /** Uploads the style of a few links only (hover). */
   flushStyle(indices) {
-    for (const [attr, size] of [[this.colors, 3], [this.intensity, 2], [this.widths, 1]]) {
+    for (const [attr, size] of [[this.colors, 3], [this.intensity, 2], [this.widths, 1], [this.flows, 1]]) {
       for (const i of indices) attr.addUpdateRange(i * size, size);
       attr.needsUpdate = true;
     }
@@ -141,7 +158,7 @@ export function linkPoint(p0, p1, t, arc) {
 
 function linkMaterial(store, { arc, segments }) {
   // Double-sided: which way a ribbon's triangles wind depends on the link's direction on screen.
-  const material = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: AdditiveBlending, fog: false, side: DoubleSide });
+  const material = feedsBloom(new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: AdditiveBlending, fog: false, side: DoubleSide }));
   const ends = attribute('aEnds', 'vec2');
   const t = attribute('aT', 'float');
   const side = attribute('aSide', 'float');
@@ -157,6 +174,8 @@ function linkMaterial(store, { arc, segments }) {
   let a;
   let b;
   let behind;
+  let ends2d; // the link's two ends on screen (for its length)
+  const onScreen = (c) => c.xy.div(max(c.w, NEAR_W)).mul(screenSize);
   if (!arc) {
     // Straight: clip the segment at the near plane, so a link reaching behind the camera stays drawn.
     const c0 = mvp.mul(vec4(p0, 1));
@@ -167,6 +186,7 @@ function linkMaterial(store, { arc, segments }) {
     b = select(w1.lessThan(NEAR_W), mix(c1, c0, float(NEAR_W).sub(w1).div(w0.sub(w1))), c1);
     behind = max(w0, w1).lessThan(NEAR_W);
     clip = mix(a, b, t);
+    ends2d = [a, b];
   } else {
     const step = 0.5 / segments;
     clip = mvp.mul(vec4(linkPoint(p0, p1, t, true), 1));
@@ -174,11 +194,12 @@ function linkMaterial(store, { arc, segments }) {
     b = mvp.mul(vec4(linkPoint(p0, p1, min(t.add(step), 1), true), 1));
     // Arc vertices behind the camera are dropped (the city is seen from above).
     behind = clip.w.lessThan(NEAR_W);
+    ends2d = [mvp.mul(vec4(p0, 1)), mvp.mul(vec4(p1, 1))];
   }
 
   // Direction on screen, and the ribbon's sideways offset in pixels.
-  const sa = a.xy.div(max(a.w, NEAR_W)).mul(screenSize);
-  const sb = b.xy.div(max(b.w, NEAR_W)).mul(screenSize);
+  const sa = onScreen(a);
+  const sb = onScreen(b);
   const direction = normalize(sb.sub(sa).add(vec2(1e-6, 0)));
   const normal = vec2(direction.y.negate(), direction.x);
   const offset = normal.mul(side).mul(width).mul(screenDPR).div(screenSize).mul(2);
@@ -186,6 +207,14 @@ function linkMaterial(store, { arc, segments }) {
 
   const edge = float(1).sub(smoothstep(0.25, 1, abs(vSide)));
   const intensity = mix(attribute('aIntensity', 'vec2').x, attribute('aIntensity', 'vec2').y, vT);
-  material.colorNode = vec4(attribute('aColor', 'vec3').mul(intensity).mul(edge), 1);
+  // Dashes: the link's length on screen in CSS pixels (onScreen gives twice the device pixels; an arc is
+  // a bit longer than its chord), and the dash pattern moving towards the target.
+  const length = distance(onScreen(ends2d[0]), onScreen(ends2d[1])).div(screenDPR.mul(2)).mul(arc ? 1.3 : 1);
+  const vLength = varying(length, 'vLinkLength');
+  const vFlow = varying(attribute('aFlow', 'float'), 'vLinkFlow');
+  const phase = fract(vT.mul(vLength).div(DASH).sub(time.mul(DASH_SPEED)));
+  const dash = smoothstep(0, 0.2, phase).mul(float(1).sub(smoothstep(0.45, 0.65, phase)));
+  const flow = mix(float(1), dash.mul(1.6).add(0.3), vFlow);
+  material.colorNode = vec4(attribute('aColor', 'vec3').mul(intensity).mul(edge).mul(flow), 1);
   return material;
 }

@@ -1,7 +1,13 @@
 import { AdditiveBlending, InstancedBufferAttribute, PointsNodeMaterial, Sprite } from 'three/webgpu';
 import { attribute, fract, sin, texture, time, uniform, uv, vec4 } from 'three/tsl';
 import { linkPoint } from './link-mesh.js';
+import { feedsBloom } from './materials.js';
 import { dotTexture } from './textures.js';
+
+/** Particles per link at the "particles" option (0 off, 1 normal, more or less), from its usual number. */
+export function particlesPerLink(usual, density = 1) {
+  return density > 0 ? Math.max(1, Math.round(usual * density)) : 0;
+}
 
 /**
  * Particles flowing along links (the direction of the dependency), animated entirely on the GPU: each
@@ -23,6 +29,7 @@ export class GpuParticles {
     material.colorNode = texture(dotTexture(), uv()).mul(vec4(attribute('aColor', 'vec3').mul(fade), 1));
     this.size = uniform(size);
     material.sizeNode = this.size;
+    feedsBloom(material);
     this.sprite = new Sprite(material);
     // Sprites share one quad geometry; this one gets its own copy to carry the per-particle attributes.
     this.sprite.geometry = this.sprite.geometry.clone();

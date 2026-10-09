@@ -1,5 +1,5 @@
 import { ACESFilmicToneMapping, Color, FogExp2, PCFSoftShadowMap, PerspectiveCamera, PostProcessing, Raycaster, Scene, Vector2, Vector3 } from 'three/webgpu';
-import { pass } from 'three/tsl';
+import { emissive, mrt, output, pass, vec4 } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { beginFrame, createRenderer } from '../gpu/renderer.js';
@@ -10,9 +10,10 @@ import { perf } from '../perf/stats.js';
 const AMBIENT_TIMEOUT = 20000;
 /** Ambient-only frames run at most this often (ms): ~30 fps is plenty for drifting particles. */
 const AMBIENT_INTERVAL = 33;
-/** Node bloom vs UnrealBloomPass: see setBloom(). */
+/** Node bloom of the emissive target vs UnrealBloomPass of everything: see setBloom(). */
 const BLOOM_STRENGTH = 1.15;
 const BLOOM_RADIUS = 0.4;
+const BLOOM_THRESHOLD = 0.5;
 
 /**
  * Renderer, camera, controls and bloom shared by every view. Frames are drawn on demand: when something
@@ -84,11 +85,15 @@ export class Stage {
     renderer.shadowMap.type = PCFSoftShadowMap;
     renderer.onDeviceLost = (info) => this.onDeviceLost?.(info);
 
-    // The scene in an HDR, multisampled target; bloom on top; tone mapping and sRGB at the end.
+    // The scene in an HDR, multisampled target; bloom on top; tone mapping and sRGB at the end. Only what
+    // glows blooms: a second target gets the emissive colour (nodes, links, particles, lit windows; the
+    // alpha lets see-through planes dim what is behind them), and the bloom blurs that alone, so lit
+    // surfaces, planes and the ground stay crisp however bright they are.
     this.post = new PostProcessing(renderer);
     const scenePass = pass(this.scene, this.camera, { samples: software ? 0 : 4 });
+    scenePass.setMRT(mrt({ output, emissive: vec4(emissive, output.a) }));
     const color = scenePass.getTextureNode('output');
-    this.bloom = bloom(color);
+    this.bloom = bloom(scenePass.getTextureNode('emissive'));
     this.post.outputNode = color.add(this.bloom);
     const { strength, radius, threshold } = this.bloomSettings;
     this.setBloom(strength, radius, threshold);
@@ -115,14 +120,15 @@ export class Stage {
 
   /**
    * Bloom in the units the views were tuned with (UnrealBloomPass). The node bloom blurs each level more
-   * narrowly, so a larger radius (more weight on the wide levels) gives the same soft haze.
+   * narrowly, so a larger radius (more weight on the wide levels) gives the same soft haze; it only sees
+   * the emissive colour, which is darker than the lit scene, so the threshold is lower.
    */
   setBloom(strength, radius = 0.55, threshold = 0.18) {
     this.bloomSettings = { strength, radius, threshold };
     if (this.bloom) {
       this.bloom.strength.value = strength * BLOOM_STRENGTH;
       this.bloom.radius.value = Math.min(1, radius + BLOOM_RADIUS);
-      this.bloom.threshold.value = threshold;
+      this.bloom.threshold.value = threshold * BLOOM_THRESHOLD;
     }
 
     this.invalidate();
@@ -269,7 +275,7 @@ export class Stage {
   /** A sphere of faint stars far behind everything (instanced sprites: WebGPU points are one pixel). */
   createStars() {
     const count = 4000;
-    const { sprite, positions, colors } = createDots(count, { size: 2.2, sizeAttenuation: false, opacity: 0.75 });
+    const { sprite, positions, colors } = createDots(count, { size: 2.2, sizeAttenuation: false, opacity: 0.75, glow: 0.5 });
     const color = new Color();
     for (let i = 0; i < count; i++) {
       const r = 6000 + Math.random() * 9000;

@@ -1,4 +1,6 @@
-import { CircleGeometry, Color, DoubleSide, Group, Mesh, MeshBasicMaterial, RingGeometry, Vector3 } from 'three';
+import { CircleGeometry, Color, DoubleSide, Group, Mesh, RingGeometry, Vector3 } from 'three';
+import { MeshBasicNodeMaterial } from 'three/webgpu';
+import { feedsBloom } from '../scene/materials.js';
 import { createSpec } from '../layout/spec.js';
 import { GalaxyView } from './galaxy.js';
 
@@ -91,8 +93,8 @@ export class LayeredView extends GalaxyView {
 
     this.planes = this.layering.layers.map((layer, index) => {
       const tint = new Color(layer.color ?? '#6ea8ff');
-      const fill = new Mesh(circle, new MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.075, side: DoubleSide, depthWrite: false }));
-      const rim = new Mesh(ring, new MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.5, side: DoubleSide, depthWrite: false }));
+      const fill = new Mesh(circle, feedsBloom(new MeshBasicNodeMaterial({ color: tint, transparent: true, opacity: 0.075, side: DoubleSide, depthWrite: false }), 0));
+      const rim = new Mesh(ring, feedsBloom(new MeshBasicNodeMaterial({ color: tint, transparent: true, opacity: 0.5, side: DoubleSide, depthWrite: false }), 0.5));
       fill.rotation.x = rim.rotation.x = -Math.PI / 2;
       fill.raycast = rim.raycast = () => {}; // planes are scenery, not pickable
       const group = new Group();

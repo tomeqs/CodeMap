@@ -99,6 +99,7 @@ class App {
       minWeight: 1,
       labels: true,
       flowAll: false,
+      particles: 1,
       autoRotate: false,
       allArcs: false,
       flowRoots: [],
@@ -266,8 +267,8 @@ class App {
 
   applyOptions() {
     const s = this.state;
-    for (const view of [this.galaxy, this.layers, this.diView, this.flowView, this.zoomView]) view.setOptions({ flowAll: s.flowAll, labels: s.labels, autoRotate: s.autoRotate });
-    this.city.setOptions({ allArcs: s.allArcs, labels: s.labels });
+    for (const view of [this.galaxy, this.layers, this.diView, this.flowView, this.zoomView]) view.setOptions({ flowAll: s.flowAll, labels: s.labels, autoRotate: s.autoRotate, particles: s.particles });
+    this.city.setOptions({ allArcs: s.allArcs, labels: s.labels, particles: s.particles });
   }
 
   setView(view) {

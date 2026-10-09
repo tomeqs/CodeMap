@@ -121,14 +121,15 @@ try {
       });
       // Only the canvas counts: hide the HTML labels drawn over it.
       await page.evaluate(() => (document.getElementById('labels').style.visibility = 'hidden'));
-      await page.waitForTimeout(400);
+      await drained(page);
       const before = await brightness(other);
       // As if the user had been away: no ambient frames (pulsing halo) that would hide a missing frame.
       await page.evaluate((id) => {
         window.codemap.stage.lastInput = -1e9;
         window.codemap.select(id);
       }, other.selected);
-      await page.waitForTimeout(400);
+      // Every frame the stage wanted to draw is drawn (software frames can be slow), then nothing more.
+      await drained(page);
       const after = await brightness(other);
       await page.evaluate(() => {
         window.codemap.select(null);
@@ -137,10 +138,31 @@ try {
       assert.ok(after < before * 0.7, `brightness of an unrelated node: ${before} before, ${after} after selecting`);
     });
 
+    await test('links in focus flow (moving dashes), also with the particles off', async () => {
+      const result = await page.evaluate(async () => {
+        const app = window.codemap;
+        app.setState({ particles: 0 }, 'options');
+        const units = [...app.view.units].sort((a, b) => b.r - a.r);
+        app.stage.onInput(); // the user is here: ambient motion runs
+        app.select(units[0].id);
+        // Frames keep coming while the dashes move (however slowly software rendering draws them).
+        const start = app.perf.renders;
+        const deadline = performance.now() + 20000;
+        while (app.perf.renders < start + 4 && performance.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+        const state = { particles: app.view.particles.count, flowing: app.view.linkMesh.flowing, renders: app.perf.renders - start };
+        app.select(null);
+        app.setState({ particles: 1 }, 'options');
+        return state;
+      });
+      assert.equal(result.particles, 0, 'no particles');
+      assert.ok(result.flowing > 0, 'the selected links have dashes');
+      assert.ok(result.renders >= 4, `frames while the dashes move: ${result.renders}`);
+    });
+
     await test('an idle map draws nothing', async () => {
       await page.evaluate(() => window.codemap.select(null));
       await page.mouse.move(2, 300);
-      await page.waitForTimeout(1500); // the last frames of the camera damping
+      await drained(page); // the hover change and the last frames of the camera damping
       const sample = await page.evaluate(async () => {
         const perf = window.codemap.perf;
         perf.startSampling();
@@ -291,6 +313,19 @@ if (failed) {
 }
 
 console.log('\nSmoke tests passed.');
+
+/**
+ * Waits until the stage has drawn every frame it wanted to (none pending, nothing left to redraw): a
+ * map that keeps drawing never gets there, and slow software frames do not cut a test short.
+ */
+async function drained(page, timeout = 30000) {
+  // Two display frames first: input handlers that wait for one (hover picking) have run by then.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.waitForFunction(() => {
+    const stage = window.codemap.stage;
+    return !stage.raf && !stage.ambientTimer && !stage.dirty && stage.trailingFrames === 0 && !stage.flight;
+  }, null, { timeout, polling: 50 });
+}
 
 /** Pixels of the canvas that are clearly brighter than the background. */
 async function litPixels(page) {

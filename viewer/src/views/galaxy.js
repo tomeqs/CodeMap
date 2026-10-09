@@ -14,15 +14,15 @@ import {
   OctahedronGeometry,
   PointLight,
   Sprite,
-  SpriteMaterial,
   TetrahedronGeometry,
   TorusGeometry,
   Vector3,
 } from 'three';
+import { SpriteNodeMaterial } from 'three/webgpu';
 import { EDGE_KINDS } from '../data/palette.js';
-import { unitMaterial } from '../scene/materials.js';
+import { feedsBloom, unitMaterial } from '../scene/materials.js';
 import { LinkMesh } from '../scene/link-mesh.js';
-import { GpuParticles } from '../scene/particles.js';
+import { GpuParticles, particlesPerLink } from '../scene/particles.js';
 import { PositionStore } from '../gpu/position-store.js';
 import { dotTexture } from '../scene/textures.js';
 import { perf } from '../perf/stats.js';
@@ -89,7 +89,7 @@ export class GalaxyView {
     this.links = [];
     this.highlight = null;
     this.hovered = null;
-    this.options = { flowAll: false, labels: true, autoRotate: false };
+    this.options = { flowAll: false, labels: true, autoRotate: false, particles: 1 };
     this.detail = -1;
     // Everything reads unit positions from the store on the GPU: nodes, links and particles.
     this.store = new PositionStore();
@@ -97,7 +97,7 @@ export class GalaxyView {
     this.linkMesh = new LinkMesh(this.store);
     this.lines = this.linkMesh.mesh;
     this.particles = new GpuParticles(this.store, { max: 60000, size: 2.6 });
-    this.halo = new Sprite(new SpriteMaterial({ map: dotTexture(), color: 0xffffff, transparent: true, opacity: 0.4, blending: AdditiveBlending, depthWrite: false }));
+    this.halo = new Sprite(feedsBloom(new SpriteNodeMaterial({ map: dotTexture(), color: 0xffffff, transparent: true, opacity: 0.4, blending: AdditiveBlending, depthWrite: false })));
     this.halo.visible = false;
 
     this.lightGroup = new Group();
@@ -136,8 +136,10 @@ export class GalaxyView {
   }
 
   setOptions(options) {
+    const flowChanged = 'flowAll' in options && options.flowAll !== this.options.flowAll;
     Object.assign(this.options, options);
     this.stage.controls.autoRotate = this.options.autoRotate;
+    if (flowChanged && this.links?.length) this.recolorLines(); // the dashes follow
     this.refreshParticles();
     this.stage.invalidate();
   }
@@ -435,7 +437,7 @@ export class GalaxyView {
 
     if (this.options.labels) this.renderLabels();
     else this.labels.clear();
-    return busy || (halo || this.particles.count ? 'ambient' : false);
+    return busy || (halo || this.particles.count || this.linkMesh.flowing ? 'ambient' : false);
   }
 
   /** Positions (to the store) and sizes of every unit, e.g. after an animation step. */
@@ -521,7 +523,9 @@ export class GalaxyView {
     const on = (h && h.links.has(index)) || (!h && hovered && (l.s === hovered || l.t === hovered));
     const width = (on ? 1.9 : l.violation ? 1.6 : 1.1) * Math.min(1.6, 1 + Math.log2(l.weight) * 0.1);
     const gain = on ? 1 : 0.75;
-    this.linkMesh.setStyle(index, c, a * gain, b * gain, width);
+    // Dashes run along what is in focus (and every link with "flow on all links"), towards the dependency.
+    const flow = on ? 1 : !h && l.violation ? 0.8 : !h && this.options.flowAll ? 0.6 : 0;
+    this.linkMesh.setStyle(index, c, a * gain, b * gain, width, flow);
   }
 
   /** highlight: null | { primary, nodes:Set<id>, links:Set<index>, secondary?:Set<id> } */
@@ -571,11 +575,12 @@ export class GalaxyView {
     // The GPU animates them all; only the budget for very large selections is limited.
     selected = selected.slice(0, 20000);
 
+    const density = this.options.particles;
     this.particles.setPaths(
-      selected.map((l) => ({
+      (density > 0 ? selected : []).map((l) => ({
         source: l.s.index,
         target: l.t.index,
-        count: Math.min(4, 1 + Math.floor(Math.log2(l.weight))),
+        count: particlesPerLink(Math.min(4, 1 + Math.floor(Math.log2(l.weight))), density),
         speed: 0.28 + Math.random() * 0.12,
         color: linkColor(l).clone().multiplyScalar(1.6),
       })),

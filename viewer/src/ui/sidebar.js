@@ -64,6 +64,9 @@ export class Sidebar {
       h('label', { class: 'toggle-row', title }, h('span', {}, label), h('input', { type: 'checkbox', checked, onChange: (e) => onChange(e.target.checked) }));
 
     appearance.append(toggle('Labels', state.labels, (v) => app.setState({ labels: v }, 'options')));
+    const particleOptions = [['0', 'Off'], ['0.34', 'Few'], ['1', 'Normal'], ['2', 'Many']];
+    appearance.append(h('div', { class: 'row', title: 'Particles flowing along links show the direction of dependencies' }, h('label', {}, 'Particles'),
+      select(String(state.particles), particleOptions, (v) => app.setState({ particles: Number(v) }, 'options'))));
     if (state.view !== 'city') {
       appearance.append(toggle('Flow particles on all links', state.flowAll, (v) => app.setState({ flowAll: v }, 'options')));
       appearance.append(toggle('Auto-rotate', state.autoRotate, (v) => app.setState({ autoRotate: v }, 'options')));

@@ -5,6 +5,9 @@
 - The map draws with WebGPU (Metal, Direct3D 12, Vulkan) where VS Code supports it and WebGL 2 otherwise; setting `codemap.renderer`.
 - The force layout runs in a worker: large solutions lay out much faster and the editor stays responsive.
 - The map draws nothing while nothing moves (less CPU, GPU and battery).
+- With WebGPU the force layout runs in compute shaders, on a grid for big maps: up to 100,000 units per level.
+- Much faster on big solutions: link aggregation, semantic zoom and automatic layers (20,000 types: 37 s → 0.13 s).
+- Only what glows blooms (nodes, links, particles, lit windows); links in focus show moving dashes; a particle density setting.
 
 ## 0.1.0
 

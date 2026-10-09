@@ -296,15 +296,25 @@ albo użyć parametru `?data=url.json`.
   Gdy przeglądarka (albo VS Code) nie ma WebGPU, przechodzi na **WebGL 2**.
   Backend można wymusić w zakładce *Data* (*Graphics → Renderer*), parametrem `?renderer=webgpu|webgl`
   albo ustawieniem `codemap.renderer` w VS Code.
-* Układ siłowy liczy się na **GPU** (compute shadery WebGPU): wszystkie węzły równolegle, a siły odpychania liczone są dokładnie,
-  kafelkami w pamięci współdzielonej grupy roboczej. Pozycje trafiają wprost do tekstury, z której rysują shadery.
-  Na CPU wracają tylko co ok. 200 ms (etykiety, klikanie, kamera). Do 30 000 elementów na poziom.
+* Układ siłowy liczy się na **GPU** (compute shadery WebGPU): wszystkie węzły równolegle. Pozycje trafiają wprost
+  do tekstury, z której rysują shadery, a na CPU wracają tylko co ok. 200 ms (etykiety, klikanie, kamera).
+  Siły odpychania do 12 000 elementów liczone są dokładnie, kafelkami w pamięci współdzielonej grupy roboczej.
+  Powyżej tej liczby liczone są na siatce: węzły sortowane do komórek w każdym kroku, bliscy sąsiedzi parami,
+  dalsi przez środki ładunku komórek na kilku poziomach. Wynik jest w granicach 1% od dokładnego.
+  `?layoutMode=grid|exact` wymusza tryb. Do 100 000 elementów na poziom.
 * Bez WebGPU układ liczy **Web Worker**, więc mapa i interfejs zostają płynne (do 15 000 elementów).
   Bez workera, na przykład gdy CSP go blokuje, liczy główny wątek z limitem 7000. Małe grafy (do 300 elementów)
   układają się od razu na głównym wątku. `?layout=gpu|worker|main` wymusza wybór.
 * Pozycje elementów leżą w teksturze na GPU. Węzły, relacje (wstęgi o miękkich krawędziach, w City łuki)
   i płynące cząsteczki odczytują je w shaderach, więc ruch grafu to jedno przesłanie tekstury na klatkę,
   zamiast przepisywania macierzy i wierzchołków. Przy 20 000 elementów koszt CPU klatki spadł z 5 ms do 0,25 ms.
+* Bloom obejmuje tylko to, co świeci: węzły, relacje, cząsteczki i okna w City (osobny cel renderowania z kolorem emisyjnym).
+  Płaszczyzny warstw, ziemia i oświetlone ściany zostają ostre.
+* Zaznaczone i podświetlone relacje, problemy (np. zależności w górę) oraz wszystkie relacje z *Flow particles on all links*
+  mają płynące kreski: kierunek zależności widać także bez cząsteczek. Gęstość cząsteczek ustawisz w *Particles*
+  (Off / Few / Normal / Many).
+* Duże solucje: model, agregacja relacji, semantyczny zoom i automatyczne warstwy działają na indeksach liczbowych.
+  Warstwy 20 000 typów liczą się w 0,13 s (wcześniej 37 s), a 100 000 typów w ok. 0,9 s.
 * Klatki rysowane są tylko wtedy, gdy coś się zmienia: ruch kamery, układanie grafu, animacja.
   Nieruchoma mapa nie zużywa GPU ani baterii. Cząsteczki i pulsowanie zaznaczenia zatrzymują się po 20 s bez ruchu myszy
   i przy systemowym *ogranicz ruch*.

@@ -16,7 +16,7 @@ import { hierarchy, treemap, treemapSquarify } from 'd3-hierarchy';
 import { EDGE_KINDS } from '../data/palette.js';
 import { buildingMaterial } from '../scene/materials.js';
 import { LinkMesh } from '../scene/link-mesh.js';
-import { GpuParticles } from '../scene/particles.js';
+import { GpuParticles, particlesPerLink } from '../scene/particles.js';
 import { PositionStore } from '../gpu/position-store.js';
 import { disposeObject } from '../scene/disposer.js';
 
@@ -40,7 +40,7 @@ export class CityView {
     this.links = [];
     this.highlight = null;
     this.hovered = null;
-    this.options = { allArcs: false, labels: true };
+    this.options = { allArcs: false, labels: true, particles: 1 };
 
     this.boxGeometry = new BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     this.buildingMaterial = buildingMaterial();
@@ -295,16 +295,17 @@ export class CityView {
     arcs.setCount(selected.length);
     selected.forEach((l, i) => {
       arcs.setEnds(i, l.s.index, l.t.index);
-      arcs.setStyle(i, color.set(EDGE_KINDS[l.kind]?.color ?? '#ffffff'), intensity, intensity * 0.3, 1.6);
+      arcs.setStyle(i, color.set(EDGE_KINDS[l.kind]?.color ?? '#ffffff'), intensity, intensity * 0.3, 1.6, h || this.hovered ? 1 : 0);
     });
     arcs.flush();
 
-    const flowing = selected.length > 6000 ? selected.slice(0, 6000) : selected;
+    const density = this.options.particles;
+    const flowing = density > 0 ? selected.slice(0, 6000) : [];
     this.particles.setPaths(
       flowing.map((l) => ({
         source: l.s.index,
         target: l.t.index,
-        count: Math.min(3, 1 + Math.floor(Math.log2(l.weight))),
+        count: particlesPerLink(Math.min(3, 1 + Math.floor(Math.log2(l.weight))), density),
         speed: 0.22 + Math.random() * 0.1,
         color: new Color(EDGE_KINDS[l.kind]?.color ?? '#ffffff').multiplyScalar(1.8 * intensity),
       })),
@@ -317,7 +318,7 @@ export class CityView {
   update() {
     if (this.options.labels) this.renderLabels();
     else this.labels.clear();
-    return this.particles.count ? 'ambient' : false;
+    return this.particles.count || this.arcMesh.flowing ? 'ambient' : false;
   }
 
   renderLabels() {
