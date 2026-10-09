@@ -24,6 +24,7 @@ import {
   workgroupBarrier,
 } from 'three/tsl';
 import { perf } from '../perf/stats.js';
+import { ChargeGrid, gridPlan } from './gpu-grid.js';
 
 /** Threads per workgroup; also the tile of nodes each workgroup shares for the many-body force. */
 const WG = 64;
@@ -32,10 +33,21 @@ const PARTIALS = 256;
 /** Width of the position store texture (see gpu/position-store.js). */
 const STORE_WIDTH = 1024;
 /**
- * The many-body force here is exact; d3's Barnes–Hut approximation (θ = 0.9) pushes far nodes less, and the
- * views were tuned with it. Weaker charges keep the GPU layout as compact (measured: spread within ~10%).
+ * The many-body force here is exact (or, on the grid, as good as exact: measured within 1%); d3's
+ * Barnes–Hut approximation (θ = 0.9) pushes far nodes less, and the views were tuned with it. Weaker
+ * charges keep the GPU layout as compact (measured: spread within ~10%).
  */
 const CHARGE_MATCH = 0.72;
+/** From this many nodes the many-body force runs on a grid instead of every pair; `?layoutMode=grid|exact` forces either. */
+const GRID_FROM = 12000;
+
+const modeOverride = new URLSearchParams(globalThis.location?.search ?? '').get('layoutMode');
+
+/** 'grid' or 'exact': how the many-body force of a layout with `count` nodes is computed. */
+export function chargeMode(count) {
+  if (modeOverride === 'grid' || modeOverride === 'exact') return modeOverride;
+  return count >= GRID_FROM ? 'grid' : 'exact';
+}
 
 /**
  * The force layout as WebGPU compute shaders: the same forces as the d3 layout (layout/d3-forces.js) on the
@@ -45,7 +57,9 @@ const CHARGE_MATCH = 0.72;
  *   1. groups:  the radius-weighted centroid of every group (one thread per group)
  *   2. centre:  the mean position (partial sums, then one thread), when the spec centres the layout
  *   3. forces:  per node, links along its adjacency list (predicted positions, like d3) and the many-body
- *               force against every other node, in tiles shared through workgroup memory; anchors; groups
+ *               force against every other node, in tiles shared through workgroup memory; anchors; groups.
+ *               Big layouts (`chargeMode`) take the many-body force from a grid instead (gpu-grid.js),
+ *               which sorts the nodes into cells first: near nodes one by one, far ones by cell.
  *   4. move:    velocity decay, the centring shift, fixed heights; writes the position store texture
  *
  * Links are applied Jacobi-style (all from the start of the tick) where d3 goes link by link, and the
@@ -54,7 +68,7 @@ const CHARGE_MATCH = 0.72;
  * come back to the CPU (labels, picking, camera) every few frames and once at the end.
  */
 export class GpuLayout {
-  constructor(spec, { renderer, store }) {
+  constructor(spec, { renderer, store, mode }) {
     this.kind = 'gpu';
     this.spec = spec;
     this.renderer = renderer;
@@ -70,9 +84,10 @@ export class GpuLayout {
     this.fresh = true;
     this.readback = null;
     this.lastReadback = 0;
-    this.ticksPerFrame = Math.max(1, Math.min(12, Math.floor(3e8 / Math.max(1, n * n))));
+    this.mode = mode ?? chargeMode(n);
     store.ensure(n);
     this.build();
+    this.ticksPerFrame = Math.max(1, Math.min(12, Math.floor(3e8 / this.cost)));
     // The store shows what the shaders write from now on.
     store.useTexture(this.texture);
     this.renderer.compute(this.publish);
@@ -89,11 +104,23 @@ export class GpuLayout {
     const n = spec.count;
     const padded = Math.ceil(n / WG) * WG;
     this.padded = padded;
-    const vec4s = (fill) => {
-      const array = new Float32Array(padded * 4);
+    const grid = this.mode === 'grid';
+    // Rough work per tick: every pair, or the near cells' nodes and the far cells per node.
+    this.cost = grid ? Math.max(1, n) * 1000 : Math.max(1, padded * padded);
+    const vec4s = (fill, length = padded) => {
+      const array = new Float32Array(length * 4);
       fill?.(array);
-      return storage(new StorageBufferAttribute(array, 4), 'vec4', padded);
+      return storage(new StorageBufferAttribute(array, 4), 'vec4', length);
     };
+    // A shader stage may bind only 8 storage buffers (WebGPU's default limit), so related arrays share one:
+    // `node` holds two vec4 per node, `index` the link and grid lists, `scratch` centroids and grid cells.
+    const slice = (buffer, offset, stride = 1) => ({
+      element: (i) => {
+        const k = stride === 1 ? uint(i) : uint(i).mul(stride);
+        return buffer.element(offset ? k.add(offset) : k);
+      },
+    });
+    const plan = grid ? gridPlan(n) : null;
 
     // Positions and velocities; padding nodes sit at the origin with no charge (they push nothing).
     this.pos = vec4s((a) => {
@@ -102,15 +129,15 @@ export class GpuLayout {
     this.vel = vec4s();
     this.velNext = vec4s();
     // Per node: (charge, anchor x, y, z) and (fixed y, fixed?, group, radius).
-    const nodeA = vec4s((a) => {
-      for (let i = 0; i < n; i++) a.set([spec.charge[i] * CHARGE_MATCH, spec.anchor[i * 3], spec.anchor[i * 3 + 1], spec.anchor[i * 3 + 2]], i * 4);
-    });
-    const nodeB = vec4s((a) => {
+    const node = vec4s((a) => {
       for (let i = 0; i < n; i++) {
         const fixed = !Number.isNaN(spec.fixedY[i]);
-        a.set([fixed ? spec.fixedY[i] : 0, fixed ? 1 : 0, spec.group[i], spec.radius[i]], i * 4);
+        a.set([spec.charge[i] * CHARGE_MATCH, spec.anchor[i * 3], spec.anchor[i * 3 + 1], spec.anchor[i * 3 + 2]], i * 8);
+        a.set([fixed ? spec.fixedY[i] : 0, fixed ? 1 : 0, spec.group[i], spec.radius[i]], i * 8 + 4);
       }
-    });
+    }, padded * 2);
+    const nodeA = slice(node, 0, 2);
+    const nodeB = slice(node, 1, 2);
 
     // Links as adjacency lists (CSR): for node i, entries start[i]..start[i+1] are (other node, distance,
     // strength × its share of the pull, 0). In d3 the target moves by `bias`, the source by 1 - bias.
@@ -121,8 +148,10 @@ export class GpuLayout {
       count[spec.linkTarget[k]]++;
     }
 
-    const start = new Uint32Array(n + 1);
+    // The index buffer: link list starts (n + 1), then the grid's cell starts (cells + 1) and nodes in cell order.
+    const start = new Uint32Array(n + 1 + (plan ? plan.cells + 1 + padded : 0));
     for (let i = 0; i < n; i++) start[i + 1] = start[i] + count[i];
+    if (plan) for (let k = 0; k < padded; k++) start[n + plan.cells + 2 + k] = k; // until the first sort
     const fill = start.slice(0, n);
     const adjacency = new Float32Array(Math.max(1, links * 2) * 4);
     for (let k = 0; k < links; k++) {
@@ -134,7 +163,9 @@ export class GpuLayout {
       adjacency.set([s, spec.linkDistance[k], strength * bias, 0], fill[t]++ * 4);
     }
 
-    const adjStart = storage(new StorageBufferAttribute(start, 1), 'uint', n + 1).toReadOnly();
+    const index = storage(new StorageBufferAttribute(start, 1), 'uint', start.length);
+    if (!plan) index.toReadOnly();
+    const adjStart = index;
     const adj = storage(new StorageBufferAttribute(adjacency, 4), 'vec4', Math.max(1, links * 2)).toReadOnly();
 
     // Groups: members listed group by group, and a centroid (sum of r·position, sum of r) per group.
@@ -147,7 +178,9 @@ export class GpuLayout {
     for (let i = 0; i < n; i++) if (spec.group[i] >= 0) order[cursor[spec.group[i]]++] = i;
     const groupStart = storage(new StorageBufferAttribute(groupCount, 1), 'uint', groups + 1).toReadOnly();
     const groupOrder = storage(new StorageBufferAttribute(order, 1), 'uint', Math.max(1, n)).toReadOnly();
-    const centroid = storage(new StorageBufferAttribute(new Float32Array(groups * 4), 4), 'vec4', groups);
+    // Scratch: the group centroids, then the grid's parameters and cells.
+    const scratch = vec4s(null, groups + (plan ? 1 + plan.total : 0));
+    const centroid = scratch;
     const partial = storage(new StorageBufferAttribute(new Float32Array(PARTIALS * 4), 4), 'vec4', PARTIALS);
     const mean = storage(new StorageBufferAttribute(new Float32Array(4), 4), 'vec4', 1);
 
@@ -161,6 +194,19 @@ export class GpuLayout {
     const distanceMin2 = float(1);
     const N = uint(n);
     const pos = this.pos;
+    this.grid = grid
+      ? new ChargeGrid({
+          plan,
+          count: n,
+          padded,
+          pos,
+          nodeA,
+          index: slice(index, n + 1),
+          scratch: slice(scratch, groups),
+          distanceMax: config.distanceMax,
+          jiggle,
+        })
+      : null;
     const vel = this.vel;
     const velNext = this.velNext;
 
@@ -203,7 +249,9 @@ export class GpuLayout {
     // 3. Forces → next velocity.
     const tile = workgroupArray('vec4', WG);
     this.forceKernel = Fn(() => {
-      const i = instanceIndex;
+      const t = instanceIndex;
+      // On the grid, threads take the nodes in cell order (neighbouring threads read the same cells).
+      const i = grid ? this.grid.nodeAt(t).toVar() : t;
       const li = localId.x;
       const valid = i.lessThan(N);
       const p = pos.element(i).xyz.toVar();
@@ -225,9 +273,14 @@ export class GpuLayout {
         });
       });
 
-      // Many-body: every other node, a tile at a time through workgroup memory (all threads take part).
-      // Loops get their own names: nested TSL loops would all be called `i` in WGSL and shadow each other.
-      Loop({ start: uint(0), end: uint(this.padded), type: 'uint', condition: '<', update: WG, name: 'base' }, ({ base }) => {
+      // Many-body: from the grid, or every other node, a tile at a time through workgroup memory (all threads
+      // take part). Loops get their own names: nested TSL loops would all be called `i` in WGSL and shadow
+      // each other.
+      if (grid) {
+        If(valid, () => {
+          this.grid.apply(t, i, p, dv, alpha);
+        });
+      } else Loop({ start: uint(0), end: uint(this.padded), type: 'uint', condition: '<', update: WG, name: 'base' }, ({ base }) => {
         const j = base.add(li);
         tile.element(li).assign(vec4(pos.element(j).xyz, select(j.lessThan(N), nodeA.element(j).x, 0)));
         workgroupBarrier();
@@ -295,10 +348,14 @@ export class GpuLayout {
       });
     })().compute(padded, [WG]);
 
-    this.buffers = [this.pos, this.vel, this.velNext, nodeA, nodeB, adjStart, adj, groupStart, groupOrder, centroid, partial, mean];
-    this.kernels = config.center
-      ? [this.groupKernel, this.partialKernel, this.meanKernel, this.forceKernel, this.moveKernel]
-      : [this.groupKernel, this.forceKernel, this.moveKernel];
+    this.buffers = [this.pos, this.vel, this.velNext, node, index, adj, groupStart, groupOrder, scratch, partial, mean, ...(this.grid?.buffers ?? [])];
+    this.kernels = [
+      this.groupKernel,
+      ...(config.center ? [this.partialKernel, this.meanKernel] : []),
+      ...(this.grid?.kernels ?? []),
+      this.forceKernel,
+      this.moveKernel,
+    ];
   }
 
   /**
@@ -337,7 +394,7 @@ export class GpuLayout {
     const now = performance.now();
     if (this.lastFrame) {
       const interval = now - this.lastFrame;
-      const cheap = this.padded * this.padded * this.ticksPerFrame < 4e7;
+      const cheap = this.cost * this.ticksPerFrame < 4e7;
       if (interval > 40 && !cheap && this.ticksPerFrame > 1) this.ticksPerFrame--;
       else if ((interval < 20 || cheap) && this.ticksPerFrame < 48) this.ticksPerFrame++;
     }
@@ -383,7 +440,7 @@ export class GpuLayout {
   dispose() {
     this.stop();
     this.store.upload();
-    const kernels = [this.groupKernel, this.partialKernel, this.meanKernel, this.forceKernel, this.moveKernel, this.publish];
+    const kernels = [this.groupKernel, this.partialKernel, this.meanKernel, this.forceKernel, this.moveKernel, this.publish, ...(this.grid?.kernels ?? [])];
     for (const kernel of kernels) kernel?.dispose();
     // three frees storage buffers only through its (internal) attribute cache.
     const attributes = this.renderer._attributes;

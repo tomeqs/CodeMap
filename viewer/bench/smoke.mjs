@@ -250,6 +250,34 @@ try {
       assert.ok(await litPixels(large.page) > 400, 'the canvas shows the map');
       assert.deepEqual(large.errors, []);
     });
+    if (renderer === 'webgpu') {
+      await test('the grid many-body force (big layouts on the GPU) looks like the d3 layout', async () => {
+        await settled(large.page, 60000);
+        const result = await large.page.evaluate(async () => {
+          const app = window.codemap;
+          app.stage.setPaused(true);
+          const { MainThreadLayout, GpuLayout, PositionStore, layoutMetrics } = window.codemapLayout;
+          const spec = app.galaxy.layoutSpec(app.state, 0);
+          const grid = new GpuLayout(app.galaxy.layoutSpec(app.state, 0), { renderer: app.stage.renderer, store: new PositionStore(), mode: 'grid' });
+          grid.ticksPerFrame = 40;
+          while (!grid.settled) {
+            grid.step();
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+          const d3 = new MainThreadLayout(app.galaxy.layoutSpec(app.state, 0), { prewarmMs: 0 });
+          while (!d3.settled) d3.step(1000);
+          const metrics = { grid: layoutMetrics(spec, grid.positions), d3: layoutMetrics(spec, d3.positions), side: grid.grid.side };
+          grid.dispose();
+          app.stage.setPaused(false);
+          return metrics;
+        });
+        assert.ok(result.grid.finite, 'no broken positions');
+        assert.ok(result.side >= 8, `cells per axis: ${result.side}`);
+        const ratio = (key) => result.grid[key] / result.d3[key];
+        for (const key of ['spread', 'linkStretch', 'groupTightness']) assert.ok(ratio(key) > 0.8 && ratio(key) < 1.3, `${key}: grid ${result.grid[key]} vs d3 ${result.d3[key]}`);
+        assert.deepEqual(large.errors, []);
+      });
+    }
     await large.page.close();
   }
 } finally {

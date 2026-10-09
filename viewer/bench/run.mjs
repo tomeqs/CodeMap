@@ -2,7 +2,7 @@
 // Benchmarks the built viewer on generated graphs:
 //
 //   npm run bench -- --sizes 1k,7k,20k [--renderer auto|webgl|webgpu] [--headed] [--view galaxy|layers|city|auto]
-//                    [--save name] [--baseline bench/baseline.json | --write-baseline] [--dist other/build] [--timeout s]
+//                    [--layout gpu|worker|main] [--layout-mode grid|exact] [--save name] [--baseline bench/baseline.json | --write-baseline] [--dist other/build] [--timeout s]
 //
 // Headless Chromium has no GPU (SwiftShader), so GPU-bound numbers only mean something with --headed on a
 // real machine; CPU-side numbers (parse, model, layout, JS per frame, idle renders) are comparable anywhere.
@@ -33,6 +33,8 @@ try {
     const data = await graph(size);
     const query = new URLSearchParams({ data, maxUnits: String(Math.max(size * 2, 7000)), bench: '1' });
     if (renderer !== 'auto') query.set('renderer', renderer);
+    if (option('layout')) query.set('layout', option('layout'));
+    if (option('layout-mode')) query.set('layoutMode', option('layout-mode'));
     const { page, errors } = await open(browser, `${server.url}/?${query}`);
     const started = Date.now();
     // Frames while the layout settles: what the main thread spends per frame while things move.

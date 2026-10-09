@@ -30,7 +30,7 @@ const params = new URLSearchParams(location.search);
 const maxUnits = () => {
   const stage = window.codemap?.stage ?? {};
   const kind = layoutKind(Infinity, stage);
-  return Number(params.get('maxUnits')) || { gpu: 30000, worker: 15000 }[kind] || 7000;
+  return Number(params.get('maxUnits')) || { gpu: 100000, worker: 15000 }[kind] || 7000;
 };
 const NEXT_LEVEL = { project: 'namespace', namespace: 'type', type: 'member' };
 /** Views that show one level of detail at a time (the level buttons apply). */

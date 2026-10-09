@@ -396,7 +396,7 @@ export class Sidebar {
       kv([
         ['renderer', `${names[stage.backend] ?? '–'}${stage.software ? ' (software, no GPU)' : ''}`],
         ['GPU', stage.adapter],
-        ['layout', { gpu: 'GPU compute', worker: 'web worker', main: 'main thread' }[layout] ?? layout],
+        ['layout', ({ gpu: 'GPU compute', worker: 'web worker', main: 'main thread' }[layout] ?? layout) + (this.app.view?.layout?.mode === 'grid' ? ' (grid)' : '')],
       ]),
       h('label', { class: 'small' }, 'Renderer ', select),
       note,

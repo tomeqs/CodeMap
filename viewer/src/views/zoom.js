@@ -1,5 +1,6 @@
 import { Vector3 } from 'three';
 import { GalaxyView } from './galaxy.js';
+import { MixedLinks } from '../data/model.js';
 
 /** On-screen radius (px) above which a cluster opens, and the (smaller) one below which it closes again. */
 const OPEN = { project: 150, namespace: 105, type: 95 };
@@ -33,6 +34,10 @@ export class ZoomView extends GalaxyView {
     this.units = [];
     this.semantic = false;
     this.open = new Set();
+    // Links between whatever is open are regrouped from the type links (made once, on the first change).
+    const typeLinks = (state.minWeight ?? 1) <= 1 ? links : null;
+    this.mixedLinks = null;
+    this.makeMixedLinks = () => new MixedLinks(this.model, typeLinks ?? this.model.aggregate(units, { ...state, minWeight: 1 }).links);
     super.build(units, links, state, []);
   }
 
@@ -273,8 +278,10 @@ export class ZoomView extends GalaxyView {
       return unit;
     });
     this.byId = new Map(this.units.map((u) => [u.id, u]));
-    this.links = model
-      .aggregateMixed(new Set(this.units.map((u) => u.id)), state)
+    this.mixedLinks ??= this.makeMixedLinks();
+    const openTypes = new Set([...this.open].filter((id) => model.get(id)?.level === 'type'));
+    this.links = this.mixedLinks
+      .links(new Set(this.units.map((u) => u.id)), openTypes, state)
       .map((l) => ({ ...l, s: this.byId.get(l.source), t: this.byId.get(l.target) }));
     this.indexUnitLinks();
 
