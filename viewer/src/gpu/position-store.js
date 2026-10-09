@@ -32,7 +32,7 @@ export class PositionStore {
     this.texture?.dispose();
     this.texture = next;
     this.data = data;
-    if (this.node) this.node.value = next;
+    if (this.node) this.node.value = next; // a GPU layout writing its own texture is restarted with the new size
     else this.node = texture(next);
   }
 
@@ -58,9 +58,18 @@ export class PositionStore {
     }
   }
 
-  /** Sends the positions to the GPU with the next frame. */
+  /** Sends the positions to the GPU with the next frame (and shows them again, if a GPU layout wrote its own). */
   upload() {
+    if (this.node.value !== this.texture) this.node.value = this.texture;
     this.texture.needsUpdate = true;
+  }
+
+  /**
+   * Draws from a texture the GPU writes itself (the compute layout's storage texture, same size) until the
+   * next upload(); the CPU copy (`data`) is kept in step by whoever writes it.
+   */
+  useTexture(texture) {
+    this.node.value = texture;
   }
 
   /** Shader node: the stored position (vec4) of the unit with the given index (a float or int node). */

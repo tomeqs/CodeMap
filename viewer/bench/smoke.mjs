@@ -203,6 +203,43 @@ try {
     });
     await page.close();
 
+    if (renderer === 'webgpu') {
+      // The compute-shader layout (forced: the CI adapter is a software one, where it is not chosen by itself).
+      const gpu = await open(browser, query('/sample.codemap.json') + '&layout=gpu');
+      await test('the GPU layout settles and looks like the d3 layout', async () => {
+        await settled(gpu.page, 120000);
+        const result = await gpu.page.evaluate(async () => {
+          const app = window.codemap;
+          const { MainThreadLayout, layoutMetrics } = window.codemapLayout;
+          const spec = app.galaxy.layoutSpec(app.state, 0);
+          const d3 = new MainThreadLayout(app.galaxy.layoutSpec(app.state, 0), { prewarmMs: 0 });
+          while (!d3.settled) d3.step(1000);
+          return { kind: app.galaxy.layout.kind, gpu: layoutMetrics(spec, app.galaxy.layout.positions), d3: layoutMetrics(spec, d3.positions) };
+        });
+        assert.equal(result.kind, 'gpu');
+        assert.ok(result.gpu.finite, 'no broken positions');
+        const ratio = (key) => result.gpu[key] / result.d3[key];
+        for (const key of ['spread', 'linkStretch']) assert.ok(ratio(key) > 0.6 && ratio(key) < 1.5, `${key}: GPU ${result.gpu[key]} vs d3 ${result.d3[key]}`);
+        assert.ok(await litPixels(gpu.page) > 400, 'the canvas shows the map');
+        assert.deepEqual(gpu.errors, []);
+      });
+      await test('GPU layouts replace each other, and the semantic zoom takes over their positions', async () => {
+        await gpu.page.evaluate(() => {
+          const app = window.codemap;
+          app.setLevel('namespace'); // interrupts nothing (settled), frees the old buffers
+          app.setLevel('type');
+        });
+        await settled(gpu.page, 120000);
+        await gpu.page.evaluate(() => window.codemap.setLevel('auto'));
+        await gpu.page.waitForFunction(() => window.codemap.zoomView.semantic, null, { timeout: 120000 });
+        const positions = await gpu.page.evaluate(() => window.codemap.view.units.every((u) => Number.isFinite(u.x) && Number.isFinite(u.y)));
+        assert.ok(positions, 'units have positions');
+        assert.ok(await litPixels(gpu.page) > 400, 'the canvas shows the map');
+        assert.deepEqual(gpu.errors, []);
+      });
+      await gpu.page.close();
+    }
+
     const large = await open(browser, query(big));
     await test('a generated graph with 2000 types is laid out in a worker', async () => {
       // The worker does not wait for frames: even without a GPU (slow frames) the layout settles quickly.

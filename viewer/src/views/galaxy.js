@@ -285,14 +285,15 @@ export class GalaxyView {
   }
 
   startSimulation(state, cachedRatio) {
-    this.layout?.stop();
+    this.stopLayout();
     const spec = this.layoutSpec(state, cachedRatio);
     this.layoutStart = performance.now();
-    this.layout = startLayout(spec);
+    const stage = this.stage;
+    this.layout = startLayout(spec, { renderer: stage.renderer, store: this.store, backend: stage.backend, software: stage.software });
     this.settled = false;
     this.pendingFocus = null;
     // A fresh layout in the worker: show it once its first (pre-warmed) frame is back, not the starting cloud.
-    this.setLayoutVisible(this.layout.kind === 'main' || cachedRatio >= 0.5);
+    this.setLayoutVisible(this.layout.kind !== 'worker' || cachedRatio >= 0.5);
     this.applyLayout();
   }
 
@@ -376,7 +377,10 @@ export class GalaxyView {
     });
   }
 
-  /** Takes the newest positions of the layout: to the GPU in one upload, and to the units (labels, picking, camera). */
+  /**
+   * Takes the newest positions of the layout: to the units (labels, picking, camera) and, unless the layout
+   * writes the store on the GPU itself, to the GPU in one upload.
+   */
   applyLayout() {
     const p = this.layout.positions;
     const units = this.units;
@@ -387,9 +391,18 @@ export class GalaxyView {
       u.z = p[i * 3 + 2];
     }
 
-    this.store.setAll(p, units.length);
-    this.store.upload();
+    if (!this.layout.writesStore) {
+      this.store.setAll(p, units.length);
+      this.store.upload();
+    }
+
     this.stage.invalidate();
+  }
+
+  stopLayout() {
+    this.layout?.stop();
+    this.layout?.dispose?.();
+    this.layout = null;
   }
 
   // ------------------------------------------------------------------ frame
@@ -695,8 +708,7 @@ export class GalaxyView {
   }
 
   dispose() {
-    this.layout?.stop();
-    this.layout = null;
+    this.stopLayout();
     this.stage.scene.remove(this.group);
     disposeObject(this.group);
     for (const geometry of Object.values(this.geometries ?? {})) geometry.dispose();

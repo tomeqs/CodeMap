@@ -296,8 +296,12 @@ albo użyć parametru `?data=url.json`.
   Gdy przeglądarka (albo VS Code) nie ma WebGPU, przechodzi na **WebGL 2**.
   Backend można wymusić w zakładce *Data* (*Graphics → Renderer*), parametrem `?renderer=webgpu|webgl`
   albo ustawieniem `codemap.renderer` w VS Code.
-* Układ siłowy liczy się w **Web Workerze**, więc mapa i interfejs zostają płynne, a duży graf układa się wielokrotnie szybciej.
-  Do 15 000 elementów na poziom; bez workera, na przykład gdy CSP go blokuje, wraca na główny wątek z limitem 7000.
+* Układ siłowy liczy się na **GPU** (compute shadery WebGPU): wszystkie węzły równolegle, a siły odpychania liczone są dokładnie,
+  kafelkami w pamięci współdzielonej grupy roboczej. Pozycje trafiają wprost do tekstury, z której rysują shadery.
+  Na CPU wracają tylko co ok. 200 ms (etykiety, klikanie, kamera). Do 30 000 elementów na poziom.
+* Bez WebGPU układ liczy **Web Worker**, więc mapa i interfejs zostają płynne (do 15 000 elementów).
+  Bez workera, na przykład gdy CSP go blokuje, liczy główny wątek z limitem 7000. Małe grafy (do 300 elementów)
+  układają się od razu na głównym wątku. `?layout=gpu|worker|main` wymusza wybór.
 * Pozycje elementów leżą w teksturze na GPU. Węzły, relacje (wstęgi o miękkich krawędziach, w City łuki)
   i płynące cząsteczki odczytują je w shaderach, więc ruch grafu to jedno przesłanie tekstury na klatkę,
   zamiast przepisywania macierzy i wierzchołków. Przy 20 000 elementów koszt CPU klatki spadł z 5 ms do 0,25 ms.

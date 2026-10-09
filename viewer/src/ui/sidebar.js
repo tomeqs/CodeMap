@@ -5,7 +5,7 @@ import { METRICS, defaultEdgeKinds, serializeDoc } from '../data/model.js';
 import { clear, fmt, h, shortName } from './dom.js';
 import { host } from '../data/host.js';
 import { rememberRenderer, rendererPreference } from '../gpu/renderer.js';
-import { workerAvailable } from '../layout/worker-layout.js';
+import { layoutKind } from '../layout/engine.js';
 
 /** Left panel: filters, insights (cycles, hotspots, dead code...) and data info. */
 export class Sidebar {
@@ -382,7 +382,7 @@ export class Sidebar {
   /** How the map is drawn and laid out on this machine, and a choice of renderer (applies after a reload). */
   renderGraphics(kv) {
     const stage = this.app.stage;
-    const layout = this.app.view?.layout?.kind ?? (workerAvailable() ? 'worker' : 'main');
+    const layout = this.app.view?.layout?.kind ?? layoutKind(Infinity, stage);
     const names = { webgpu: 'WebGPU', webgl: 'WebGL 2' };
     const choice = rendererPreference();
     const select = h('select', {

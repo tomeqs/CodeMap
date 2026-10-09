@@ -19,14 +19,19 @@ import { SequencePanel } from './ui/sequence.js';
 import { host } from './data/host.js';
 import { perf } from './perf/stats.js';
 import { GraphIndex } from './data/graph-index.js';
-import { checkWorker, workerAvailable } from './layout/worker-layout.js';
+import { checkWorker } from './layout/worker-layout.js';
+import { layoutKind } from './layout/engine.js';
 
 const params = new URLSearchParams(location.search);
 /**
- * Above this many units the layout is too slow to be pleasant: more when it runs in a worker (the map stays
- * responsive while it settles). `?maxUnits=` overrides it for benchmarks.
+ * Above this many units the layout is too slow to be pleasant: more when it runs on the GPU or in a worker
+ * (the map stays responsive while it settles). `?maxUnits=` overrides it for benchmarks.
  */
-const maxUnits = () => Number(params.get('maxUnits')) || (workerAvailable() ? 15000 : 7000);
+const maxUnits = () => {
+  const stage = window.codemap?.stage ?? {};
+  const kind = layoutKind(Infinity, stage);
+  return Number(params.get('maxUnits')) || { gpu: 30000, worker: 15000 }[kind] || 7000;
+};
 const NEXT_LEVEL = { project: 'namespace', namespace: 'type', type: 'member' };
 /** Views that show one level of detail at a time (the level buttons apply). */
 const LEVEL_VIEWS = new Set(['galaxy', 'layers']);
@@ -177,8 +182,8 @@ class App {
       }
     });
     // Tell the extension how the map runs (it logs it), once the layout worker has started or failed.
-    const layout = await checkWorker();
-    host.post('ready', { renderer: this.stage.backend ?? 'webgl', adapter: this.stage.adapter, layout });
+    await checkWorker();
+    host.post('ready', { renderer: this.stage.backend ?? 'webgl', adapter: this.stage.adapter, layout: layoutKind(Infinity, this.stage) });
   }
 
   // ------------------------------------------------------------------ local app (codemap ui)
