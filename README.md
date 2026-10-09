@@ -308,16 +308,25 @@ albo użyć parametru `?data=url.json`.
 * Pozycje elementów leżą w teksturze na GPU. Węzły, relacje (wstęgi o miękkich krawędziach, w City łuki)
   i płynące cząsteczki odczytują je w shaderach, więc ruch grafu to jedno przesłanie tekstury na klatkę,
   zamiast przepisywania macierzy i wierzchołków. Przy 20 000 elementów koszt CPU klatki spadł z 5 ms do 0,25 ms.
-* Bloom obejmuje tylko to, co świeci: węzły, relacje, cząsteczki i okna w City (osobny cel renderowania z kolorem emisyjnym).
-  Płaszczyzny warstw, ziemia i oświetlone ściany zostają ostre.
-* Zaznaczone i podświetlone relacje, problemy (np. zależności w górę) oraz wszystkie relacje z *Flow particles on all links*
-  mają płynące kreski: kierunek zależności widać także bez cząsteczek. Gęstość cząsteczek ustawisz w *Particles*
-  (Off / Few / Normal / Many).
+* Efekty liczone w shaderach, bez kosztu CPU na klatkę:
+  - **Poświata:** bloom całej sceny i miękka, oddychająca korona wokół każdego węzła.
+  - **Niebo:** tysiące gwiazd migoczących każda w swoim rytmie, kilka jaśniejszych z iskrą, kolorowe mgławice w tle.
+  - **Komety:** cząsteczki z warkoczem płyną wzdłuż relacji w stronę zależności. Na żywej mapie płyną też bez zaznaczenia,
+    po najmocniejszych relacjach. Gęstość ustawisz w *Particles* (Off / Few / Normal / Many).
+  - **Kreski:** zaznaczone i podświetlone relacje, problemy (np. zależności w górę) i *Flow particles on all links*
+    mają płynące kreski, więc kierunek widać także bez cząsteczek.
+  - **Rozwijanie:** nowy graf wybucha z ciasnej kuli, a węzły po drill-down wychodzą ze swojego rodzica.
+    W City budynki wyrastają z ziemi.
+  - **Fala:** po kliknięciu fala światła biegnie od węzła po jego relacjach, węzeł po węźle, z pierścieniem uderzeniowym.
 * Duże solucje: model, agregacja relacji, semantyczny zoom i automatyczne warstwy działają na indeksach liczbowych.
   Warstwy 20 000 typów liczą się w 0,13 s (wcześniej 37 s), a 100 000 typów w ok. 0,9 s.
-* Klatki rysowane są tylko wtedy, gdy coś się zmienia: ruch kamery, układanie grafu, animacja.
-  Nieruchoma mapa nie zużywa GPU ani baterii. Cząsteczki i pulsowanie zaznaczenia zatrzymują się po 20 s bez ruchu myszy
-  i przy systemowym *ogranicz ruch*.
+* Ruch ustawisz w *Appearance → Motion*:
+  - **Living** (domyślnie): mapa żyje w pełnym fps ekranu i pauzuje tylko na ukrytej karcie.
+  - **Calm (battery):** ozdoby chodzą w 30 fps i stają 20 s po ostatnim ruchu myszy, a nieruchoma mapa nie zużywa GPU.
+    To domyślny tryb bez GPU i przy systemowym *ogranicz ruch*.
+  - **Off:** nic nie rusza się samo.
+  
+  Wybór zostaje w przeglądarce; `?motion=living|calm|off` wymusza tryb.
 * Natywne renderery (Metal / Direct3D 12 poza przeglądarką) to osobny temat: [tomeqs/CodeMap#6](https://github.com/tomeqs/CodeMap/issues/6).
 
 ## Struktura repozytorium

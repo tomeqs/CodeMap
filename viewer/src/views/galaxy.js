@@ -20,11 +20,12 @@ import {
 } from 'three';
 import { SpriteNodeMaterial } from 'three/webgpu';
 import { EDGE_KINDS } from '../data/palette.js';
-import { feedsBloom, unitMaterial } from '../scene/materials.js';
+import { unitMaterial } from '../scene/materials.js';
 import { LinkMesh } from '../scene/link-mesh.js';
 import { GpuParticles, particlesPerLink } from '../scene/particles.js';
+import { Coronas } from '../scene/coronas.js';
 import { PositionStore } from '../gpu/position-store.js';
-import { dotTexture } from '../scene/textures.js';
+import { dotTexture, ringTexture } from '../scene/textures.js';
 import { perf } from '../perf/stats.js';
 import { disposeObject } from '../scene/disposer.js';
 import { createSpec } from '../layout/spec.js';
@@ -96,9 +97,14 @@ export class GalaxyView {
     this.material = unitMaterial(this.store, 0.36);
     this.linkMesh = new LinkMesh(this.store);
     this.lines = this.linkMesh.mesh;
-    this.particles = new GpuParticles(this.store, { max: 60000, size: 2.6 });
-    this.halo = new Sprite(feedsBloom(new SpriteNodeMaterial({ map: dotTexture(), color: 0xffffff, transparent: true, opacity: 0.4, blending: AdditiveBlending, depthWrite: false })));
+    this.particles = new GpuParticles(this.store, { max: 60000, size: 9 });
+    this.coronas = new Coronas(this.store);
+    this.halo = new Sprite(new SpriteNodeMaterial({ map: dotTexture(), color: 0xffffff, transparent: true, opacity: 0.4, blending: AdditiveBlending, depthWrite: false }));
     this.halo.visible = false;
+    // The shock wave around a unit when it is selected.
+    this.ring = new Sprite(new SpriteNodeMaterial({ map: ringTexture(), color: 0xffffff, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
+    this.ring.visible = false;
+    this.wave = null;
 
     this.lightGroup = new Group();
     this.lightGroup.add(new AmbientLight(0x8899cc, 0.55));
@@ -109,7 +115,7 @@ export class GalaxyView {
     rim.position.set(-400, -200, -300);
     this.lightGroup.add(rim);
 
-    this.group.add(this.lines, this.particles.points, this.halo, this.lightGroup);
+    this.group.add(this.lines, this.coronas.sprite, this.particles.points, this.halo, this.ring, this.lightGroup);
     this.userMoved = false;
     /** Optional (node) => label text; the call-flow view labels methods with their type. */
     this.labelText = null;
@@ -120,7 +126,7 @@ export class GalaxyView {
   activate() {
     this.stage.scene.add(this.group);
     this.stage.setAtmosphere({ background: '#03050b', fog: 0, stars: true });
-    this.stage.setBloom(0.78, 0.5, 0.2);
+    this.stage.setBloom(1.1, 0.6, 0.14);
     this.stage.controls.autoRotate = this.options.autoRotate;
     this.stage.controls.autoRotateSpeed = 0.35;
     this.stage.controls.maxPolarAngle = Math.PI;
@@ -149,6 +155,7 @@ export class GalaxyView {
   build(units, links, state, ghosts = []) {
     this.savePositions();
     this.state = state;
+    this.hovered = null; // a unit of the old build
     const model = this.model;
     const all = [...units.map((n) => ({ node: n, ghost: false })), ...ghosts.map((n) => ({ node: n, ghost: true }))];
     const byId = new Map();
@@ -167,7 +174,8 @@ export class GalaxyView {
         // Start new nodes at the position of their nearest laid-out ancestor: drilling down "explodes" clusters.
         let anchor = null;
         for (let a = node.parent ? model.get(node.parent) : null; a && !anchor; a = a.parent ? model.get(a.parent) : null) anchor = this.positions.get(a.id);
-        const spread = anchor ? 12 : 220;
+        // A new graph starts as a tight ball and bursts out (the store's unfolding shows it).
+        const spread = anchor ? 12 : this.stage.motion === 'off' ? 220 : 40;
         unit.x = (anchor?.x ?? 0) + (Math.random() - 0.5) * spread;
         unit.y = (anchor?.y ?? 0) + (Math.random() - 0.5) * spread;
         unit.z = (anchor?.z ?? 0) + (Math.random() - 0.5) * spread;
@@ -187,11 +195,14 @@ export class GalaxyView {
 
     // Dense graphs glow into one blob: tone bloom down as the node count grows.
     const density = Math.log10(Math.max(100, this.units.length) / 100);
-    this.stage.setBloom(Math.max(0.45, 0.78 - density * 0.2), 0.5, 0.2 + density * 0.06);
+    this.stage.setBloom(Math.max(0.6, 1.1 - density * 0.25), 0.6, 0.14 + density * 0.06);
 
     this.buildMeshes();
     this.buildLines();
     this.recolor();
+    // Everything new unfolds from where it starts (units that stay glide to their new place).
+    if (this.stage.motion !== 'off') this.store.beginIntro();
+    else this.store.endIntro();
     this.startSimulation(state, cached / Math.max(1, this.units.length));
     this.labelOrder = [...this.units].sort((a, b) => labelRank(b) - labelRank(a));
     this.setHighlight(null);
@@ -276,6 +287,7 @@ export class GalaxyView {
       this.group.add(mesh);
     }
 
+    this.coronas.setCount(this.units.length);
     this.updateMatrices();
   }
 
@@ -294,8 +306,9 @@ export class GalaxyView {
     this.layout = startLayout(spec, { renderer: stage.renderer, store: this.store, backend: stage.backend, software: stage.software });
     this.settled = false;
     this.pendingFocus = null;
-    // A fresh layout in the worker: show it once its first (pre-warmed) frame is back, not the starting cloud.
-    this.setLayoutVisible(this.layout.kind !== 'worker' || cachedRatio >= 0.5);
+    // A fresh layout in the worker: show it once its first (pre-warmed) frame is back, not the starting cloud –
+    // unless it unfolds (then the starting ball is where the show begins).
+    this.setLayoutVisible(this.layout.kind !== 'worker' || cachedRatio >= 0.5 || this.store.introRunning);
     this.applyLayout();
   }
 
@@ -428,6 +441,10 @@ export class GalaxyView {
       }
     }
 
+    // The unfolding of a new layout runs on the GPU clock of the store; labels wait for its end.
+    if (this.store.tickIntro()) busy = true;
+    if (this.wave) busy = this.advanceWave() || busy;
+
     const halo = this.halo.visible && this.highlight?.primary ? this.byId.get(this.highlight.primary) : null;
     if (halo) {
       this.halo.position.set(halo.x, halo.y, halo.z);
@@ -435,7 +452,7 @@ export class GalaxyView {
       this.halo.scale.setScalar(halo.r * 3.6 * pulse);
     }
 
-    if (this.options.labels) this.renderLabels();
+    if (this.options.labels && !this.store.introRunning) this.renderLabels();
     else this.labels.clear();
     return busy || (halo || this.particles.count || this.linkMesh.flowing ? 'ambient' : false);
   }
@@ -454,11 +471,15 @@ export class GalaxyView {
       scale.needsUpdate = true;
     }
 
+    this.coronas.flushRadii();
+
     this.stage.invalidate();
   }
 
   setScale(u) {
-    u.mesh.geometry.attributes.aScale.array[u.slot] = u.r * (u.grow ?? 1) * (u === this.hovered ? 1.35 : 1);
+    const scale = u.r * (u.grow ?? 1) * (u === this.hovered ? 1.35 : 1);
+    u.mesh.geometry.attributes.aScale.array[u.slot] = scale;
+    this.coronas.setRadius(u.index, scale);
   }
 
   // ------------------------------------------------------------------ colours & highlight
@@ -471,6 +492,7 @@ export class GalaxyView {
       colors.needsUpdate = true;
     }
 
+    this.coronas.flushColors();
     this.recolorLines();
   }
 
@@ -485,6 +507,7 @@ export class GalaxyView {
     } else if (this.hovered === u) factor = 1.3;
     color.multiplyScalar(factor);
     color.toArray(u.mesh.geometry.attributes.aColor.array, u.slot * 3);
+    this.coronas.setColor(u.index, color);
   }
 
   recolorLines() {
@@ -530,11 +553,80 @@ export class GalaxyView {
 
   /** highlight: null | { primary, nodes:Set<id>, links:Set<index>, secondary?:Set<id> } */
   setHighlight(highlight) {
+    const previous = this.highlight?.primary;
     this.highlight = highlight;
     this.halo.visible = !!highlight?.primary && this.byId?.has(highlight.primary);
     if (this.halo.visible) this.halo.material.color.copy(this.model.colorOf(this.model.get(highlight.primary), this.state.colorMode, new Color()));
+    if (highlight?.primary !== previous || !highlight) this.startWave(highlight);
     this.recolor();
     this.refreshParticles();
+  }
+
+  /**
+   * A wave of light from a newly selected unit: out along the highlighted links, hop after hop (each unit
+   * flares as it arrives), with a shock ring around the unit itself.
+   */
+  startWave(highlight) {
+    const primary = highlight?.primary && this.byId?.get(highlight.primary);
+    this.linkMesh.clearWaves();
+    if (!primary || this.stage.motion === 'off') {
+      this.wave = null;
+      this.ring.visible = false;
+      this.linkMesh.waveFront.value = this.coronas.waveFront.value = -100;
+      this.coronas.setHops(null);
+      return;
+    }
+
+    // Hops from the selection over the highlighted links.
+    const hops = new Map([[primary, 0]]);
+    const queue = [primary];
+    for (let k = 0; k < queue.length; k++) {
+      const u = queue[k];
+      for (const i of u.linkIndices ?? []) {
+        if (!highlight.links.has(i)) continue;
+        const l = this.links[i];
+        const other = l.s === u ? l.t : l.s;
+        if (!hops.has(other)) {
+          hops.set(other, hops.get(u) + 1);
+          queue.push(other);
+        }
+      }
+    }
+
+    let max = 0;
+    for (const i of highlight.links) {
+      const l = this.links[i];
+      if (!l || !hops.has(l.s) || !hops.has(l.t)) continue;
+      this.linkMesh.setWave(i, hops.get(l.s), hops.get(l.t));
+      max = Math.max(max, hops.get(l.s), hops.get(l.t));
+    }
+
+    this.coronas.setHops(new Map([...hops].map(([u, hop]) => [u.index, hop])));
+    this.wave = { start: performance.now(), max, unit: primary };
+    this.ring.material.color.copy(this.model.colorOf(primary.node, this.state.colorMode, new Color()));
+    this.ring.visible = true;
+    this.advanceWave();
+  }
+
+  /** Moves the wave and the shock ring on; false once both are over. */
+  advanceWave() {
+    const wave = this.wave;
+    const t = (performance.now() - wave.start) / 1000;
+    const front = t * WAVE_SPEED - 0.3;
+    const ring = Math.min(1, t / RING_SECONDS);
+    const u = wave.unit;
+    this.ring.position.set(u.x, u.y, u.z);
+    this.ring.scale.setScalar(u.r * (2 + 16 * (1 - (1 - ring) ** 2)));
+    this.ring.material.opacity = 0.9 * (1 - ring);
+    if (front > wave.max + 1.5 && ring >= 1) {
+      this.wave = null;
+      this.ring.visible = false;
+      this.linkMesh.waveFront.value = this.coronas.waveFront.value = -100;
+      return false;
+    }
+
+    this.linkMesh.waveFront.value = this.coronas.waveFront.value = front;
+    return true;
   }
 
   setHovered(id) {
@@ -553,6 +645,8 @@ export class GalaxyView {
       aScale.needsUpdate = true;
       aColor.addUpdateRange(u.slot * 3, 3);
       aColor.needsUpdate = true;
+      this.coronas.flushColors([u.index]);
+      this.coronas.flushRadii([u.index]);
       if (this.highlight) continue;
       for (const i of u.linkIndices ?? []) {
         this.setLinkColor(this.links[i], i);
@@ -568,24 +662,41 @@ export class GalaxyView {
   refreshParticles() {
     const h = this.highlight;
     let selected;
+    let calm = []; // the quiet flow of a living map at rest
     if (h) selected = this.links.filter((_, i) => h.links.has(i));
     else if (this.hovered) selected = this.links.filter((l) => l.s === this.hovered || l.t === this.hovered);
     else if (this.options.flowAll) selected = this.links;
-    else selected = this.links.filter((l) => l.violation);
+    else {
+      selected = this.links.filter((l) => l.violation);
+      if (this.stage.motion === 'living') calm = this.strongestLinks().filter((l) => !l.violation);
+    }
+
     // The GPU animates them all; only the budget for very large selections is limited.
     selected = selected.slice(0, 20000);
-
     const density = this.options.particles;
-    this.particles.setPaths(
-      (density > 0 ? selected : []).map((l) => ({
-        source: l.s.index,
-        target: l.t.index,
-        count: particlesPerLink(Math.min(4, 1 + Math.floor(Math.log2(l.weight))), density),
-        speed: 0.28 + Math.random() * 0.12,
-        color: linkColor(l).clone().multiplyScalar(1.6),
-      })),
-    );
+    const paths = density > 0 ? selected.map((l) => ({
+      source: l.s.index,
+      target: l.t.index,
+      count: particlesPerLink(Math.min(4, 1 + Math.floor(Math.log2(l.weight))), density),
+      speed: 0.28 + Math.random() * 0.12,
+      color: linkColor(l).clone().multiplyScalar(1.8),
+    })) : [];
+    if (density > 0) {
+      for (const l of calm) {
+        paths.push({ source: l.s.index, target: l.t.index, count: particlesPerLink(1, density), speed: 0.12 + Math.random() * 0.08, color: linkColor(l).clone().multiplyScalar(1.5) });
+      }
+    }
+
+    this.particles.setPaths(paths);
     this.stage.invalidate();
+  }
+
+  /** The heaviest links (about the top 12%, at most 1500), for the quiet flow at rest; kept per build. */
+  strongestLinks() {
+    if (this.strongest?.links === this.links) return this.strongest.list;
+    const list = [...this.links].sort((a, b) => b.weight - a.weight).slice(0, Math.min(1500, Math.ceil(this.links.length * 0.12)));
+    this.strongest = { links: this.links, list };
+    return list;
   }
 
   // ------------------------------------------------------------------ labels
@@ -722,6 +833,10 @@ export class GalaxyView {
     this.links = [];
   }
 }
+
+/** The selection wave: hops per second, and how long the shock ring takes to spread and fade. */
+const WAVE_SPEED = 1.6;
+const RING_SECONDS = 1.1;
 
 /** A link's base colour (its kind, or red / amber for a problem), computed once. */
 export function linkColor(l) {

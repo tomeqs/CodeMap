@@ -2,38 +2,27 @@ import { AdditiveBlending, InstancedBufferAttribute, MeshStandardNodeMaterial, P
 import {
   abs,
   attribute,
+  clamp,
   diffuseColor,
   float,
   floor,
   fract,
   hash,
+  instanceIndex,
   instancedBufferAttribute,
-  mrt,
   normalLocal,
-  output,
   positionLocal,
   positionWorld,
   step,
   texture,
   uniform,
   uv,
+  varying,
   vec2,
+  vec3,
   vec4,
 } from 'three/tsl';
 import { dotTexture } from './textures.js';
-
-/**
- * Lets a material feed the bloom with its own colour (× `amount`, 0: none). Only what glows blooms: the
- * stage blooms the emissive output (see Stage), which lit materials fill with their emissive colour and
- * unlit ones (links, particles, sprites, planes) through this.
- */
-export function feedsBloom(material, amount = 1) {
-  material.mrtNode = mrt({ emissive: vec4(output.rgb.mul(amount), output.a) });
-  return material;
-}
-
-/** How much of a unit's colour goes into the bloom. */
-const UNIT_BLOOM = 0.8;
 
 /**
  * Glowing units (galaxy, layers, semantic zoom) drawn straight from the position store: per instance the
@@ -42,25 +31,37 @@ const UNIT_BLOOM = 0.8;
 export function unitMaterial(store, glow = 0.36) {
   const material = new MeshStandardNodeMaterial({ roughness: 0.35, metalness: 0.15 });
   material.userData.glow = uniform(glow);
-  const center = store.positionAt(attribute('aUnit', 'float')).xyz;
-  material.positionNode = positionLocal.mul(attribute('aScale', 'float')).add(center);
+  const unit = attribute('aUnit', 'float');
+  const center = store.positionAt(unit).xyz;
+  // While a new layout unfolds, units grow from a fifth of their size.
+  const grow = store.introOf(unit).mul(0.8).add(0.2);
+  material.positionNode = positionLocal.mul(attribute('aScale', 'float').mul(grow)).add(center);
   material.colorNode = attribute('aColor', 'vec3');
   material.emissiveNode = diffuseColor.rgb.mul(material.userData.glow);
-  // The bloom gets more than the surface shows: a soft halo around every unit, its own colour.
-  material.mrtNode = mrt({ emissive: vec4(diffuseColor.rgb.mul(UNIT_BLOOM), 1) });
   return material;
 }
 
+/** Seconds a building takes to rise, and up to how much later some start. */
+const RISE = 1.1;
+const RISE_STAGGER = 0.6;
+
 /**
  * Night-city building material: lit windows are drawn procedurally from world coordinates on the
- * vertical faces; roofs stay plain. Instance colours tint the facade.
+ * vertical faces; roofs stay plain. Instance colours tint the facade. `userData.rise` (seconds since a
+ * new city was built; large: done) lets the buildings grow out of the ground one after another.
  */
 export function buildingMaterial() {
   const material = new MeshStandardNodeMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.1 });
+  const rise = uniform(1e6);
+  material.userData.rise = rise;
+  const k = clamp(rise.sub(hash(float(instanceIndex)).mul(RISE_STAGGER)).div(RISE), 0, 1);
+  const height = float(1).sub(float(1).sub(k).pow(3)).mul(0.98).add(0.02);
+  material.positionNode = positionLocal.mul(vec3(1, height, 1));
   const windows = uniform(0.55);
   material.userData.windows = windows;
   const side = float(1).sub(step(0.5, abs(normalLocal.y)));
-  const cell = vec2(positionWorld.x.add(positionWorld.z).mul(0.9), positionWorld.y.mul(0.55));
+  // Windows where they will be once the building stands (not squeezed while it rises).
+  const cell = vec2(positionWorld.x.add(positionWorld.z).mul(0.9), positionWorld.y.div(varying(height, 'vRise')).mul(0.55));
   const f = fract(cell);
   const window = step(0.25, f.x).mul(step(f.x, 0.75)).mul(step(0.3, f.y)).mul(step(f.y, 0.75));
   const corner = floor(cell);
@@ -73,7 +74,7 @@ export function buildingMaterial() {
  * Round sprites, one instance each, with a size in pixels (or world units with `sizeAttenuation`).
  * WebGPU draws point primitives one pixel wide, so points are instanced quads.
  */
-export function createDots(max, { size = 3, sizeAttenuation = true, opacity = 1, glow = 1 } = {}) {
+export function createDots(max, { size = 3, sizeAttenuation = true, opacity = 1 } = {}) {
   const positions = new InstancedBufferAttribute(new Float32Array(max * 3), 3);
   const colors = new InstancedBufferAttribute(new Float32Array(max * 3), 3);
   const material = new PointsNodeMaterial({
@@ -86,7 +87,6 @@ export function createDots(max, { size = 3, sizeAttenuation = true, opacity = 1,
   material.positionNode = instancedBufferAttribute(positions);
   material.colorNode = texture(dotTexture(), uv()).mul(vec4(instancedBufferAttribute(colors), opacity));
   material.sizeNode = uniform(size);
-  feedsBloom(material, glow);
   const sprite = new Sprite(material);
   sprite.count = 0;
   sprite.frustumCulled = false;

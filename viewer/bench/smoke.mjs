@@ -64,6 +64,12 @@ try {
         }, null, { timeout: 60000, polling: 100 });
         await page.waitForTimeout(300);
         assert.ok(await litPixels(page) > 400, 'the canvas shows the map');
+        // Shaders read positions by store index: every unit needs its own.
+        const indices = await page.evaluate(() => {
+          const units = window.codemap.view.units;
+          return { count: units.length, distinct: new Set(units.map((u) => u.index).filter(Number.isInteger)).size };
+        });
+        assert.equal(indices.distinct, indices.count, 'every unit has its own place in the position store');
       });
     }
 
@@ -159,7 +165,89 @@ try {
       assert.ok(result.renders >= 4, `frames while the dashes move: ${result.renders}`);
     });
 
+    await test('a click sends a wave of light out from the selection', async () => {
+      const result = await page.evaluate(async () => {
+        const app = window.codemap;
+        const unit = [...app.view.units].sort((a, b) => b.linkIndices.length - a.linkIndices.length)[0];
+        app.select(unit.id);
+        const view = app.view;
+        const started = { front: view.linkMesh.waveFront.value, reached: [...view.coronas.hops.array.slice(0, view.units.length)].filter((h) => h >= 0).length };
+        const deadline = performance.now() + 30000;
+        while (view.wave && performance.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+        const ended = { front: view.linkMesh.waveFront.value, ring: view.ring.visible };
+        app.select(null);
+        return { started, ended };
+      });
+      assert.ok(result.started.front > -1, `the wave starts at the selection (front ${result.started.front})`);
+      assert.ok(result.started.reached >= 2, `units on the wave's way: ${result.started.reached}`);
+      assert.ok(result.ended.front < -10 && !result.ended.ring, 'the wave and the shock ring end');
+    });
+
+    await test('a new layout unfolds from its centre, then stops', async () => {
+      const result = await page.evaluate(async () => {
+        const app = window.codemap;
+        app.galaxy.units = []; // nothing remembered: every unit is new
+        app.galaxy.positions.clear();
+        app.rebuild();
+        const store = app.view.store;
+        const running = store.introRunning;
+        let spread = 0;
+        for (let i = 0; i < app.view.units.length; i++) spread = Math.max(spread, Math.abs(store.origin.image.data[i * 4]));
+        const deadline = performance.now() + 30000;
+        while (store.introRunning && performance.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+        return { running, spread, ended: !store.introRunning };
+      });
+      assert.ok(result.running, 'the unfolding runs after a fresh build');
+      assert.ok(result.spread > 0 && result.spread < 60, `it starts as a tight ball (spread ${result.spread})`);
+      assert.ok(result.ended, 'the unfolding ends');
+      await settled(page, 120000);
+      assert.ok(await litPixels(page) > 400, 'the canvas shows the map');
+    });
+
+    await test('living motion keeps the map moving: twinkling sky, comets at rest', async () => {
+      const sky = async () => {
+        const shot = await page.locator('#stage canvas').screenshot({ clip: { x: 0, y: 0, width: 300, height: 200 } });
+        return shot.toString('base64');
+      };
+      await page.evaluate(() => window.codemap.setMotion('living'));
+      try {
+        const state = await page.evaluate(async () => {
+          const app = window.codemap;
+          const start = app.perf.renders;
+          const deadline = performance.now() + 20000;
+          while (app.perf.renders < start + 4 && performance.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+          return { renders: app.perf.renders - start, comets: app.view.particles.count, motion: app.stage.motion };
+        });
+        assert.equal(state.motion, 'living');
+        assert.ok(state.renders >= 4, `frames keep coming: ${state.renders}`);
+        assert.ok(state.comets > 0, 'comets flow along the strongest links at rest');
+        const before = await sky();
+        await page.waitForTimeout(1200);
+        const after = await sky();
+        const changed = await page.evaluate(async ([a, b]) => {
+          const pixels = async (base64) => {
+            const image = new Image();
+            image.src = `data:image/png;base64,${base64}`;
+            await image.decode();
+            const canvas = new OffscreenCanvas(image.width, image.height);
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+            return ctx.getImageData(0, 0, image.width, image.height).data;
+          };
+          const [p, q] = [await pixels(a), await pixels(b)];
+          let changed = 0;
+          for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > 30) changed++;
+          return changed;
+        }, [before, after]);
+        assert.ok(changed > 3, `twinkling stars: ${changed} pixels changed`);
+      } finally {
+        await page.evaluate(() => window.codemap.setMotion(null));
+      }
+    });
+
     await test('an idle map draws nothing', async () => {
+      // Calm motion (the default without a GPU): decoration stops, nothing is drawn while nothing changes.
+      assert.equal(await page.evaluate(() => window.codemap.stage.motion), 'calm');
       await page.evaluate(() => window.codemap.select(null));
       await page.mouse.move(2, 300);
       await drained(page); // the hover change and the last frames of the camera damping
@@ -256,6 +344,12 @@ try {
         await gpu.page.waitForFunction(() => window.codemap.zoomView.semantic, null, { timeout: 120000 });
         const positions = await gpu.page.evaluate(() => window.codemap.view.units.every((u) => Number.isFinite(u.x) && Number.isFinite(u.y)));
         assert.ok(positions, 'units have positions');
+        // Shaders read positions by store index: every unit needs its own.
+        const indices = await gpu.page.evaluate(() => {
+          const units = window.codemap.view.units;
+          return { count: units.length, distinct: new Set(units.map((u) => u.index).filter(Number.isInteger)).size };
+        });
+        assert.equal(indices.distinct, indices.count, 'every unit has its own place in the position store');
         assert.ok(await litPixels(gpu.page) > 400, 'the canvas shows the map');
         assert.deepEqual(gpu.errors, []);
       });
@@ -318,7 +412,7 @@ console.log('\nSmoke tests passed.');
  * Waits until the stage has drawn every frame it wanted to (none pending, nothing left to redraw): a
  * map that keeps drawing never gets there, and slow software frames do not cut a test short.
  */
-async function drained(page, timeout = 30000) {
+async function drained(page, timeout = 60000) {
   // Two display frames first: input handlers that wait for one (hover picking) have run by then.
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await page.waitForFunction(() => {

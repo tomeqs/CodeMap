@@ -265,6 +265,12 @@ class App {
     this.sidebar.renderFilters();
   }
 
+  /** Living / calm / off (remembered by the stage); views pick their decoration by it. */
+  setMotion(motion) {
+    this.stage.setMotion(motion);
+    this.applyOptions();
+  }
+
   applyOptions() {
     const s = this.state;
     for (const view of [this.galaxy, this.layers, this.diView, this.flowView, this.zoomView]) view.setOptions({ flowAll: s.flowAll, labels: s.labels, autoRotate: s.autoRotate, particles: s.particles });

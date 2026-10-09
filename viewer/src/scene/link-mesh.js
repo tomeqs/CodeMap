@@ -4,6 +4,7 @@ import {
   attribute,
   cameraProjectionMatrix,
   distance,
+  exp,
   float,
   fract,
   max,
@@ -16,12 +17,12 @@ import {
   select,
   smoothstep,
   time,
+  uniform,
   varying,
   vec2,
   vec3,
   vec4,
 } from 'three/tsl';
-import { feedsBloom } from './materials.js';
 
 /** Smallest clip-space w kept in front of the camera when a link crosses it. */
 const NEAR_W = 0.05;
@@ -48,6 +49,8 @@ export class LinkMesh {
     /** Links with dashes: while there are any, the view keeps drawing (ambient frames). */
     this.flowing = 0;
     this.material = linkMaterial(store, { arc, segments });
+    /** Where the wave of light from a selection is, in hops (see setWave); far below 0: none. */
+    this.waveFront = this.material.userData.waveFront;
     this.mesh = new Mesh(stripGeometry(segments), this.material);
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
@@ -58,6 +61,7 @@ export class LinkMesh {
   setCount(count) {
     this.count = count;
     this.flows?.array.fill(0);
+    this.waves?.array.fill(-1);
     this.flowing = 0;
     if (count > this.capacity || !this.ends) {
       const capacity = Math.max(count, Math.ceil(this.capacity * 1.5), 16);
@@ -72,6 +76,8 @@ export class LinkMesh {
       this.intensity = grow('aIntensity', 2);
       this.widths = grow('aWidth', 1);
       this.flows = grow('aFlow', 1);
+      this.waves = grow('aWave', 2);
+      this.waves.array.fill(-1);
       this.capacity = capacity;
       geometry.dispose(); // the old GPU buffers go; new ones are made at the next frame
     }
@@ -100,9 +106,22 @@ export class LinkMesh {
     this.flows.array[i] = flow;
   }
 
+  /**
+   * The wave of light after a click: how many hops from the selected unit the link's source and target are
+   * (-1: the wave does not pass). Clear all with clearWaves(), then upload with flush().
+   */
+  setWave(i, sourceHop, targetHop) {
+    this.waves.array[i * 2] = sourceHop;
+    this.waves.array[i * 2 + 1] = targetHop;
+  }
+
+  clearWaves() {
+    this.waves?.array.fill(-1);
+  }
+
   /** Uploads everything (after setCount / a full restyle). */
   flush() {
-    for (const attr of [this.ends, this.colors, this.intensity, this.widths, this.flows]) {
+    for (const attr of [this.ends, this.colors, this.intensity, this.widths, this.flows, this.waves]) {
       if (!attr) continue;
       attr.clearUpdateRanges();
       attr.needsUpdate = true;
@@ -158,7 +177,7 @@ export function linkPoint(p0, p1, t, arc) {
 
 function linkMaterial(store, { arc, segments }) {
   // Double-sided: which way a ribbon's triangles wind depends on the link's direction on screen.
-  const material = feedsBloom(new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: AdditiveBlending, fog: false, side: DoubleSide }));
+  const material = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: AdditiveBlending, fog: false, side: DoubleSide });
   const ends = attribute('aEnds', 'vec2');
   const t = attribute('aT', 'float');
   const side = attribute('aSide', 'float');
@@ -215,6 +234,13 @@ function linkMaterial(store, { arc, segments }) {
   const phase = fract(vT.mul(vLength).div(DASH).sub(time.mul(DASH_SPEED)));
   const dash = smoothstep(0, 0.2, phase).mul(float(1).sub(smoothstep(0.45, 0.65, phase)));
   const flow = mix(float(1), dash.mul(1.6).add(0.3), vFlow);
-  material.colorNode = vec4(attribute('aColor', 'vec3').mul(intensity).mul(edge).mul(flow), 1);
+  // The wave: a pulse of light at `waveFront` hops from the selection, running along the link outwards.
+  const waveFront = uniform(-100);
+  material.userData.waveFront = waveFront;
+  const vWave = varying(attribute('aWave', 'vec2'), 'vLinkWave');
+  const along = mix(vWave.x, vWave.y, vT).sub(waveFront);
+  const pulse = select(vWave.x.greaterThanEqual(0), exp(along.mul(along).mul(-12)), float(0));
+  const base = attribute('aColor', 'vec3').mul(intensity).mul(flow);
+  material.colorNode = vec4(base.mul(pulse.mul(2.5).add(1)).add(vec3(pulse.mul(0.5))).mul(edge), 1);
   return material;
 }

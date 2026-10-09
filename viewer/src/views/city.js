@@ -49,7 +49,7 @@ export class CityView {
     this.store = new PositionStore();
     this.arcMesh = new LinkMesh(this.store, { arc: true });
     this.arcs = this.arcMesh.mesh;
-    this.particles = new GpuParticles(this.store, { max: 30000, size: 3.5, arc: true });
+    this.particles = new GpuParticles(this.store, { max: 30000, size: 10, arc: true });
 
     this.ground = new Mesh(new PlaneGeometry(1, 1), new MeshStandardMaterial({ color: '#070b16', roughness: 1 }));
     this.ground.rotation.x = -Math.PI / 2;
@@ -72,7 +72,7 @@ export class CityView {
 
   activate() {
     this.stage.scene.add(this.group);
-    this.stage.setAtmosphere({ background: '#05070f', fog: 0, stars: true });
+    this.stage.setAtmosphere({ background: '#05070f', fog: 0, stars: true, nebula: 0.4 });
     this.stage.setBloom(0.75, 0.45, 0.35);
     this.stage.controls.maxPolarAngle = Math.PI * 0.49;
     this.stage.controls.minDistance = 8;
@@ -213,6 +213,9 @@ export class CityView {
     this.recolor();
     this.setHighlight(null);
     if (!this.keepCamera) this.fit(false);
+    // The buildings grow out of the ground, one after another.
+    this.riseStart = this.stage.motion === 'off' ? null : performance.now();
+    this.buildingMaterial.userData.rise.value = this.riseStart === null ? 1e6 : 0;
   }
 
   updateMatrices() {
@@ -316,8 +319,17 @@ export class CityView {
   // ------------------------------------------------------------------ frame
 
   update() {
-    if (this.options.labels) this.renderLabels();
+    let rising = false;
+    if (this.riseStart !== null && this.riseStart !== undefined) {
+      const t = (performance.now() - this.riseStart) / 1000;
+      rising = t < 2;
+      this.buildingMaterial.userData.rise.value = rising ? t : 1e6;
+      if (!rising) this.riseStart = null;
+    }
+
+    if (this.options.labels && !rising) this.renderLabels();
     else this.labels.clear();
+    if (rising) return true;
     return this.particles.count || this.arcMesh.flowing ? 'ambient' : false;
   }
 

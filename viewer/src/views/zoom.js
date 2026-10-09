@@ -277,6 +277,9 @@ export class ZoomView extends GalaxyView {
       unit.grow0 = unit.grow;
       return unit;
     });
+    // Their places in the position store, which every shader (units, links, particles) reads by index.
+    this.units.forEach((u, i) => (u.index = i));
+    this.store.ensure(this.units.length);
     this.byId = new Map(this.units.map((u) => [u.id, u]));
     this.mixedLinks ??= this.makeMixedLinks();
     const openTypes = new Set([...this.open].filter((id) => model.get(id)?.level === 'type'));

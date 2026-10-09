@@ -1,19 +1,30 @@
 import { DataTexture, FloatType, NearestFilter, RGBAFormat } from 'three/webgpu';
-import { int, ivec2, texture } from 'three/tsl';
+import { clamp, float, hash, int, ivec2, mix, texture, uniform } from 'three/tsl';
 
 /** Positions per texture row: 1024 × 1024 positions fit the smallest texture limit every GPU has (8192). */
 const WIDTH = 1024;
+/** The unfolding after a new layout: seconds per unit, and up to this much later for some (not all at once). */
+const INTRO = 1.3;
+const INTRO_STAGGER = 0.35;
 
 /**
  * Where every unit is, on the GPU: one texel (x, y, z, w) per unit in a float texture. Node, link and
  * particle shaders read their positions from it by unit index, so a moving layout uploads one texture per
  * frame instead of rewriting every instance matrix and every link vertex. The same texture works on the
  * WebGPU and the WebGL 2 backend.
+ *
+ * The unfolding (beginIntro): a second texture keeps where every unit started, and for a moment the shaders
+ * show a blend from there to wherever the layout has got to, so a new graph bursts out of its centre (and
+ * drilled-down units out of their parent) however fast the layout itself is.
  */
 export class PositionStore {
   constructor(capacity = WIDTH) {
     this.rows = 0;
     this.node = null;
+    this.originNode = null;
+    /** Seconds since the unfolding began (large: none running). */
+    this.introTime = uniform(1e6);
+    this.introStart = 0;
     this.ensure(capacity);
   }
 
@@ -34,6 +45,43 @@ export class PositionStore {
     this.data = data;
     if (this.node) this.node.value = next; // a GPU layout writing its own texture is restarted with the new size
     else this.node = texture(next);
+
+    const origin = new DataTexture(new Float32Array(data.length), WIDTH, this.rows, RGBAFormat, FloatType);
+    origin.magFilter = origin.minFilter = NearestFilter;
+    origin.generateMipmaps = false;
+    origin.needsUpdate = true;
+    this.origin?.dispose();
+    this.origin = origin;
+    if (this.originNode) this.originNode.value = origin;
+    else this.originNode = texture(origin);
+  }
+
+  /**
+   * Starts the unfolding from the positions in the store now (call after setting the starting positions,
+   * before the layout moves them).
+   */
+  beginIntro() {
+    this.origin.image.data.set(this.data);
+    this.origin.needsUpdate = true;
+    this.introStart = performance.now();
+    this.introTime.value = 0;
+  }
+
+  /** Advances the unfolding; true while it runs (the view keeps drawing). */
+  tickIntro(now = performance.now()) {
+    if (this.introTime.value >= 1e6) return false;
+    const t = (now - this.introStart) / 1000;
+    this.introTime.value = t > INTRO + INTRO_STAGGER ? 1e6 : t;
+    return true;
+  }
+
+  get introRunning() {
+    return this.introTime.value < 1e6;
+  }
+
+  /** Ends the unfolding at once (the layout's positions show as they are). */
+  endIntro() {
+    this.introTime.value = 1e6;
   }
 
   get capacity() {
@@ -75,10 +123,19 @@ export class PositionStore {
   /** Shader node: the stored position (vec4) of the unit with the given index (a float or int node). */
   positionAt(indexNode) {
     const i = int(indexNode);
-    return this.node.load(ivec2(i.mod(WIDTH), i.div(WIDTH)));
+    const at = ivec2(i.mod(WIDTH), i.div(WIDTH));
+    return mix(this.originNode.load(at), this.node.load(at), this.introOf(i));
+  }
+
+  /** Shader node: how far the unit with this index has unfolded (0 → 1, eased; 1 when no unfolding runs). */
+  introOf(indexNode) {
+    const k = clamp(this.introTime.sub(hash(float(indexNode)).mul(INTRO_STAGGER)).div(INTRO), 0, 1);
+    const left = float(1).sub(k);
+    return float(1).sub(left.mul(left).mul(left));
   }
 
   dispose() {
     this.texture?.dispose();
+    this.origin?.dispose();
   }
 }

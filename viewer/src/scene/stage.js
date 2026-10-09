@@ -1,24 +1,25 @@
 import { ACESFilmicToneMapping, Color, FogExp2, PCFSoftShadowMap, PerspectiveCamera, PostProcessing, Raycaster, Scene, Vector2, Vector3 } from 'three/webgpu';
-import { emissive, mrt, output, pass, vec4 } from 'three/tsl';
+import { pass } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { beginFrame, createRenderer } from '../gpu/renderer.js';
-import { createDots } from './materials.js';
+import { Sky } from './sky.js';
 import { perf } from '../perf/stats.js';
+import { rememberMotion, storedMotion } from './motion.js';
 
-/** Ambient motion (particles, pulsing halo) stops this long after the last input, to save battery. */
+/** Calm motion: decoration (particles, pulsing halo) stops this long after the last input, to save battery. */
 const AMBIENT_TIMEOUT = 20000;
-/** Ambient-only frames run at most this often (ms): ~30 fps is plenty for drifting particles. */
+/** Calm motion: decoration-only frames run at most this often (ms), ~30 fps. */
 const AMBIENT_INTERVAL = 33;
-/** Node bloom of the emissive target vs UnrealBloomPass of everything: see setBloom(). */
+/** Node bloom vs UnrealBloomPass: see setBloom(). */
 const BLOOM_STRENGTH = 1.15;
 const BLOOM_RADIUS = 0.4;
-const BLOOM_THRESHOLD = 0.5;
 
 /**
- * Renderer, camera, controls and bloom shared by every view. Frames are drawn on demand: when something
- * changed (invalidate), while the camera moves or flies, and while a view says it is animating – an idle
- * map draws nothing.
+ * Renderer, camera, controls and bloom shared by every view. Frames are drawn when something changed
+ * (invalidate), while the camera moves or flies, and while a view says it is animating. Decoration (the
+ * twinkling sky, flowing links, breathing glow) follows the motion setting: every frame ("living"), at
+ * 30 fps until the user is away ("calm"), or never ("off") – then an idle map draws nothing.
  */
 export class Stage {
   constructor(container) {
@@ -48,8 +49,8 @@ export class Stage {
     this.listeners = new Set();
     this.flight = null;
     this.lastTime = performance.now();
-    this.stars = this.createStars();
-    this.scene.add(this.stars);
+    this.sky = new Sky();
+    this.scene.add(this.sky.group);
 
     this.raf = 0;
     this.ambientTimer = 0;
@@ -58,6 +59,7 @@ export class Stage {
     this.lastInput = performance.now();
     this.ambientSleeping = false;
     this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    this.motionChoice = storedMotion();
     this.controls.addEventListener('change', () => this.invalidate());
     const input = () => this.onInput();
     for (const type of ['pointerdown', 'pointermove', 'wheel']) this.canvas.addEventListener(type, input, { passive: true });
@@ -85,15 +87,11 @@ export class Stage {
     renderer.shadowMap.type = PCFSoftShadowMap;
     renderer.onDeviceLost = (info) => this.onDeviceLost?.(info);
 
-    // The scene in an HDR, multisampled target; bloom on top; tone mapping and sRGB at the end. Only what
-    // glows blooms: a second target gets the emissive colour (nodes, links, particles, lit windows; the
-    // alpha lets see-through planes dim what is behind them), and the bloom blurs that alone, so lit
-    // surfaces, planes and the ground stay crisp however bright they are.
+    // The scene in an HDR, multisampled target; bloom on top; tone mapping and sRGB at the end.
     this.post = new PostProcessing(renderer);
     const scenePass = pass(this.scene, this.camera, { samples: software ? 0 : 4 });
-    scenePass.setMRT(mrt({ output, emissive: vec4(emissive, output.a) }));
     const color = scenePass.getTextureNode('output');
-    this.bloom = bloom(scenePass.getTextureNode('emissive'));
+    this.bloom = bloom(color);
     this.post.outputNode = color.add(this.bloom);
     const { strength, radius, threshold } = this.bloomSettings;
     this.setBloom(strength, radius, threshold);
@@ -120,24 +118,24 @@ export class Stage {
 
   /**
    * Bloom in the units the views were tuned with (UnrealBloomPass). The node bloom blurs each level more
-   * narrowly, so a larger radius (more weight on the wide levels) gives the same soft haze; it only sees
-   * the emissive colour, which is darker than the lit scene, so the threshold is lower.
+   * narrowly, so a larger radius (more weight on the wide levels) gives the same soft haze.
    */
   setBloom(strength, radius = 0.55, threshold = 0.18) {
     this.bloomSettings = { strength, radius, threshold };
     if (this.bloom) {
       this.bloom.strength.value = strength * BLOOM_STRENGTH;
       this.bloom.radius.value = Math.min(1, radius + BLOOM_RADIUS);
-      this.bloom.threshold.value = threshold * BLOOM_THRESHOLD;
+      this.bloom.threshold.value = threshold;
     }
 
     this.invalidate();
   }
 
-  setAtmosphere({ background = '#04060c', fog = 0, stars = true } = {}) {
+  /** Background colour, fog, the starry sky and how strong its nebulae are (0..1). */
+  setAtmosphere({ background = '#04060c', fog = 0, stars = true, nebula = 1 } = {}) {
     this.scene.background = new Color(background);
     this.scene.fog = fog > 0 ? new FogExp2(background, fog) : null;
-    this.stars.visible = stars;
+    this.sky.set({ stars, nebula });
     this.invalidate();
   }
 
@@ -161,6 +159,22 @@ export class Stage {
     this.raf = requestAnimationFrame((now) => this.frame(now));
   }
 
+  /**
+   * The motion setting in effect: the user's choice, else "living" – or "calm" without a GPU (software
+   * frames are expensive) and when the system asks for less motion.
+   */
+  get motion() {
+    return this.motionChoice ?? (this.software || this.reducedMotion?.matches ? 'calm' : 'living');
+  }
+
+  /** Sets (and remembers) the motion: 'living' | 'calm' | 'off', or null for the automatic choice. */
+  setMotion(value) {
+    this.motionChoice = value ?? null;
+    rememberMotion(value);
+    this.ambientSleeping = false;
+    this.invalidate();
+  }
+
   /** Pointer, wheel or keyboard: ambient motion wakes up again. */
   onInput() {
     this.lastInput = performance.now();
@@ -170,9 +184,9 @@ export class Stage {
     }
   }
 
-  /** Ambient motion runs while the user is around, unless they asked the system for less motion. */
+  /** Calm motion: decoration runs while the user is around. */
   ambientAllowed(now) {
-    return !this.reducedMotion?.matches && !document.hidden && now - this.lastInput < AMBIENT_TIMEOUT;
+    return !document.hidden && now - this.lastInput < AMBIENT_TIMEOUT;
   }
 
   /**
@@ -198,12 +212,15 @@ export class Stage {
       else if (result) busy = true;
     }
 
+    // The twinkling sky is decoration too: with "living" motion the map never stands still.
+    if (this.sky.visible && this.motion === 'living') ambient = true;
+
     // three's node renderer applies some per-frame updates (instance colours and matrices it copied) one
     // frame late, so every change is followed by one more frame.
     const trailing = this.trailingFrames > 0;
     const render = draw || busy || ambient || trailing || this.dirty;
     if (render) {
-      this.stars.rotation.y += dt * 0.004;
+      this.sky.update(dt);
       beginFrame(this.renderer);
       this.post.render();
     }
@@ -211,8 +228,9 @@ export class Stage {
     perf.frame(now, performance.now() - now, render);
     if (draw || busy) this.trailingFrames = 1;
     else if (trailing) this.trailingFrames--;
-    if (busy || this.dirty || this.trailingFrames > 0) this.requestFrame();
-    else if (ambient) {
+    const motion = this.motion;
+    if (busy || this.dirty || this.trailingFrames > 0 || (ambient && motion === 'living')) this.requestFrame();
+    else if (ambient && motion === 'calm') {
       if (this.ambientAllowed(now)) this.ambientTimer = setTimeout(() => this.requestFrame(), AMBIENT_INTERVAL);
       else this.ambientSleeping = true;
     }
@@ -270,23 +288,5 @@ export class Stage {
     out.copy(position).project(this.camera);
     if (out.z > 1 || out.z < -1) return null;
     return { x: (out.x * 0.5 + 0.5) * this.width, y: (-out.y * 0.5 + 0.5) * this.height, depth: out.z };
-  }
-
-  /** A sphere of faint stars far behind everything (instanced sprites: WebGPU points are one pixel). */
-  createStars() {
-    const count = 4000;
-    const { sprite, positions, colors } = createDots(count, { size: 2.2, sizeAttenuation: false, opacity: 0.75, glow: 0.5 });
-    const color = new Color();
-    for (let i = 0; i < count; i++) {
-      const r = 6000 + Math.random() * 9000;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      positions.setXYZ(i, r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi) * Math.sin(theta));
-      color.setHSL(0.55 + Math.random() * 0.15, 0.5, 0.55 + Math.random() * 0.4);
-      colors.setXYZ(i, color.r, color.g, color.b);
-    }
-
-    sprite.count = count;
-    return sprite;
   }
 }

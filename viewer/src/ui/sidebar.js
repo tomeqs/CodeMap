@@ -64,6 +64,9 @@ export class Sidebar {
       h('label', { class: 'toggle-row', title }, h('span', {}, label), h('input', { type: 'checkbox', checked, onChange: (e) => onChange(e.target.checked) }));
 
     appearance.append(toggle('Labels', state.labels, (v) => app.setState({ labels: v }, 'options')));
+    const motionOptions = [['living', 'Living'], ['calm', 'Calm (battery)'], ['off', 'Off']];
+    appearance.append(h('div', { class: 'row', title: 'Living: the map always moves (twinkling sky, flowing links). Calm: decoration slows down and stops when you are away. Off: nothing moves by itself.' }, h('label', {}, 'Motion'),
+      select(app.stage.motion, motionOptions, (v) => app.setMotion(v))));
     const particleOptions = [['0', 'Off'], ['0.34', 'Few'], ['1', 'Normal'], ['2', 'Many']];
     appearance.append(h('div', { class: 'row', title: 'Particles flowing along links show the direction of dependencies' }, h('label', {}, 'Particles'),
       select(String(state.particles), particleOptions, (v) => app.setState({ particles: Number(v) }, 'options'))));

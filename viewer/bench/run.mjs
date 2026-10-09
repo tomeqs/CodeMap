@@ -87,9 +87,14 @@ async function measure(page) {
     };
   });
 
-  // Idle: nothing moves, nothing should be drawn.
+  // Idle: nothing moves, nothing should be drawn (once the frames still on their way are done, e.g. the
+  // camera flight after the layout settled: software frames are slow).
   await page.mouse.move(5, 400);
   await page.waitForTimeout(500);
+  await page.waitForFunction(() => {
+    const stage = window.codemap.stage;
+    return !stage.raf && !stage.ambientTimer && !stage.dirty && stage.trailingFrames === 0 && !stage.flight;
+  }, null, { timeout: 60000, polling: 50 });
   const idle = await page.evaluate(async () => {
     const perf = window.codemap.perf;
     perf.startSampling();
