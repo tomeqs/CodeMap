@@ -329,7 +329,7 @@ albo użyć parametru `?data=url.json`.
   Wybór zostaje w przeglądarce; `?motion=living|calm|off` wymusza tryb.
 * Natywne renderery (Metal / Direct3D 12 poza przeglądarką) to osobny temat: [tomeqs/CodeMap#6](https://github.com/tomeqs/CodeMap/issues/6).
 
-### Okulary AR (XREAL One / One Pro)
+### Okulary AR (XREAL 1S / One / One Pro)
 
 Mapa może unosić się w pokoju w okularach AR, które przyjmują obraz 3D side-by-side przez USB-C.
 Działa w przeglądarce (`codemap ui`, plik HTML z `codemap -f html`, `npm run dev`), nie w panelu VS Code.
@@ -337,6 +337,7 @@ Działa w przeglądarce (`codemap ui`, plik HTML z `codemap -f html`, `npm run d
 1. Podłącz okulary do komputera (np. Maca) jako rozszerzony ekran.
 2. Włącz 3D w okularach: dwuklik przycisku X → *Spatial Screen* → *3D Mode* → *Full SBS*.
    Ekran okularów ma wtedy 3840×1080: lewa połowa trafia do lewego oka, prawa do prawego.
+   Jeśli *3D Mode* jest nieaktywne, najpierw przełącz ekran na 16:9 (nie ultra-wide).
 3. Opcjonalnie ustaw ekran na *Anchor*, żeby mapa została w miejscu, gdy obracasz głowę
    (śledzenie 3DoF robią same okulary).
 4. W mapie kliknij **AR** (albo *Data → Graphics → View in AR glasses…*).
@@ -357,7 +358,8 @@ Kursor myszy (widoczny tylko w jednym oku) zastępuje pierścień na środku wid
 | `G` `C` `L` `D` `E`, `1`–`4`, `Z` | widoki i poziomy jak zwykle |
 | `Esc` | odznacza, drugi raz wychodzi z AR |
 
-W oknie startowym są: profil okularów (pole widzenia: One Pro 57°, One 50°), Full lub Half SBS,
+W oknie startowym są: profil okularów (pole widzenia: 1S 52° na ekranie 16:10, na którym obraz 16:9 ma pas
+u góry i u dołu; One Pro 57°; One 50°), Full lub Half SBS,
 rozstaw oczu (IPD), odległość i rozmiar mapy oraz płaszczyzna ekranu okularów (tam, gdzie oba oczy widzą to samo;
 zmniejsz ją, gdy mapa się dwoi). Ustawienia zostają w przeglądarce. `?ar=full` lub `?ar=half` uruchamia tryb od razu.
 Pełne 6DoF (chodzenie wokół mapy) wymaga kamery XREAL Eye i natywnego SDK XREAL na Androida, więc tu go nie ma.

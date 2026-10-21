@@ -116,9 +116,9 @@ export class Stage {
   resize() {
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
-    // In stereo the camera's aspect is two eyes': half the canvas each, or 16:9 each for half SBS (drawn
-    // squeezed, the glasses stretch it back).
-    this.camera.aspect = this.stereo ? 2 * (this.stereo.sbs === 'half' ? 16 / 9 : w / 2 / h) : w / h;
+    // In stereo the camera's aspect is two eyes': half the canvas each, or the whole canvas' shape each for
+    // half SBS (drawn squeezed, the glasses stretch it back).
+    this.camera.aspect = this.stereo ? 2 * (this.stereo.sbs === 'half' ? w / h : w / 2 / h) : w / h;
     this.camera.updateProjectionMatrix();
     this.renderer?.setSize(w, h);
     this.width = w;

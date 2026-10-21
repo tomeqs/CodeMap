@@ -369,13 +369,16 @@ try {
       await gpu.page.close();
     }
 
-    const large = await open(browser, query(big));
+    // A small canvas: without a GPU a frame costs seconds (mostly the bloom, per pixel), and a screenshot
+    // waits for the frames still being drawn – on a one-core runner over a minute at the default size.
+    const large = await open(browser, query(big), { width: 640, height: 400 });
     await test('a generated graph with 2000 types is laid out in a worker', async () => {
       // The worker does not wait for frames: even without a GPU (slow frames) the layout settles quickly.
       await settled(large.page, 60000);
       const info = await large.page.evaluate(() => ({ units: window.codemap.view.units.length, layout: window.codemap.view.layout.kind }));
       assert.ok(info.units >= 2000, `units: ${info.units}`);
       assert.equal(info.layout, 'worker');
+      await drained(large.page, 120000); // the unfolding and the camera's flight are drawn
       assert.ok(await litPixels(large.page) > 400, 'the canvas shows the map');
       assert.deepEqual(large.errors, []);
     });
@@ -438,6 +441,33 @@ try {
       assert.ok(halves.left / halves.right > 0.6 && halves.left / halves.right < 1.6, `similar eyes: ${halves.left} / ${halves.right}`);
       assert.ok(halves.differing > 100, `the eyes differ (disparity): ${halves.differing} pixels`);
     });
+    await test('AR: the screen\'s shape: a hint until it is side by side, the field of view fits the eye pictures', async () => {
+      // XREAL 1S (the default profile): 52° diagonal on a 16:10 display; a 16:9 eye picture spans its width.
+      const tan = Math.tan((26 * Math.PI) / 180) / Math.hypot(1.6, 1);
+      const degrees = (t) => (2 * Math.atan(t) * 180) / Math.PI;
+      const fov169 = degrees((tan * 1.6) / (16 / 9));
+      const fov1610 = degrees(tan);
+      const at = async (width, height, fov) => {
+        await ar.page.setViewportSize({ width, height });
+        await ar.page.waitForFunction(([w, h, f]) => {
+          const stage = window.codemap.stage;
+          return stage.width === w && stage.height === h && (f === null || Math.abs(stage.camera.fov - f) < 0.01);
+        }, [width, height, fov], { timeout: 30000, polling: 50 });
+        return ar.page.evaluate(() => ({
+          fov: window.codemap.stage.camera.fov,
+          aspect: window.codemap.stage.camera.aspect,
+          message: document.querySelector('#ar-hud .ar-message')?.textContent ?? '',
+        }));
+      };
+      const full = await at(3840, 1080, fov169);
+      assert.ok(Math.abs(full.aspect - 32 / 9) < 0.01 && full.message === '', `16:9 eyes: ${JSON.stringify(full)}`);
+      const flat = await at(1920, 1200, null);
+      assert.match(flat.message, /3D Mode/, 'not side by side yet: how to turn 3D on');
+      const tall = await at(3840, 1200, fov1610);
+      assert.ok(Math.abs(tall.aspect - 3.2) < 0.01 && tall.message === '', `16:10 eyes fill the display: ${JSON.stringify(tall)}`);
+      const back = await at(3840, 1080, fov169);
+      assert.equal(back.message, '', 'the hint goes once the screen is side by side');
+    });
     await test('AR: the reticle selects what is in the middle of the view; Esc goes back', async () => {
       const target = await ar.page.evaluate(() => {
         const app = window.codemap;
@@ -449,8 +479,12 @@ try {
         stage.invalidate();
         return unit.id;
       });
-      await ar.page.keyboard.press('Space');
-      const selected = await ar.page.evaluate(() => ({ id: window.codemap.selection?.nodeId, wave: !!window.codemap.view.wave }));
+      // Space and the state right after it in one go: without a GPU a single frame at 3840×1080 can outlast
+      // the whole wave, so it may be over by the time a separate call looks.
+      const selected = await ar.page.evaluate(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+        return { id: window.codemap.selection?.nodeId, wave: !!window.codemap.view.wave };
+      });
       assert.equal(selected.id, target, 'Space selects the unit under the reticle');
       assert.ok(selected.wave, 'the selection wave runs');
       await ar.page.keyboard.press('Escape'); // clears the selection

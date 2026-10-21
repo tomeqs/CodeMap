@@ -406,7 +406,7 @@ export class Sidebar {
       ]),
       h('label', { class: 'small' }, 'Renderer ', select),
       note,
-      h('button', { class: 'small', title: 'Side-by-side 3D for AR glasses such as the XREAL One / One Pro', onClick: () => this.app.ar.openPanel() }, 'View in AR glasses…'),
+      h('button', { class: 'small', title: 'Side-by-side 3D for AR glasses such as the XREAL 1S / One / One Pro', onClick: () => this.app.ar.openPanel() }, 'View in AR glasses…'),
     );
   }
 

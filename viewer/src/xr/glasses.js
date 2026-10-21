@@ -2,7 +2,7 @@ import { Spherical, Vector3 } from 'three';
 import { fmt, h } from '../ui/dom.js';
 
 /**
- * AR glasses that take side-by-side stereo over USB-C (XREAL One / One Pro and similar): the computer sees
+ * AR glasses that take side-by-side stereo over USB-C (XREAL 1S / One / One Pro and similar): the computer sees
  * them as a display, and with the glasses' 3D mode on, the left half of a 3840×1080 picture goes to the left
  * eye and the right half to the right eye (half SBS: 1920×1080, each eye squeezed). Black is see-through,
  * so the map floats in the room. Head tracking is the glasses' own (their 3DoF anchor), not ours.
@@ -12,22 +12,35 @@ import { fmt, h } from '../ui/dom.js';
  * the view: what is under it is hovered, a click or Space selects it.
  */
 
-/** Diagonal field of view per eye (degrees). */
+/** Diagonal field of view per eye (degrees) and the shape of each eye's display. */
 export const PROFILES = {
-  'xreal-one-pro': { name: 'XREAL One Pro', fov: 57 },
-  'xreal-one': { name: 'XREAL One', fov: 50 },
-  other: { name: 'Other side-by-side glasses', fov: 46 },
+  'xreal-1s': { name: 'XREAL 1S', fov: 52, panel: 16 / 10 },
+  'xreal-one-pro': { name: 'XREAL One Pro', fov: 57, panel: 16 / 9 },
+  'xreal-one': { name: 'XREAL One', fov: 50, panel: 16 / 9 },
+  other: { name: 'Other side-by-side glasses', fov: 46, panel: 16 / 9 },
 };
 
-const DEFAULTS = { profile: 'xreal-one-pro', fov: 57, sbs: 'full', ipd: 63, distance: 1.8, size: 1.2, convergence: 4, stars: false };
+const DEFAULTS = { profile: 'xreal-1s', fov: 52, sbs: 'full', ipd: 63, distance: 1.8, size: 1.2, convergence: 4, stars: false };
 const KEY = 'codemap.ar';
 /** How often the reticle looks for what is under it (ms). */
 const HOVER_INTERVAL = 100;
+/** Each eye's picture in side-by-side 3D: 16:9 (1920×1080 each); 16:10 in case 1200p glasses take that. */
+const EYE_SHAPES = [16 / 9, 16 / 10];
 
-/** Vertical field of view (degrees) of a 16:9 eye with this diagonal field of view. */
-export function verticalFov(diagonal) {
-  const t = Math.tan((diagonal * Math.PI) / 360);
-  return (2 * Math.atan((t * 9) / Math.hypot(16, 9)) * 180) / Math.PI;
+/**
+ * Vertical field of view (degrees) of an eye's picture (aspect `eye`) on a display with this diagonal field
+ * of view and shape (aspect `panel`). The picture spans the display's width – a 16:9 picture on the 1S's
+ * 16:10 display leaves a band above and below – or its height if the picture is the narrower one.
+ */
+export function verticalFov(diagonal, panel = 16 / 9, eye = 16 / 9) {
+  const t = Math.tan((diagonal * Math.PI) / 360) / Math.hypot(panel, 1);
+  return (2 * Math.atan(Math.min((t * panel) / eye, t)) * 180) / Math.PI;
+}
+
+/** The eye picture's aspect if a screen of this size is side by side (half: squeezed), else null. */
+function eyeShape(width, height, half) {
+  const eye = (half ? width : width / 2) / height;
+  return EYE_SHAPES.find((shape) => Math.abs(eye / shape - 1) < 0.03) ?? null;
 }
 
 export function loadSettings() {
@@ -52,6 +65,7 @@ export class GlassesSession {
     this.active = false;
     this.settings = loadSettings();
     this.screen = null; // the glasses' screen, if the browser can tell (Window Management API)
+    this.eye = 16 / 9; // each eye's picture, as the screen turned out to be
     this.hovered = null;
     this.lastHover = 0;
     this.onKey = (e) => this.key(e);
@@ -63,7 +77,8 @@ export class GlassesSession {
   /** Stage options for the current settings. */
   stereoOptions() {
     const s = this.settings;
-    return { sbs: s.sbs, fovY: verticalFov(s.fov), ipd: s.ipd / 1000, convergence: s.convergence, stars: s.stars, distance: s.distance, size: s.size };
+    const panel = PROFILES[s.profile]?.panel ?? 16 / 9;
+    return { sbs: s.sbs, fovY: verticalFov(s.fov, panel, this.eye), ipd: s.ipd / 1000, convergence: s.convergence, stars: s.stars, distance: s.distance, size: s.size };
   }
 
   // ------------------------------------------------------------------ start panel
@@ -90,7 +105,7 @@ export class GlassesSession {
         h('h2', {}, 'View in AR glasses'),
         h('ol', {},
           h('li', {}, 'Connect the glasses to this computer (USB-C) and use them as an extended display.'),
-          h('li', {}, 'On the glasses: double-click the X button → Spatial Screen → 3D Mode → Full SBS. The display becomes 3840×1080.'),
+          h('li', {}, 'On the glasses: double-click the X button → Spatial Screen → 3D Mode → Full SBS. The display becomes 3840×1080. If 3D Mode is greyed out, set the screen to 16:9 first (not ultra-wide).'),
           h('li', {}, 'Optional: set the screen to Anchor to keep the map in place as you turn your head.'),
           h('li', {}, 'Press Start. Rotate with the mouse or arrow keys; look at a node through the ring and click (or Space) to select it; Esc goes back.'),
         ),
@@ -275,7 +290,7 @@ export class GlassesSession {
     const eye = (side) => h('div', { class: `ar-eye eye-${side}` }, h('div', { class: 'ar-eye-inner' }));
     this.hud = h('div', { id: 'ar-hud' }, eye('left'), eye('right'));
     document.getElementById('app').append(this.hud);
-    this.texts = { hint: '', message: '' };
+    this.texts = { hint: '', message: '', screen: '' };
   }
 
   hint(text, ms) {
@@ -296,17 +311,25 @@ export class GlassesSession {
     clearTimeout(this.messageTimer);
     this.messageTimer = setTimeout(() => {
       this.texts.message = '';
-      this.checkScreen();
+      this.update();
     }, ms);
   }
 
-  /** Not side by side? Say how to switch the glasses' 3D mode on. */
+  /**
+   * Not side by side? Say how to switch the glasses' 3D mode on, until it is. Otherwise fit the field of view
+   * to the eye pictures.
+   */
   checkScreen() {
     if (!this.active) return;
-    const { width, height } = this.app.stage;
-    const expected = this.settings.sbs === 'half' ? 16 / 9 : 32 / 9;
-    const off = Math.abs(width / height / expected - 1) > 0.06;
-    if (off && !this.texts.message) this.texts.message = this.settings.sbs === 'half'
+    const { stage } = this.app;
+    const { width, height } = stage;
+    const eye = eyeShape(width, height, this.settings.sbs === 'half');
+    if (eye && eye !== this.eye) {
+      this.eye = eye;
+      stage.setStereo(this.stereoOptions());
+    }
+
+    this.texts.screen = eye ? '' : this.settings.sbs === 'half'
       ? `This screen is ${width}×${height}. On the glasses: 3D Mode → Half SBS, with this window full screen on them.`
       : `This screen is ${width}×${height}, not 3840×1080. On the glasses: double-click X → Spatial Screen → 3D Mode → Full SBS.`;
     this.update();
@@ -329,7 +352,7 @@ export class GlassesSession {
     const level = app.view === app.zoomView ? 'auto' : app.state?.level ?? '';
     const inner = h('div', { class: 'ar-eye-inner' },
       h('div', { class: 'ar-top' }, `${view} · ${level}${app.statusLine ? ` · ${app.statusLine}` : ''}`),
-      h('div', { class: 'ar-message' }, this.texts.message),
+      h('div', { class: 'ar-message' }, this.texts.message || this.texts.screen),
       h('div', { class: `ar-hint${this.texts.hint ? '' : ' fade'}` }, this.texts.hint),
       h('div', { class: `ar-reticle${this.hovered ? ' on' : ''}` }),
       h('div', { class: 'ar-card' }, shown ? [
@@ -373,8 +396,7 @@ export async function findGlassesScreen() {
     const { screens } = await window.getScreenDetails();
     return (
       screens.find((s) => /xreal|nreal|viture|rokid|rayneo/i.test(s.label)) ??
-      screens.find((s) => s.width === 3840 && s.height === 1080) ??
-      screens.find((s) => Math.abs(s.width / s.height - 32 / 9) < 0.05) ??
+      screens.find((s) => eyeShape(s.width, s.height, false)) ??
       screens.find((s) => !s.isPrimary && !s.isInternal) ??
       null
     );

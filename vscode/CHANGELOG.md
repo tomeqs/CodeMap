@@ -10,7 +10,7 @@
 - Living map: glowing, breathing node coronas; a twinkling sky with nebulae; comets flowing along links (also at rest); new graphs burst out of their centre and city buildings rise; a wave of light runs out from a selected node. Appearance → Motion: Living / Calm (battery) / Off.
 - Links in focus show moving dashes; a particle density setting.
 - Fixed: in the Auto (semantic zoom) view, opened clusters drew all their units at one point.
-- The browser viewer has an AR glasses mode (side-by-side 3D for XREAL One / One Pro); it is not available inside VS Code, where the map cannot go full screen on the glasses.
+- The browser viewer has an AR glasses mode (side-by-side 3D for XREAL 1S / One / One Pro); it is not available inside VS Code, where the map cannot go full screen on the glasses.
 
 ## 0.1.0
 
