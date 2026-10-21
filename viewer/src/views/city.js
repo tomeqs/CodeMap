@@ -17,6 +17,7 @@ import { EDGE_KINDS } from '../data/palette.js';
 import { buildingMaterial } from '../scene/materials.js';
 import { LinkMesh } from '../scene/link-mesh.js';
 import { GpuParticles, particlesPerLink } from '../scene/particles.js';
+import { uploadAll, uploadRange } from '../scene/uploads.js';
 import { PositionStore } from '../gpu/position-store.js';
 import { disposeObject } from '../scene/disposer.js';
 
@@ -220,8 +221,7 @@ export class CityView {
 
   updateMatrices() {
     for (const u of this.units) this.setMatrix(u);
-    this.buildingMesh.instanceMatrix.clearUpdateRanges();
-    this.buildingMesh.instanceMatrix.needsUpdate = true;
+    uploadAll(this.buildingMesh.instanceMatrix);
     this.buildingMesh.computeBoundingSphere();
     this.stage.invalidate();
   }
@@ -235,10 +235,7 @@ export class CityView {
 
   recolor() {
     for (const u of this.units) this.setUnitColor(u);
-    if (this.buildingMesh.instanceColor) {
-      this.buildingMesh.instanceColor.clearUpdateRanges();
-      this.buildingMesh.instanceColor.needsUpdate = true;
-    }
+    uploadAll(this.buildingMesh.instanceColor);
 
     this.stage.invalidate();
   }
@@ -271,12 +268,10 @@ export class CityView {
       if (!u) continue;
       this.setMatrix(u);
       this.setUnitColor(u);
-      mesh.instanceMatrix.addUpdateRange(u.index * 16, 16);
-      mesh.instanceColor.addUpdateRange(u.index * 3, 3);
+      uploadRange(mesh.instanceMatrix, u.index * 16, 16);
+      uploadRange(mesh.instanceColor, u.index * 3, 3);
     }
 
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.instanceColor.needsUpdate = true;
     if (!this.highlight) this.refreshArcs();
     this.stage.invalidate();
   }
@@ -368,6 +363,40 @@ export class CityView {
 
   // ------------------------------------------------------------------ interaction
 
+  /** AR reticle: the nearest building a ray (the middle of the view) passes through. */
+  pickAlong({ origin, direction }) {
+    let best = null;
+    let nearest = Infinity;
+    for (const u of this.units) {
+      // Slab test against the building's box.
+      let near = 0;
+      let far = Infinity;
+      const min = [u.x - u.w / 2, u.base, u.z - u.d / 2];
+      const max = [u.x + u.w / 2, u.top, u.z + u.d / 2];
+      const o = [origin.x, origin.y, origin.z];
+      const d = [direction.x, direction.y, direction.z];
+      for (let axis = 0; axis < 3 && near <= far; axis++) {
+        if (Math.abs(d[axis]) < 1e-9) {
+          if (o[axis] < min[axis] || o[axis] > max[axis]) near = Infinity;
+          continue;
+        }
+
+        let t0 = (min[axis] - o[axis]) / d[axis];
+        let t1 = (max[axis] - o[axis]) / d[axis];
+        if (t0 > t1) [t0, t1] = [t1, t0];
+        near = Math.max(near, t0);
+        far = Math.min(far, t1);
+      }
+
+      if (near <= far && near < nearest) {
+        nearest = near;
+        best = u;
+      }
+    }
+
+    return best?.id ?? null;
+  }
+
   pick(event) {
     const hits = this.stage.pick(event, [this.buildingMesh]);
     const hit = hits[0];
@@ -393,6 +422,8 @@ export class CityView {
     const target = new Vector3(0, 0, 0);
     const narrow = Math.max(1, 1.2 / Math.max(0.3, this.stage.camera.aspect));
     const position = new Vector3(size * 0.62, size * 0.78, size * 1.05).multiplyScalar(narrow);
+    // AR glasses: a model city of the chosen size, at the chosen distance.
+    if (this.stage.stereo) position.normalize().multiplyScalar(this.stage.arFit(size * 0.6));
     if (animate) this.stage.flyTo(target, position, 1000);
     else this.stage.jumpTo(target, position);
   }

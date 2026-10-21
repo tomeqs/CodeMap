@@ -13,7 +13,6 @@ import {
   modelViewMatrix,
   normalize,
   screenDPR,
-  screenSize,
   select,
   smoothstep,
   time,
@@ -22,7 +21,9 @@ import {
   vec2,
   vec3,
   vec4,
+  viewportSize,
 } from 'three/tsl';
+import { uploadAll, uploadRange } from './uploads.js';
 
 /** Smallest clip-space w kept in front of the camera when a link crosses it. */
 const NEAR_W = 0.05;
@@ -121,18 +122,13 @@ export class LinkMesh {
 
   /** Uploads everything (after setCount / a full restyle). */
   flush() {
-    for (const attr of [this.ends, this.colors, this.intensity, this.widths, this.flows, this.waves]) {
-      if (!attr) continue;
-      attr.clearUpdateRanges();
-      attr.needsUpdate = true;
-    }
+    for (const attr of [this.ends, this.colors, this.intensity, this.widths, this.flows, this.waves]) uploadAll(attr);
   }
 
   /** Uploads the style of a few links only (hover). */
   flushStyle(indices) {
     for (const [attr, size] of [[this.colors, 3], [this.intensity, 2], [this.widths, 1], [this.flows, 1]]) {
-      for (const i of indices) attr.addUpdateRange(i * size, size);
-      attr.needsUpdate = true;
+      for (const i of indices) uploadRange(attr, i * size, size);
     }
   }
 
@@ -194,7 +190,7 @@ function linkMaterial(store, { arc, segments }) {
   let b;
   let behind;
   let ends2d; // the link's two ends on screen (for its length)
-  const onScreen = (c) => c.xy.div(max(c.w, NEAR_W)).mul(screenSize);
+  const onScreen = (c) => c.xy.div(max(c.w, NEAR_W)).mul(viewportSize);
   if (!arc) {
     // Straight: clip the segment at the near plane, so a link reaching behind the camera stays drawn.
     const c0 = mvp.mul(vec4(p0, 1));
@@ -221,7 +217,7 @@ function linkMaterial(store, { arc, segments }) {
   const sb = onScreen(b);
   const direction = normalize(sb.sub(sa).add(vec2(1e-6, 0)));
   const normal = vec2(direction.y.negate(), direction.x);
-  const offset = normal.mul(side).mul(width).mul(screenDPR).div(screenSize).mul(2);
+  const offset = normal.mul(side).mul(width).mul(screenDPR).div(viewportSize).mul(2);
   material.vertexNode = select(behind, vec4(0, 0, 2, 1), vec4(clip.xy.add(offset.mul(clip.w)), clip.z, clip.w));
 
   const edge = float(1).sub(smoothstep(0.25, 1, abs(vSide)));

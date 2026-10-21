@@ -24,6 +24,7 @@ import { unitMaterial } from '../scene/materials.js';
 import { LinkMesh } from '../scene/link-mesh.js';
 import { GpuParticles, particlesPerLink } from '../scene/particles.js';
 import { Coronas } from '../scene/coronas.js';
+import { uploadAll, uploadRange } from '../scene/uploads.js';
 import { PositionStore } from '../gpu/position-store.js';
 import { dotTexture, ringTexture } from '../scene/textures.js';
 import { perf } from '../perf/stats.js';
@@ -465,11 +466,7 @@ export class GalaxyView {
     }
 
     this.store.upload();
-    for (const mesh of this.meshes) {
-      const scale = mesh.geometry.attributes.aScale;
-      scale.clearUpdateRanges();
-      scale.needsUpdate = true;
-    }
+    for (const mesh of this.meshes) uploadAll(mesh.geometry.attributes.aScale);
 
     this.coronas.flushRadii();
 
@@ -486,11 +483,7 @@ export class GalaxyView {
 
   recolor() {
     for (const u of this.units) this.setUnitColor(u);
-    for (const mesh of this.meshes) {
-      const colors = mesh.geometry.attributes.aColor;
-      colors.clearUpdateRanges();
-      colors.needsUpdate = true;
-    }
+    for (const mesh of this.meshes) uploadAll(mesh.geometry.attributes.aColor);
 
     this.coronas.flushColors();
     this.recolorLines();
@@ -641,10 +634,8 @@ export class GalaxyView {
       this.setScale(u);
       this.setUnitColor(u);
       const { aScale, aColor } = u.mesh.geometry.attributes;
-      aScale.addUpdateRange(u.slot, 1);
-      aScale.needsUpdate = true;
-      aColor.addUpdateRange(u.slot * 3, 3);
-      aColor.needsUpdate = true;
+      uploadRange(aScale, u.slot, 1);
+      uploadRange(aColor, u.slot * 3, 3);
       this.coronas.flushColors([u.index]);
       this.coronas.flushRadii([u.index]);
       if (this.highlight) continue;
@@ -758,6 +749,33 @@ export class GalaxyView {
    * The unit under the pointer: the nearest one whose projected sphere contains it (at least a few pixels
    * wide, so tiny far-away units can still be clicked). Positions come from the units, not the GPU.
    */
+  /**
+   * AR reticle: the unit closest in angle to a ray (the middle of the view), within its own apparent size
+   * (at least MIN_PICK_ANGLE). Positions on the CPU, one pass: fine for a click or a few times a second.
+   */
+  pickAlong({ origin, direction }) {
+    let best = null;
+    let bestScore = Infinity;
+    const minAngle = (MIN_PICK_ANGLE * Math.PI) / 180;
+    for (const u of this.units) {
+      const dx = u.x - origin.x;
+      const dy = u.y - origin.y;
+      const dz = u.z - origin.z;
+      const along = dx * direction.x + dy * direction.y + dz * direction.z;
+      if (along <= 0) continue;
+      const distance = Math.hypot(dx, dy, dz);
+      const angle = Math.acos(Math.min(1, along / distance));
+      const reach = Math.max(minAngle, Math.atan(u.r / distance));
+      const score = angle / reach;
+      if (score <= 1 && score < bestScore) {
+        best = u;
+        bestScore = score;
+      }
+    }
+
+    return best?.id ?? null;
+  }
+
   pick(event) {
     const canvas = this.stage.canvas;
     const rect = canvas.getBoundingClientRect();
@@ -811,12 +829,15 @@ export class GalaxyView {
     this.fitSphere(center, radius, animate, 0.95);
   }
 
-  /** Moves the camera so that a sphere fills the view (looking from `fitDirection`). */
+  /**
+   * Moves the camera so that a sphere fills the view (looking from `fitDirection`). AR glasses: the map is
+   * set at the chosen size and distance in the room instead (see Stage.arFit).
+   */
   fitSphere(center, radius, animate, tightness) {
     // Fit the narrower of the two fields of view (portrait phones are narrow, not short).
     const vFov = (this.stage.camera.fov * Math.PI) / 180;
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * this.stage.camera.aspect);
-    const distance = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * tightness;
+    const distance = this.stage.stereo ? this.stage.arFit(radius) : (radius / Math.sin(Math.min(vFov, hFov) / 2)) * tightness;
     const dir = (this.fitDirection ?? new Vector3(0.35, 0.45, 1)).clone().normalize();
     const position = center.clone().add(dir.multiplyScalar(distance));
     if (animate) this.stage.flyTo(center, position, 1100);
@@ -833,6 +854,9 @@ export class GalaxyView {
     this.links = [];
   }
 }
+
+/** The AR reticle reaches units within this angle (degrees) of the middle of the view, or their size. */
+const MIN_PICK_ANGLE = 1.5;
 
 /** The selection wave: hops per second, and how long the shock ring takes to spread and fade. */
 const WAVE_SPEED = 1.6;

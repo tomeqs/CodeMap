@@ -21,6 +21,7 @@ import { perf } from './perf/stats.js';
 import { GraphIndex } from './data/graph-index.js';
 import { checkWorker } from './layout/worker-layout.js';
 import { layoutKind } from './layout/engine.js';
+import { GlassesSession } from './xr/glasses.js';
 
 const params = new URLSearchParams(location.search);
 /**
@@ -50,6 +51,9 @@ class App {
     this.pathPending = false;
     this.statusLine = '';
     this.perf = perf;
+    /** AR glasses (side-by-side stereo); only in a browser, not in the editor's webview. */
+    this.ar = new GlassesSession(this);
+    this.hostIsEditor = !!host;
     this.stage.onFrame((dt) => this.view?.update(dt));
     this.stage.controls.addEventListener('start', () => {
       if (this.view) this.view.userMoved = true;
@@ -115,6 +119,12 @@ class App {
     this.activateView();
     this.sidebar.render();
     perf.time('rebuild', () => this.rebuild());
+    // ?ar=full|half: straight into AR glasses mode (bookmarks, tests).
+    const ar = params.get('ar');
+    if (!this.arRequested && (ar === 'full' || ar === 'half')) {
+      this.arRequested = true;
+      this.ar.start({ fullscreen: false, sbs: ar });
+    }
   }
 
   reload(doc) {
@@ -831,6 +841,7 @@ class App {
     if (this.liveStatus) lines.unshift('⟳ ' + this.liveStatus);
     else if (this.watching) lines.push('● live: watching for changes');
     this.hud.replaceChildren(...lines.map((l) => h('div', {}, l)));
+    if (this.ar.active) this.ar.update();
   }
 
   /** The GPU went away (driver reset, GPU switched, too much memory): the map cannot draw any more. */
@@ -849,6 +860,7 @@ class App {
   }
 
   toast(message, kind = 'warn') {
+    if (this.ar.active) return this.ar.message(message);
     const el = h('div', { class: `toast ${kind}`, role: 'status' }, message);
     document.getElementById('app').append(el);
     setTimeout(() => el.remove(), 4500);
@@ -865,9 +877,11 @@ class App {
       this.handleClick(e);
     });
     canvas.addEventListener('dblclick', (e) => {
+      if (this.ar.active) return this.ar.drillAtReticle();
       const id = this.view?.pick(e);
       if (id) this.drill(id);
     });
+    document.getElementById('btn-ar').addEventListener('click', () => this.model && this.ar.openPanel());
 
     let scheduled = false;
     let last = null;
@@ -957,7 +971,13 @@ class App {
 
   handleClick(e) {
     if (!this.view) return;
-    const id = this.view.pick(e);
+    // AR glasses: the mouse pointer is hidden; the reticle in the middle of the view picks.
+    if (this.ar.active) return this.ar.selectAtReticle();
+    this.handleClickOn(this.view.pick(e), e);
+  }
+
+  /** A click on the unit `id` (null: on nothing): select it, or (Shift / path pending) show the path to it. */
+  handleClickOn(id, e = {}) {
     if (!id) {
       if (!this.pathPending) this.select(null);
       return;
@@ -972,6 +992,7 @@ class App {
   }
 
   updateHover(e) {
+    if (this.ar.active) return; // the reticle hovers
     if (!this.view || e.buttons) {
       this.tooltip.classList.add('hidden');
       return;

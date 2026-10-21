@@ -329,6 +329,39 @@ albo użyć parametru `?data=url.json`.
   Wybór zostaje w przeglądarce; `?motion=living|calm|off` wymusza tryb.
 * Natywne renderery (Metal / Direct3D 12 poza przeglądarką) to osobny temat: [tomeqs/CodeMap#6](https://github.com/tomeqs/CodeMap/issues/6).
 
+### Okulary AR (XREAL One / One Pro)
+
+Mapa może unosić się w pokoju w okularach AR, które przyjmują obraz 3D side-by-side przez USB-C.
+Działa w przeglądarce (`codemap ui`, plik HTML z `codemap -f html`, `npm run dev`), nie w panelu VS Code.
+
+1. Podłącz okulary do komputera (np. Maca) jako rozszerzony ekran.
+2. Włącz 3D w okularach: dwuklik przycisku X → *Spatial Screen* → *3D Mode* → *Full SBS*.
+   Ekran okularów ma wtedy 3840×1080: lewa połowa trafia do lewego oka, prawa do prawego.
+3. Opcjonalnie ustaw ekran na *Anchor*, żeby mapa została w miejscu, gdy obracasz głowę
+   (śledzenie 3DoF robią same okulary).
+4. W mapie kliknij **AR** (albo *Data → Graphics → View in AR glasses…*).
+5. W Chrome lub Edge przycisk *Find the glasses screen* znajdzie okulary i Start otworzy mapę na pełnym ekranie właśnie tam.
+   W innych przeglądarkach najpierw przeciągnij okno na okulary.
+
+Każde oko dostaje własną kamerę. Czarne tło jest w okularach przezroczyste, a mapa ma rzeczywisty rozmiar
+(domyślnie 1,2 m, 1,8 m przed tobą). Etykiety i mały HUD rysują się osobno dla każdego oka.
+Kursor myszy (widoczny tylko w jednym oku) zastępuje pierścień na środku widoku:
+
+| Klawisz | Działanie |
+|---|---|
+| klik / Spacja / Enter | zaznacza to, na co patrzy pierścień |
+| przeciąganie, strzałki | obrót mapy |
+| kółko, `+` / `−` | bliżej / dalej |
+| `[` / `]` | mniejsza / większa mapa |
+| `R` | wyśrodkowanie |
+| `G` `C` `L` `D` `E`, `1`–`4`, `Z` | widoki i poziomy jak zwykle |
+| `Esc` | odznacza, drugi raz wychodzi z AR |
+
+W oknie startowym są: profil okularów (pole widzenia: One Pro 57°, One 50°), Full lub Half SBS,
+rozstaw oczu (IPD), odległość i rozmiar mapy oraz płaszczyzna ekranu okularów (tam, gdzie oba oczy widzą to samo;
+zmniejsz ją, gdy mapa się dwoi). Ustawienia zostają w przeglądarce. `?ar=full` lub `?ar=half` uruchamia tryb od razu.
+Pełne 6DoF (chodzenie wokół mapy) wymaga kamery XREAL Eye i natywnego SDK XREAL na Androida, więc tu go nie ma.
+
 ## Struktura repozytorium
 
 ```

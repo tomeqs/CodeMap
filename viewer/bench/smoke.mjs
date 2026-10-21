@@ -144,6 +144,19 @@ try {
       assert.ok(after < before * 0.7, `brightness of an unrelated node: ${before} before, ${after} after selecting`);
     });
 
+    await test('a hover right after a recolour keeps the full colour upload', async () => {
+      // three uploads only the update ranges when there are any: a hover range must not cut a pending full upload.
+      const ranges = await page.evaluate(() => {
+        const view = window.codemap.view;
+        view.recolor();
+        view.setHovered(view.units[1].id);
+        const pending = view.units[0].mesh.geometry.attributes.aColor.updateRanges.length;
+        view.setHovered(null);
+        return pending;
+      });
+      assert.equal(ranges, 0, 'the whole colour buffer is still due for upload');
+    });
+
     await test('links in focus flow (moving dashes), also with the particles off', async () => {
       const result = await page.evaluate(async () => {
         const app = window.codemap;
@@ -395,6 +408,83 @@ try {
       });
     }
     await large.page.close();
+
+    // AR glasses: side-by-side stereo at the glasses' 3D-mode resolution.
+    const ar = await open(browser, query('/sample.codemap.json') + '&ar=full', { width: 3840, height: 1080 });
+    await test('AR glasses mode draws the map once per eye, with depth', async () => {
+      await settled(ar.page, 120000);
+      await ar.page.waitForFunction(() => !window.codemap.view.store?.introRunning, null, { timeout: 60000 });
+      await drained(ar.page);
+      const state = await ar.page.evaluate(() => {
+        const app = window.codemap;
+        const visible = (selector) => [...document.querySelectorAll(selector)].filter((el) => el.style.display !== 'none').length;
+        return {
+          active: app.ar.active,
+          sbs: app.stage.stereo?.sbs,
+          chromeHidden: getComputedStyle(document.getElementById('topbar')).display === 'none',
+          labels: [visible('#labels .eye-left .label'), visible('#labels .eye-right .label')],
+          reticles: document.querySelectorAll('#ar-hud .ar-reticle').length,
+          // The HUD sits at the map's depth: each eye's copy moved towards the nose.
+          hud: [...document.querySelectorAll('#ar-hud .ar-eye-inner')].map((el) => Number(/translateX\((-?[\d.]+)px\)/.exec(el.style.transform)?.[1] ?? 0)),
+        };
+      });
+      assert.ok(state.active && state.sbs === 'full', 'stereo is on');
+      assert.ok(state.chromeHidden, 'the normal UI is hidden (it would be split between the eyes)');
+      assert.equal(state.reticles, 2, 'a reticle per eye');
+      assert.ok(state.hud[0] > 0 && state.hud[1] === -state.hud[0], `HUD shifted to the map's depth: ${state.hud}`);
+      assert.ok(state.labels[0] > 0 && state.labels[0] === state.labels[1], `labels per eye: ${state.labels}`);
+      const halves = await eyeHalves(ar.page);
+      assert.ok(halves.left > 400 && halves.right > 400, `both eyes show the map: ${halves.left} / ${halves.right} lit pixels`);
+      assert.ok(halves.left / halves.right > 0.6 && halves.left / halves.right < 1.6, `similar eyes: ${halves.left} / ${halves.right}`);
+      assert.ok(halves.differing > 100, `the eyes differ (disparity): ${halves.differing} pixels`);
+    });
+    await test('AR: the reticle selects what is in the middle of the view; Esc goes back', async () => {
+      const target = await ar.page.evaluate(() => {
+        const app = window.codemap;
+        const stage = app.stage;
+        const unit = [...app.view.units].sort((a, b) => b.r - a.r)[0];
+        const position = app.view.positionOf(unit.id);
+        stage.controls.target.copy(position);
+        stage.camera.lookAt(position);
+        stage.invalidate();
+        return unit.id;
+      });
+      await ar.page.keyboard.press('Space');
+      const selected = await ar.page.evaluate(() => ({ id: window.codemap.selection?.nodeId, wave: !!window.codemap.view.wave }));
+      assert.equal(selected.id, target, 'Space selects the unit under the reticle');
+      assert.ok(selected.wave, 'the selection wave runs');
+      await ar.page.keyboard.press('Escape'); // clears the selection
+      await ar.page.keyboard.press('Escape'); // leaves AR
+      const after = await ar.page.evaluate(() => ({
+        active: window.codemap.ar.active,
+        stereo: window.codemap.stage.stereo,
+        fov: window.codemap.stage.camera.fov,
+        chrome: getComputedStyle(document.getElementById('topbar')).display !== 'none',
+      }));
+      assert.ok(!after.active && !after.stereo, 'AR is off');
+      assert.equal(after.fov, 55, 'the normal field of view is back');
+      assert.ok(after.chrome, 'the normal UI is back');
+      assert.deepEqual(ar.errors, []);
+    });
+    await ar.page.close();
+
+    const half = await open(browser, query('/sample.codemap.json') + '&ar=half', { width: 1920, height: 1080 });
+    await test('AR glasses in half side-by-side: squeezed eyes', async () => {
+      await settled(half.page, 120000);
+      await half.page.waitForFunction(() => !window.codemap.view.store?.introRunning, null, { timeout: 60000 });
+      await drained(half.page);
+      const state = await half.page.evaluate(() => {
+        const label = [...document.querySelectorAll('#labels .eye-left .label')].find((el) => el.style.display !== 'none');
+        return { sbs: window.codemap.stage.stereo?.sbs, aspect: window.codemap.stage.camera.aspect, squeezed: !!label?.style.transform.includes('scaleX(0.5)') };
+      });
+      assert.equal(state.sbs, 'half');
+      assert.ok(Math.abs(state.aspect - 32 / 9) < 0.01, `two 16:9 eyes: aspect ${state.aspect}`);
+      assert.ok(state.squeezed, 'labels are squeezed (the glasses stretch them back)');
+      const halves = await eyeHalves(half.page);
+      assert.ok(halves.left > 200 && halves.right > 200, `both eyes show the map: ${halves.left} / ${halves.right}`);
+      assert.deepEqual(half.errors, []);
+    });
+    await half.page.close();
   }
 } finally {
   await browser.close();
@@ -419,6 +509,37 @@ async function drained(page, timeout = 60000) {
     const stage = window.codemap.stage;
     return !stage.raf && !stage.ambientTimer && !stage.dirty && stage.trailingFrames === 0 && !stage.flight;
   }, null, { timeout, polling: 50 });
+}
+
+/** Side by side: lit pixels in each half of the canvas, and how many pixels differ between the halves. */
+async function eyeHalves(page) {
+  const shot = await page.locator('#stage canvas').screenshot();
+  return page.evaluate(async (base64) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${base64}`;
+    await image.decode();
+    const canvas = new OffscreenCanvas(image.width, image.height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0);
+    const { data, width, height } = ctx.getImageData(0, 0, image.width, image.height);
+    const half = Math.floor(width / 2);
+    let left = 0;
+    let right = 0;
+    let differing = 0;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < half; x++) {
+        const a = (y * width + x) * 4;
+        const b = (y * width + x + half) * 4;
+        const la = data[a] + data[a + 1] + data[a + 2];
+        const lb = data[b] + data[b + 1] + data[b + 2];
+        if (la > 120) left++;
+        if (lb > 120) right++;
+        if (Math.abs(la - lb) > 90) differing++;
+      }
+    }
+
+    return { left, right, differing };
+  }, shot.toString('base64'));
 }
 
 /** Pixels of the canvas that are clearly brighter than the background. */

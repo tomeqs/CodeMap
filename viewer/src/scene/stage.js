@@ -1,6 +1,7 @@
 import { ACESFilmicToneMapping, Color, FogExp2, PCFSoftShadowMap, PerspectiveCamera, PostProcessing, Raycaster, Scene, Vector2, Vector3 } from 'three/webgpu';
 import { pass } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+import { stereoPass } from 'three/addons/tsl/display/StereoPassNode.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { beginFrame, createRenderer } from '../gpu/renderer.js';
 import { Sky } from './sky.js';
@@ -60,6 +61,11 @@ export class Stage {
     this.ambientSleeping = false;
     this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
     this.motionChoice = storedMotion();
+    /** Side-by-side stereo for AR glasses (see setStereo), else null. */
+    this.stereo = null;
+    /** World units per metre in stereo: set by the views' fit, so eye separation and depth are physical. */
+    this.unitsPerMeter = 100;
+    this.atmosphere = { background: '#04060c', fog: 0, stars: true, nebula: 1 };
     this.controls.addEventListener('change', () => this.invalidate());
     const input = () => this.onInput();
     for (const type of ['pointerdown', 'pointermove', 'wheel']) this.canvas.addEventListener(type, input, { passive: true });
@@ -89,10 +95,12 @@ export class Stage {
 
     // The scene in an HDR, multisampled target; bloom on top; tone mapping and sRGB at the end.
     this.post = new PostProcessing(renderer);
-    const scenePass = pass(this.scene, this.camera, { samples: software ? 0 : 4 });
+    this.samples = software ? 0 : 4;
+    const scenePass = pass(this.scene, this.camera, { samples: this.samples });
     const color = scenePass.getTextureNode('output');
     this.bloom = bloom(color);
-    this.post.outputNode = color.add(this.bloom);
+    this.monoOutput = color.add(this.bloom);
+    this.post.outputNode = this.monoOutput;
     const { strength, radius, threshold } = this.bloomSettings;
     this.setBloom(strength, radius, threshold);
     this.resize();
@@ -108,7 +116,9 @@ export class Stage {
   resize() {
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
-    this.camera.aspect = w / h;
+    // In stereo the camera's aspect is two eyes': half the canvas each, or 16:9 each for half SBS (drawn
+    // squeezed, the glasses stretch it back).
+    this.camera.aspect = this.stereo ? 2 * (this.stereo.sbs === 'half' ? 16 / 9 : w / 2 / h) : w / h;
     this.camera.updateProjectionMatrix();
     this.renderer?.setSize(w, h);
     this.width = w;
@@ -122,20 +132,92 @@ export class Stage {
    */
   setBloom(strength, radius = 0.55, threshold = 0.18) {
     this.bloomSettings = { strength, radius, threshold };
-    if (this.bloom) {
-      this.bloom.strength.value = strength * BLOOM_STRENGTH;
-      this.bloom.radius.value = Math.min(1, radius + BLOOM_RADIUS);
-      this.bloom.threshold.value = threshold;
+    for (const node of [this.bloom, this.stereoBloom]) {
+      if (!node) continue;
+      node.strength.value = strength * BLOOM_STRENGTH;
+      node.radius.value = Math.min(1, radius + BLOOM_RADIUS);
+      node.threshold.value = threshold;
     }
 
     this.invalidate();
   }
 
-  /** Background colour, fog, the starry sky and how strong its nebulae are (0..1). */
+  /**
+   * Background colour, fog, the starry sky and how strong its nebulae are (0..1). In stereo (AR glasses)
+   * the background stays black – black is see-through in the glasses – and the sky follows the AR setting.
+   */
   setAtmosphere({ background = '#04060c', fog = 0, stars = true, nebula = 1 } = {}) {
-    this.scene.background = new Color(background);
-    this.scene.fog = fog > 0 ? new FogExp2(background, fog) : null;
-    this.sky.set({ stars, nebula });
+    this.atmosphere = { background, fog, stars, nebula };
+    const ar = this.stereo;
+    // In stereo no scene background: a colour background clears the whole target for each eye's render, so
+    // the right eye would wipe the left. The stereo pass clears once, to the renderer's black.
+    this.scene.background = ar ? null : new Color(background);
+    this.scene.fog = !ar && fog > 0 ? new FogExp2(background, fog) : null;
+    this.sky.set(ar ? { stars: ar.stars, nebula: 0 } : { stars, nebula });
+    this.invalidate();
+  }
+
+  /**
+   * Side-by-side stereo for AR glasses, or null for the normal view. options: { sbs: 'full' | 'half', fovY
+   * (degrees per eye, vertical), ipd and convergence (metres: eye distance, and where both eyes see the same
+   * point: the glasses' screen plane), stars (keep the sky) }. Each eye gets its own camera, half the frame.
+   */
+  setStereo(options) {
+    if (!this.post) return;
+    if (options) {
+      if (!this.stereo) this.monoFov = this.camera.fov;
+      this.stereo = { ...options };
+      if (!this.stereoPass) {
+        this.stereoPass = stereoPass(this.scene, this.camera);
+        this.stereoPass.options.samples = this.samples;
+        const color = this.stereoPass.getTextureNode('output');
+        this.stereoBloom = bloom(color);
+        this.stereoOutput = color.add(this.stereoBloom);
+        const { strength, radius, threshold } = this.bloomSettings;
+        this.setBloom(strength, radius, threshold);
+      }
+
+      this.stereoPass.stereo.cameraL.coordinateSystem = this.renderer.coordinateSystem;
+      this.stereoPass.stereo.cameraR.coordinateSystem = this.renderer.coordinateSystem;
+      this.camera.fov = options.fovY;
+      this.post.outputNode = this.stereoOutput;
+    } else {
+      if (!this.stereo) return;
+      this.stereo = null;
+      this.camera.fov = this.monoFov ?? 55;
+      this.post.outputNode = this.monoOutput;
+    }
+
+    this.post.needsUpdate = true;
+    this.setAtmosphere(this.atmosphere);
+    this.resize();
+    this.updateEyes();
+  }
+
+  /** Stereo: the eye cameras for the current camera (separation and convergence in world units). */
+  updateEyes() {
+    if (!this.stereo) return;
+    const eyes = this.stereoPass.stereo;
+    eyes.eyeSep = this.stereo.ipd * this.unitsPerMeter;
+    this.camera.focus = this.stereo.convergence * this.unitsPerMeter;
+    this.camera.updateMatrixWorld();
+    eyes.update(this.camera);
+  }
+
+  /**
+   * Stereo: sets the scale so that a map of this radius is `size` metres across in the room, and returns how
+   * far (world units) the camera goes to see it `distance` metres away.
+   */
+  arFit(radius) {
+    const { size, distance } = this.stereo;
+    this.setUnitsPerMeter((2 * radius) / size);
+    return distance * this.unitsPerMeter;
+  }
+
+  /** World units per metre (stereo): how big the map looks in the room. */
+  setUnitsPerMeter(units) {
+    this.unitsPerMeter = units;
+    this.updateEyes();
     this.invalidate();
   }
 
@@ -203,6 +285,7 @@ export class Stage {
     this.updateFlight(now);
     // OrbitControls reports a change while damping (and auto-rotating); its 'change' event also invalidates.
     let busy = this.controls.update() || flying;
+    this.updateEyes(); // labels are placed per eye
     let ambient = false;
     const draw = this.dirty;
     this.dirty = false;
@@ -288,5 +371,20 @@ export class Stage {
     out.copy(position).project(this.camera);
     if (out.z > 1 || out.z < -1) return null;
     return { x: (out.x * 0.5 + 0.5) * this.width, y: (-out.y * 0.5 + 0.5) * this.height, depth: out.z };
+  }
+
+  /** Stereo: projects a world position into one eye's half of the canvas (CSS pixels, x within the half). */
+  projectEye(position, eye, out = new Vector3()) {
+    const eyes = this.stereoPass.stereo;
+    out.copy(position).project(eye === 'left' ? eyes.cameraL : eyes.cameraR);
+    if (out.z > 1 || out.z < -1) return null;
+    return { x: (out.x * 0.5 + 0.5) * (this.width / 2), y: (-out.y * 0.5 + 0.5) * this.height, depth: out.z };
+  }
+
+  /** The ray through the middle of the view (the AR reticle): from the camera, along its direction. */
+  centerRay() {
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    return { origin: this.camera.position.clone(), direction };
   }
 }

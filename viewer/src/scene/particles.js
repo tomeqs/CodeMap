@@ -1,5 +1,5 @@
 import { AdditiveBlending, InstancedBufferAttribute, PointsNodeMaterial, Sprite } from 'three/webgpu';
-import { atan, attribute, cameraProjectionMatrix, fract, max, modelViewMatrix, screenSize, sin, texture, time, uniform, uv, vec4 } from 'three/tsl';
+import { atan, attribute, cameraProjectionMatrix, fract, max, modelViewMatrix, sin, texture, time, uniform, uv, vec4, viewportSize } from 'three/tsl';
 import { linkPoint } from './link-mesh.js';
 import { cometTexture } from './textures.js';
 
@@ -35,7 +35,7 @@ export class GpuParticles {
     const mvp = cameraProjectionMatrix.mul(modelViewMatrix);
     const behind = mvp.mul(vec4(linkPoint(p0, p1, max(t.sub(0.02), 0), arc), 1));
     const ahead = mvp.mul(vec4(head, 1));
-    const direction = ahead.xy.div(max(ahead.w, 0.05)).sub(behind.xy.div(max(behind.w, 0.05))).mul(screenSize);
+    const direction = ahead.xy.div(max(ahead.w, 0.05)).sub(behind.xy.div(max(behind.w, 0.05))).mul(viewportSize);
     material.rotationNode = atan(direction.y, direction.x);
     const fade = sin(t.mul(Math.PI));
     material.colorNode = texture(cometTexture(TAIL), uv()).mul(vec4(attribute('aColor', 'vec3').mul(fade), 1));

@@ -1,6 +1,7 @@
 import { AdditiveBlending, InstancedBufferAttribute, PointsNodeMaterial, Sprite } from 'three/webgpu';
 import { attribute, exp, float, hash, instanceIndex, select, sin, texture, time, uniform, uv, vec4 } from 'three/tsl';
 import { glowTexture } from './textures.js';
+import { uploadAll, uploadRange } from './uploads.js';
 
 /** Corona diameter in unit radii (world units). */
 const SIZE = 6;
@@ -96,8 +97,6 @@ export class Coronas {
 }
 
 function flush(attr, size, indices) {
-  if (!attr) return;
-  if (indices) for (const i of indices) attr.addUpdateRange(i * size, size);
-  else attr.clearUpdateRanges();
-  attr.needsUpdate = true;
+  if (indices) for (const i of indices) uploadRange(attr, i * size, size);
+  else uploadAll(attr);
 }
