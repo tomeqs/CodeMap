@@ -484,3 +484,4 @@ $RECYCLE.BIN/
 # CodeMap local build outputs
 dist/
 nupkg/
+tests/CodeMap.Tests/Golden/*.actual.json
