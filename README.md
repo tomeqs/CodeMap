@@ -367,7 +367,9 @@ Pełne 6DoF (chodzenie wokół mapy) wymaga kamery XREAL Eye i natywnego SDK XRE
 ## Struktura repozytorium
 
 ```
-src/CodeMap.Core      analizator (Roslyn), model grafu, metryki, eksportery
+src/CodeMap.Core      analizator, model grafu, metryki, eksportery
+  Languages/          języki: ILanguageAnalyzer (każdy język zwraca surowy graf), rejestr, C# (Roslyn)
+  Pipeline/           wspólna część analizy: wybór języków, łączenie ich grafów w jedną mapę, metryki, git, statystyki
   Loading/            .sln/.slnx/.slnf/.csproj → kompilacje Roslyn (bez MSBuild i bez budowania)
   Analysis/           deklaracje, walker referencji, metryki, cykle, warstwy, DI, git (churn, change coupling), tagi
   Export/             JSON, DGML, GraphML, Cypher, Markdown, HTML
@@ -375,7 +377,7 @@ src/CodeMap.Server    lokalna aplikacja: API (ASP.NET Core), przeglądarka folde
 src/CodeMap.Cli       narzędzie `codemap` (dotnet tool albo samodzielny plik wykonywalny), osadza zbudowany viewer
 vscode/               rozszerzenie VS Code: mapa w webview, przejścia kod ↔ mapa, odświeżanie na żywo
 viewer/               mapa 3D: Vite + three.js + d3-force-3d + d3-hierarchy, budowana do jednego pliku HTML
-tests/CodeMap.Tests   testy xUnit analizatora i eksporterów
+tests/CodeMap.Tests   testy xUnit analizatora i eksporterów; Golden/ to zapisana mapa samples/Shop
 samples/Shop          przykładowa solucja (DDD, DI, zdarzenia, celowy cykl i martwy kod)
 docs/                 specyfikacja formatu i JSON Schema
 ```

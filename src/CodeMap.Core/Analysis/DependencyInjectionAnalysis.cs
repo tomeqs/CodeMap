@@ -35,33 +35,21 @@ internal static class DependencyInjectionAnalysis
 
     private sealed record Registration(ServiceRegistration Public, string Ident);
 
-    public static void Compute(CodeGraph graph, GraphBuilder builder)
+    /// <summary>
+    /// Works from what the language put in <c>analysis.di</c> (registrations, and the services every type's
+    /// constructor asks for) and replaces it with the result: who gets what with which lifetime, and the issues.
+    /// </summary>
+    public static void Compute(CodeGraph graph)
     {
+        var setup = graph.Analysis.Di;
+        graph.Analysis.Di = null;
         var byId = graph.Nodes.ToDictionary(n => n.Id, StringComparer.Ordinal);
 
-        string? Resolve(string ident) => ident.StartsWith("ext:", StringComparison.Ordinal) ? ident : builder.IdOf(ident);
+        static string Ident(string service, bool external) => external ? "ext:" + service : service;
 
-        var registrations = new List<Registration>();
-        foreach (var draft in builder.Registrations
-                     .OrderBy(r => r.Location.File, StringComparer.Ordinal)
-                     .ThenBy(r => r.Location.Line)
-                     .ThenBy(r => r.ServiceIdent, StringComparer.Ordinal))
-        {
-            var service = Resolve(draft.ServiceIdent);
-            if (service == null) continue;
-            var external = service.StartsWith("ext:", StringComparison.Ordinal);
-            registrations.Add(new Registration(new ServiceRegistration
-            {
-                Service = external ? service[4..] : service,
-                External = external,
-                Implementation = builder.IdOf(draft.ImplementationKey),
-                Lifetime = draft.Lifetime,
-                Kind = draft.Kind,
-                Key = draft.Key,
-                RegisteredIn = builder.IdOf(draft.SourceKey),
-                Location = draft.Location,
-            }, service));
-        }
+        var registrations = (setup?.Registrations ?? new List<ServiceRegistration>())
+            .Select(r => new Registration(r, Ident(r.Service, r.External)))
+            .ToList();
 
         // Who gets constructed by the container, and for how long it lives.
         var consumers = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -74,7 +62,7 @@ internal static class DependencyInjectionAnalysis
         }
 
         // Types the framework activates without a registration.
-        foreach (var node in graph.Nodes.Where(n => NodeKinds.IsType(n.Kind) && !n.External && n.Modifiers?.Contains("abstract") != true))
+        foreach (var node in graph.Nodes.Where(n => NodeLevels.IsType(n) && !n.External && n.Modifiers?.Contains("abstract") != true))
         {
             if (consumers.ContainsKey(node.Id)) continue;
             if (node.HasTag(Tags.Controller) || node.HasTag(Tags.Hub)) consumers[node.Id] = Transient; // one per request
@@ -84,11 +72,9 @@ internal static class DependencyInjectionAnalysis
         if (registrations.Count == 0 && consumers.Count == 0) return;
 
         var byService = registrations.GroupBy(r => r.Ident).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
-        var dependenciesById = new Dictionary<string, List<GraphBuilder.DependencyDraft>>(StringComparer.Ordinal);
-        foreach (var (key, dependencies) in builder.ConstructorDependencies)
-        {
-            if (builder.IdOf(key) is { } id) dependenciesById[id] = dependencies;
-        }
+        var dependenciesById = (setup?.Dependencies ?? new List<DiDependency>())
+            .GroupBy(d => d.Consumer, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
 
         var di = new DiAnalysis { Registrations = registrations.Select(r => r.Public).ToList() };
         string Name(string id) => byId.TryGetValue(id, out var n) ? n.Name : id.Split('.', ':').Last();
@@ -98,10 +84,9 @@ internal static class DependencyInjectionAnalysis
             if (!dependenciesById.TryGetValue(consumer, out var dependencies)) continue;
             foreach (var dependency in dependencies)
             {
-                var ident = Resolve(dependency.ServiceIdent);
-                if (ident == null) continue;
                 var external = dependency.External;
-                var serviceName = external ? ident[4..] : ident;
+                var serviceName = dependency.Service;
+                var ident = Ident(serviceName, external);
                 var result = new DiDependency
                 {
                     Consumer = consumer,

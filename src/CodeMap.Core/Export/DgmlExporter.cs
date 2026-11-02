@@ -40,7 +40,7 @@ public static class DgmlExporter
     public static XDocument Export(CodeGraph graph)
     {
         var included = graph.Nodes
-            .Where(n => n.Kind is NodeKinds.Project or NodeKinds.Namespace or NodeKinds.Package || NodeKinds.IsType(n.Kind))
+            .Where(n => n.Kind is NodeKinds.Project or NodeKinds.Namespace or NodeKinds.Package || NodeLevels.IsType(n))
             .ToList();
         var ids = included.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
         var parents = included.Where(n => n.Parent != null).Select(n => n.Parent!).ToHashSet(StringComparer.Ordinal);

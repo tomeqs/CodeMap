@@ -59,7 +59,7 @@ public static class MarkdownReport
         WriteRanking(sb, "Most complex types", graph.Analysis.MostComplex, Name, byId, "complexity", "loc", "members");
         WriteRanking(sb, "Most depended-upon types (afferent coupling)", graph.Analysis.MostDepended, Name, byId, "ca", "ce", "instability");
 
-        var tagged = graph.Nodes.Where(n => n.Tags != null && NodeKinds.IsType(n.Kind) && !n.External)
+        var tagged = graph.Nodes.Where(n => n.Tags != null && NodeLevels.IsType(n) && !n.External)
             .SelectMany(n => n.Tags!.Select(t => (Tag: t, Node: n)))
             .GroupBy(x => x.Tag)
             .Where(g => g.Key is not (Tags.Unused or Tags.InCycle or Tags.Hotspot))
