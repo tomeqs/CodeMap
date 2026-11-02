@@ -1,0 +1,126 @@
+{
+  "protocol": 1,
+  "id": "typescript",
+  "idPrefix": "ts:",
+  "name": "TypeScript",
+  "version": "0.1.0",
+  "command": [
+    "node",
+    "--max-old-space-size=8192",
+    "./src/cli.mjs"
+  ],
+  "runtime": {
+    "name": "node",
+    "minVersion": 18,
+    "envVar": "CODEMAP_NODE",
+    "help": "TypeScript and JavaScript need Node.js 18 or newer (https://nodejs.org); or set CODEMAP_NODE to the node executable."
+  },
+  "inputs": "a package.json, tsconfig.json, .ts or .js file",
+  "markers": "package.json, tsconfig.json or .ts files",
+  "detect": {
+    "markers": [
+      "package.json",
+      "tsconfig.json",
+      "jsconfig.json"
+    ],
+    "sources": [
+      ".ts",
+      ".tsx",
+      ".mts",
+      ".cts",
+      ".js",
+      ".jsx",
+      ".mjs",
+      ".cjs"
+    ],
+    "inputs": [
+      "package.json",
+      "tsconfig.json",
+      "tsconfig.*.json",
+      "jsconfig.json",
+      "*.ts",
+      "*.tsx",
+      "*.mts",
+      "*.cts",
+      "*.js",
+      "*.jsx",
+      "*.mjs",
+      "*.cjs"
+    ],
+    "ignoreDirs": [
+      "node_modules",
+      "dist",
+      "build",
+      "out",
+      "coverage",
+      ".next",
+      ".nuxt",
+      ".angular",
+      ".turbo",
+      ".svelte-kit",
+      "bin",
+      "obj",
+      "wwwroot",
+      "bower_components",
+      "jspm_packages"
+    ]
+  },
+  "display": {
+    "levels": {
+      "project": [
+        "Package",
+        "Packages"
+      ],
+      "namespace": [
+        "Folder",
+        "Folders"
+      ],
+      "type": [
+        "File",
+        "Files"
+      ],
+      "member": [
+        "Declaration",
+        "Declarations"
+      ]
+    },
+    "external": "npm packages"
+  },
+  "unused": {
+    "memberAccessibility": [
+      "private"
+    ],
+    "skipAttributed": true,
+    "skipTags": [
+      "entrypoint",
+      "test",
+      "route"
+    ],
+    "skipMemberKinds": [
+      "constructor"
+    ],
+    "skipModifiers": [
+      "override",
+      "declare"
+    ],
+    "skipParentKinds": [
+      "interface"
+    ],
+    "skipParentTags": [
+      "test"
+    ],
+    "skipTypeTags": [
+      "entrypoint",
+      "controller",
+      "module",
+      "component",
+      "generated",
+      "barrel",
+      "config"
+    ],
+    "skipNames": [
+      "(top-level)",
+      "default"
+    ]
+  }
+}

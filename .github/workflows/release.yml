@@ -24,7 +24,14 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: TypeScript plugin
+        run: npm ci --prefix analyzers/typescript && npm test --prefix analyzers/typescript
       - run: dotnet test -c Release
+        env:
+          CODEMAP_REQUIRE_NODE: '1' 
 
   build:
     needs: test
@@ -61,6 +68,12 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           if [[ "$GITHUB_REF_TYPE" == "tag" || -n "$INPUT_VERSION" ]]; then echo "release=true" >> "$GITHUB_OUTPUT"; else echo "release=false" >> "$GITHUB_OUTPUT"; fi
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: TypeScript plugin (shipped next to the executable, with its compiler)
+        run: npm ci --prefix analyzers/typescript
+
       - name: Publish single-file executable
         run: dotnet publish src/CodeMap.Cli -c Release -r ${{ matrix.rid }} -p:Version=${{ steps.version.outputs.version }} -p:DebugType=none -o publish
 
@@ -72,12 +85,14 @@ jobs:
           "$exe" samples/Shop/Shop.sln -o smoke -f json,html -q
           test -s smoke/Shop.codemap.json
           test -s smoke/Shop.html
+          "$exe" analyzers/typescript/test/fixtures/basic -o smoke-ts -f json -q
+          grep -q '"typescript"' smoke-ts/basic.codemap.json
 
       - name: Archive
         run: |
           name="codemap-${{ steps.version.outputs.version }}-${{ matrix.rid }}"
           cd publish
-          if [[ "${{ matrix.rid }}" == win-* ]]; then 7z a -tzip "../$name.zip" codemap.exe; else tar -czf "../$name.tar.gz" codemap; fi
+          if [[ "${{ matrix.rid }}" == win-* ]]; then 7z a -tzip "../$name.zip" codemap.exe plugins; else tar -czf "../$name.tar.gz" codemap plugins; fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -157,8 +172,13 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           if [[ "$GITHUB_REF_TYPE" == "tag" || -n "$INPUT_VERSION" ]]; then echo "release=true" >> "$GITHUB_OUTPUT"; else echo "release=false" >> "$GITHUB_OUTPUT"; fi
 
-      - name: Pack dotnet tool
-        run: dotnet pack src/CodeMap.Cli -c Release -p:Version=${{ steps.version.outputs.version }} -o dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Pack dotnet tool (with the TypeScript plugin)
+        run: |
+          npm ci --prefix analyzers/typescript
+          dotnet pack src/CodeMap.Cli -c Release -p:Version=${{ steps.version.outputs.version }} -o dist
 
       - uses: actions/download-artifact@v4
         with:

@@ -11,7 +11,7 @@
     <ApplicationIcon>Assets\codemap.ico</ApplicationIcon>
     <Product>CodeMap</Product>
     <PackageId>CodeMap.Tool</PackageId>
-    <Description>Maps C# solutions into a relationship graph (JSON, DGML, GraphML, Cypher) and an interactive 3D map.</Description>
+    <Description>Maps C# solutions (and TypeScript / JavaScript, with Node.js) into a relationship graph (JSON, DGML, GraphML, Cypher) and an interactive 3D map.</Description>
   </PropertyGroup>
 
   <!-- `dotnet publish -r <rid>` (win-x64, linux-x64, osx-arm64...) produces one executable that runs without .NET installed. -->
@@ -28,6 +28,29 @@
     <ProjectReference Include="..\CodeMap.Core\CodeMap.Core.csproj" />
     <ProjectReference Include="..\CodeMap.Server\CodeMap.Server.csproj" />
   </ItemGroup>
+
+  <!--
+    The TypeScript / JavaScript language plugin (analyzers/typescript) goes next to the program, in plugins/typescript,
+    with the TypeScript compiler it runs on (vendor/typescript); never inside a single-file executable, Node.js runs it.
+    Needs `npm ci` in analyzers/typescript first; without it CodeMap is built for C# alone.
+  -->
+  <PropertyGroup>
+    <TypeScriptPlugin>$(MSBuildThisFileDirectory)..\..\analyzers\typescript\</TypeScriptPlugin>
+    <TypeScriptCompiler>$(TypeScriptPlugin)node_modules\typescript\</TypeScriptCompiler>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(TypeScriptCompiler)lib\typescript.js')">
+    <Content Include="$(TypeScriptPlugin)codemap-plugin.json;$(TypeScriptPlugin)package.json" Link="plugins\typescript\%(Filename)%(Extension)" />
+    <Content Include="$(TypeScriptPlugin)src\**\*.mjs" Link="plugins\typescript\src\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="$(TypeScriptCompiler)lib\typescript.js;$(TypeScriptCompiler)lib\lib*.d.ts" Link="plugins\typescript\vendor\typescript\lib\%(Filename)%(Extension)" />
+    <!-- Its own package.json tells Node that typescript.js is CommonJS (the plugin's says ES modules). -->
+    <Content Include="$(TypeScriptCompiler)package.json;$(TypeScriptCompiler)LICENSE.txt;$(TypeScriptCompiler)ThirdPartyNoticeText.txt" Link="plugins\typescript\vendor\typescript\%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Update="$(TypeScriptPlugin)**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+  <Target Name="TypeScriptPluginMissing" BeforeTargets="Build" Condition="!Exists('$(TypeScriptCompiler)lib\typescript.js')">
+    <Warning Text="The TypeScript plugin is not included: run npm ci in analyzers/typescript to map TypeScript and JavaScript too." />
+  </Target>
 
   <!-- Single-file 3D viewer, produced by `npm run build` in /viewer. -->
   <ItemGroup>
