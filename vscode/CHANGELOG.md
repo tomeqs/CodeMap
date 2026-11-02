@@ -1,9 +1,14 @@
 # Changelog
 
+## 0.2.2
+
+- First version on the VS Code Marketplace and Open VSX, as **CodeMap 3D** (`tomeqs.codemap-3d`): the name `codemap` is taken there.
+  If you installed an earlier `.vsix`, uninstall *CodeMap* first: both register the same commands. Settings (`codemap.*`) stay as they are.
+
 ## 0.2.1
 
-- First version on the VS Code Marketplace and Open VSX.
 - CodeMap is open source under the MIT license.
+- The analyzer is on NuGet: `dotnet tool install -g CodeMap.Tool`.
 
 ## 0.2.0
 

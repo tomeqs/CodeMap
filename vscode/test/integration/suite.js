@@ -15,7 +15,7 @@ async function until(what, condition, ms = 240000) {
 }
 
 async function run() {
-  const extension = vscode.extensions.getExtension('tomeqs.codemap');
+  const extension = vscode.extensions.getExtension('tomeqs.codemap-3d');
   assert.ok(extension, 'extension is installed');
   const { controller } = await extension.activate();
   // keep what the extension writes to its output channel, to show it if something fails

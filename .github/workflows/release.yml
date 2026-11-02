@@ -210,14 +210,15 @@ jobs:
           name: codemap-${{ steps.version.outputs.version }}
           path: dist/*
 
+      # Each store is published on its own: one that fails (and turns the job red) does not keep the others from the release.
       - name: Publish the dotnet tool to NuGet
-        if: steps.version.outputs.release == 'true' && env.NUGET_API_KEY != ''
+        if: ${{ !cancelled() && steps.version.outputs.release == 'true' && env.NUGET_API_KEY != '' }}
         run: dotnet nuget push "dist/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
       - name: Publish the extension to the VS Code Marketplace
-        if: steps.version.outputs.release == 'true' && env.VSCE_PAT != ''
+        if: ${{ !cancelled() && steps.version.outputs.release == 'true' && env.VSCE_PAT != '' }}
         run: npx --yes @vscode/vsce@3.9.2 publish --packagePath dist/*.vsix --skip-duplicate
 
       - name: Publish the extension to Open VSX (VSCodium, Cursor…)
-        if: steps.version.outputs.release == 'true' && env.OVSX_PAT != ''
+        if: ${{ !cancelled() && steps.version.outputs.release == 'true' && env.OVSX_PAT != '' }}
         run: npx --yes ovsx@1.2.0 publish dist/*.vsix --skip-duplicate

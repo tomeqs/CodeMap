@@ -1,4 +1,4 @@
-# CodeMap for VS Code
+# CodeMap 3D for VS Code
 
 An interactive 3D map of your C# solution or TypeScript / JavaScript code (or both in one map), inside VS Code and one click away from the code.
 
