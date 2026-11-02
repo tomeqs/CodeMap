@@ -208,8 +208,6 @@ PublishScripts/
 **/[Pp]ackages/*
 # except build/, which is used as an MSBuild target.
 !**/[Pp]ackages/build/
-# npm workspaces in the TypeScript plugin's test fixtures are packages/, not NuGet's folder
-!analyzers/typescript/test/fixtures/**/packages/*
 # Uncomment if necessary however generally it will be regenerated when needed
 #!**/[Pp]ackages/repositories.config
 # NuGet v3's project.json files produces more ignorable files
@@ -487,3 +485,6 @@ $RECYCLE.BIN/
 dist/
 nupkg/
 tests/CodeMap.Tests/Golden/*.actual.json
+
+# The TypeScript plugin's test fixtures are code, whatever their folders are called (express/, packages/…)
+!analyzers/typescript/test/fixtures/**

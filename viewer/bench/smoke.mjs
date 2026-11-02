@@ -114,19 +114,31 @@ try {
           return max;
         }, shot.toString('base64'));
       };
+      // The unrelated node measured: the biggest one on screen, away from the selection (whose glow would
+      // reach it); a small one is barely brighter than what is behind it.
       const other = await page.evaluate(() => {
         const app = window.codemap;
         const units = [...app.view.units].sort((a, b) => b.r - a.r);
         app.select(units[0].id);
         const h = app.view.highlight;
-        const u = units.find((x) => !h.nodes.has(x.id) && app.stage.project(app.view.positionOf(x.id)));
+        const center = app.stage.project(app.view.positionOf(units[0].id));
+        const u = units.find((x) => {
+          if (h.nodes.has(x.id)) return false;
+          const p = app.stage.project(app.view.positionOf(x.id));
+          return p && p.x > 20 && p.y > 20 && p.x < app.stage.width - 20 && p.y < app.stage.height - 20 && Math.hypot(p.x - center.x, p.y - center.y) > 80;
+        });
         app.select(null);
         const p = app.stage.project(app.view.positionOf(u.id));
         const rect = app.stage.canvas.getBoundingClientRect();
         return { id: u.id, selected: units[0].id, x: Math.round(rect.left + p.x), y: Math.round(rect.top + p.y) };
       });
-      // Only the canvas counts: hide the HTML labels drawn over it.
-      await page.evaluate(() => (document.getElementById('labels').style.visibility = 'hidden'));
+      // Only the node counts: hide the HTML labels drawn over the canvas, and the sky behind it (a star in the
+      // measured pixels, or a nebula as bright as a dimmed node, would hide the change).
+      await page.evaluate(() => {
+        document.getElementById('labels').style.visibility = 'hidden';
+        window.codemap.stage.sky.visible = false;
+        window.codemap.stage.invalidate();
+      });
       await drained(page);
       const before = await brightness(other);
       // As if the user had been away: no ambient frames (pulsing halo) that would hide a missing frame.
@@ -140,6 +152,8 @@ try {
       await page.evaluate(() => {
         window.codemap.select(null);
         document.getElementById('labels').style.visibility = '';
+        window.codemap.stage.sky.visible = true;
+        window.codemap.stage.invalidate();
       });
       assert.ok(after < before * 0.7, `brightness of an unrelated node: ${before} before, ${after} after selecting`);
     });
