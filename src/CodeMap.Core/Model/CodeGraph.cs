@@ -10,7 +10,7 @@ namespace CodeMap.Model;
 public sealed class CodeGraph
 {
     public const string FormatName = "codemap";
-    public const string FormatVersion = "1.0";
+    public const string FormatVersion = "1.1";
 
     public string Format { get; set; } = FormatName;
     public string Version { get; set; } = FormatVersion;
@@ -42,8 +42,34 @@ public sealed class SourceInfo
 
     public string Name { get; set; } = "";
 
+    /// <summary>Languages found in the source, with the words their maps use for each level.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<LanguageSummary>? Languages { get; set; }
+
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public GitInfo? Git { get; set; }
+}
+
+public sealed class LanguageSummary
+{
+    /// <summary>Stable identifier, e.g. "csharp", "typescript".</summary>
+    public string Id { get; set; } = "";
+
+    public string Name { get; set; } = "";
+
+    public LevelLabels Levels { get; set; } = new();
+
+    /// <summary>What code outside the analyzed sources is called, e.g. "BCL / NuGet".</summary>
+    public string External { get; set; } = "";
+}
+
+/// <summary>What a language calls each level of the map: [singular, plural].</summary>
+public sealed class LevelLabels
+{
+    public List<string> Project { get; set; } = new() { "Project", "Projects" };
+    public List<string> Namespace { get; set; } = new() { "Namespace", "Namespaces" };
+    public List<string> Type { get; set; } = new() { "Type", "Types" };
+    public List<string> Member { get; set; } = new() { "Member", "Members" };
 }
 
 public sealed class GitInfo
@@ -58,6 +84,15 @@ public sealed class GraphNode
 {
     public string Id { get; set; } = "";
     public string Kind { get; set; } = "";
+
+    /// <summary>
+    /// project | namespace | type | member: where the node sits on the map. Optional for the kinds whose level is
+    /// known (C#'s); set by other languages, whose kinds can sit at different levels (a TypeScript class is a member
+    /// of its file).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Level { get; set; }
+
     public string Name { get; set; } = "";
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -70,6 +105,10 @@ public sealed class GraphNode
     /// <summary>Id of the project node that declares this node.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Project { get; set; }
+
+    /// <summary>Language of a project or package node (an id from <see cref="SourceInfo.Languages"/>).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Language { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Namespace { get; set; }

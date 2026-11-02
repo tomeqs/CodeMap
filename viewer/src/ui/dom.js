@@ -34,8 +34,9 @@ export function shortName(node) {
   if (!node) return '';
   if (node.kind === 'namespace') return node.name;
   if (node.level === 'member') {
-    const type = node.typeNode?.name;
-    return type ? `${type}.${node.name}` : node.name;
+    // Qualified with its class (C# type, TypeScript class); a function or a class of a file stands on its own.
+    const owner = node.ownerNode && node.ownerNode !== node ? node.ownerNode.name : null;
+    return owner ? `${owner}.${node.name}` : node.name;
   }
 
   return node.name;

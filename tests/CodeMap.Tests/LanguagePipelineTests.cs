@@ -40,6 +40,37 @@ public class LanguagePipelineTests
     }
 
     [Fact]
+    public void A_typescript_shaped_map_gets_levels_sizes_and_labels()
+    {
+        var graph = GoldenTests.TsMini();
+        const string service = "ts:api:src/orders/orders.service.ts";
+
+        // Files are the units; classes and functions are their members, methods are members of the class.
+        Assert.Equal(NodeLevels.Type, NodeLevels.Of(graph.Node(service)));
+        Assert.Equal(NodeLevels.Member, NodeLevels.Of(graph.Node(service + "#OrdersService")));
+        Assert.Equal(NodeLevels.Member, NodeLevels.Of(graph.Node(service + "#OrdersService.place")));
+
+        // A file's size comes from the innermost declarations: the class' constructor and methods, the function, the interface.
+        var file = graph.Node(service);
+        Assert.Equal((5, 3, 8, 4), ((int)file.Metric("members"), (int)file.Metric("methods"), (int)file.Metric("complexity"), (int)file.Metric("maxComplexity")));
+        var type = graph.Node(service + "#OrdersService");
+        Assert.Equal((3, 7), ((int)type.Metric("members"), (int)type.Metric("complexity")));
+
+        // A file that only declares interfaces and type aliases is abstract.
+        Assert.Equal(0.333, graph.Node("ts:project:domain").Metric("abstractness"));
+
+        Assert.Contains(graph.Analysis.Cycles, c => c.Level == "type" && c.Nodes.Contains(service) && c.Nodes.Contains("ts:api:src/orders/orders.repository.ts"));
+        Assert.Equal(new[] { service + "#legacyTotal" }, graph.Analysis.UnusedCandidates);
+        Assert.Equal("captive", Assert.Single(graph.Analysis.Di!.Issues).Kind);
+
+        var language = Assert.Single(graph.Source.Languages!);
+        Assert.Equal(("typescript", "File", "Files", "npm packages"), (language.Id, language.Levels.Type[0], language.Levels.Type[1], language.External));
+        Assert.Equal("typescript", graph.Node("ts:project:api").Language);
+        Assert.Equal("typescript", graph.Node("ts:npm:express").Language);
+        Assert.Equal(9, graph.Stats["types"]);
+    }
+
+    [Fact]
     public void Languages_found_in_one_folder_are_merged_into_one_map()
     {
         using var ws = new TestWorkspace()

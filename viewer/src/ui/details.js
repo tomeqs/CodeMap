@@ -1,5 +1,5 @@
-import { EDGE_KINDS, KIND_COLORS } from '../data/palette.js';
-import { MEMBER_KINDS, METRICS } from '../data/model.js';
+import { EDGE_KINDS, kindColor } from '../data/palette.js';
+import { METRICS } from '../data/model.js';
 import { LIFETIME_COLORS } from '../data/di.js';
 import { entryMethodsOf, flowIndex } from '../data/flow.js';
 import { clear, fmt, h, shortName } from './dom.js';
@@ -57,10 +57,10 @@ export class DetailsPanel {
     const model = app.model;
     clear(this.el).classList.remove('hidden');
 
-    const kindColor = KIND_COLORS[node.kind] ?? '#999';
+    const color = kindColor(node.kind);
     this.el.append(
       h('div', { class: 'head' },
-        h('div', { class: 'kind' }, h('span', { class: 'dot', style: { background: kindColor, color: kindColor } }),
+        h('div', { class: 'kind' }, h('span', { class: 'dot', style: { background: color, color } }),
           [node.accessibility, node.modifiers?.join(' '), node.kind, node.external ? '(external)' : ''].filter(Boolean).join(' ')),
         h('h2', {}, shortName(node)),
         node.fullName && node.fullName !== node.name ? h('div', { class: 'full' }, node.fullName) : null,
@@ -122,16 +122,17 @@ export class DetailsPanel {
       buttons.push(h('button', { class: 'small', title: 'Then click (or Shift+click) another node', onClick: () => app.startPath() }, 'Path to…'));
     }
 
-    if (!node.external && (node.kind === 'method' || node.kind === 'constructor' || node.kind === 'property') && flowIndex(model).calls.has(node.id)) {
+    if (!node.external && ['method', 'constructor', 'property', 'function'].includes(node.kind) && flowIndex(model).calls.has(node.id)) {
       buttons.push(h('button', { class: 'small', title: 'Follow what this method calls, step by step (E)', onClick: () => app.showFlow([node.id]) }, 'Call flow ↘'));
-    } else if (node.level === 'type' && !node.external && entryMethodsOf(model, node).length) {
+    } else if ((node.level === 'type' || node.ownerNode === node) && !node.external && entryMethodsOf(model, node).length) {
       buttons.push(h('button', { class: 'small', title: 'Follow the calls of its entry methods (actions, ExecuteAsync…)', onClick: () => app.showFlow([node.id]) }, 'Call flow ↘'));
     }
 
-    if (node.level === 'project' && node.kind === 'project') buttons.push(h('button', { class: 'small', onClick: () => app.drill(node.id) }, 'Open namespaces ⤵'));
-    if (node.level === 'namespace') buttons.push(h('button', { class: 'small', onClick: () => app.drill(node.id) }, 'Open types ⤵'));
-    if (node.level === 'type' && !node.external && model.childrenOf(node.id).some((c) => MEMBER_KINDS.has(c.kind))) {
-      buttons.push(h('button', { class: 'small', onClick: () => app.drill(node.id) }, 'Show members ⤵'));
+    const words = model.labels;
+    if (node.level === 'project' && node.kind === 'project') buttons.push(h('button', { class: 'small', onClick: () => app.drill(node.id) }, `Open ${words.namespace[1].toLowerCase()} ⤵`));
+    if (node.level === 'namespace') buttons.push(h('button', { class: 'small', onClick: () => app.drill(node.id) }, `Open ${words.type[1].toLowerCase()} ⤵`));
+    if (node.level === 'type' && !node.external && model.childrenOf(node.id).some((c) => c.level === 'member')) {
+      buttons.push(h('button', { class: 'small', onClick: () => app.drill(node.id) }, `Show ${words.member[1].toLowerCase()} ⤵`));
     }
 
     if (buttons.length) body.append(h('div', { class: 'btns' }, buttons));
@@ -157,7 +158,7 @@ export class DetailsPanel {
       const section = h('div', { class: 'section' }, h('h3', {}, node.level === 'type' ? 'Members' : 'Contains'));
       for (const [kind, list] of groups) {
         list.sort((a, b) => (b.metrics.loc ?? 0) - (a.metrics.loc ?? 0) || a.name.localeCompare(b.name));
-        section.append(this.group(kind, KIND_COLORS[kind], list.map((n) => ({ node: n, weight: n.metrics.complexity ?? n.metrics.types ?? '' })), list.length < 12));
+        section.append(this.group(kind, kindColor(kind), list.map((n) => ({ node: n, weight: n.metrics.complexity ?? n.metrics.types ?? '' })), list.length < 12));
       }
 
       body.append(section);

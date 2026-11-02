@@ -1,9 +1,11 @@
-// Layout engines for the benchmark and smoke tests (loaded with ?bench=1 only).
+// Layout engines for the benchmark and smoke tests (loaded with ?bench=1 only), and a few helpers they check.
 export { MainThreadLayout } from './main-thread.js';
 export { WorkerLayout } from './worker-layout.js';
 export { startLayout } from './engine.js';
 export { GpuLayout } from './gpu-force.js';
 export { PositionStore } from '../gpu/position-store.js';
+export { serializeDoc } from '../data/model.js';
+export { shortName } from '../ui/dom.js';
 
 /** Shape of a layout, to compare engines: link lengths against their targets, spread, how tight groups are. */
 export function layoutMetrics(spec, positions) {

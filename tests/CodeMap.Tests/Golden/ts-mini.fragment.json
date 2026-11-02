@@ -1,0 +1,1064 @@
+{
+  "format": "codemap",
+  "version": "1.1",
+  "source": {
+    "path": "",
+    "root": "",
+    "kind": "directory",
+    "name": "shop-ts"
+  },
+  "nodes": [
+    {
+      "id": "ts:project:api",
+      "kind": "project",
+      "name": "api",
+      "fullName": "api/package.json",
+      "project": "ts:project:api",
+      "signature": "typescript \u00b7 commonjs",
+      "location": {
+        "file": "api/package.json",
+        "line": 1,
+        "endLine": 1
+      },
+      "metrics": {
+        "files": 6,
+        "lines": 182
+      }
+    },
+    {
+      "id": "ts:project:domain",
+      "kind": "project",
+      "name": "domain",
+      "fullName": "domain/package.json",
+      "project": "ts:project:domain",
+      "signature": "typescript \u00b7 commonjs",
+      "location": {
+        "file": "domain/package.json",
+        "line": 1,
+        "endLine": 1
+      },
+      "metrics": {
+        "files": 3,
+        "lines": 61
+      }
+    },
+    {
+      "id": "ts:ns:api/(root)",
+      "kind": "namespace",
+      "name": "(root)",
+      "fullName": "api/(root)",
+      "parent": "ts:project:api",
+      "project": "ts:project:api",
+      "namespace": "(root)"
+    },
+    {
+      "id": "ts:ns:api/orders",
+      "kind": "namespace",
+      "name": "orders",
+      "fullName": "api/orders",
+      "parent": "ts:project:api",
+      "project": "ts:project:api",
+      "namespace": "orders"
+    },
+    {
+      "id": "ts:ns:api/shared",
+      "kind": "namespace",
+      "name": "shared",
+      "fullName": "api/shared",
+      "parent": "ts:project:api",
+      "project": "ts:project:api",
+      "namespace": "shared"
+    },
+    {
+      "id": "ts:ns:domain/(root)",
+      "kind": "namespace",
+      "name": "(root)",
+      "fullName": "domain/(root)",
+      "parent": "ts:project:domain",
+      "project": "ts:project:domain",
+      "namespace": "(root)"
+    },
+    {
+      "id": "ts:npm:express",
+      "kind": "package",
+      "name": "express",
+      "fullName": "express",
+      "signature": "^4.19.2",
+      "external": true
+    },
+    {
+      "id": "ts:api:src/main.ts",
+      "kind": "module",
+      "level": "type",
+      "name": "main.ts",
+      "fullName": "api/src/main.ts",
+      "parent": "ts:ns:api/(root)",
+      "project": "ts:project:api",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "location": {
+        "file": "api/src/main.ts",
+        "line": 1,
+        "endLine": 12
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "loc": 12
+      }
+    },
+    {
+      "id": "ts:api:src/app.ts",
+      "kind": "module",
+      "level": "type",
+      "name": "app.ts",
+      "fullName": "api/src/app.ts",
+      "parent": "ts:ns:api/(root)",
+      "project": "ts:project:api",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "location": {
+        "file": "api/src/app.ts",
+        "line": 1,
+        "endLine": 24
+      },
+      "metrics": {
+        "loc": 24
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.routes.ts",
+      "kind": "module",
+      "level": "type",
+      "name": "orders.routes.ts",
+      "fullName": "api/src/orders/orders.routes.ts",
+      "parent": "ts:ns:api/orders",
+      "project": "ts:project:api",
+      "namespace": "orders",
+      "accessibility": "public",
+      "location": {
+        "file": "api/src/orders/orders.routes.ts",
+        "line": 1,
+        "endLine": 30
+      },
+      "tags": [
+        "controller"
+      ],
+      "metrics": {
+        "loc": 30
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.service.ts",
+      "kind": "module",
+      "level": "type",
+      "name": "orders.service.ts",
+      "fullName": "api/src/orders/orders.service.ts",
+      "parent": "ts:ns:api/orders",
+      "project": "ts:project:api",
+      "namespace": "orders",
+      "accessibility": "public",
+      "location": {
+        "file": "api/src/orders/orders.service.ts",
+        "line": 1,
+        "endLine": 48
+      },
+      "tags": [
+        "service"
+      ],
+      "metrics": {
+        "loc": 48
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.repository.ts",
+      "kind": "module",
+      "level": "type",
+      "name": "orders.repository.ts",
+      "fullName": "api/src/orders/orders.repository.ts",
+      "parent": "ts:ns:api/orders",
+      "project": "ts:project:api",
+      "namespace": "orders",
+      "accessibility": "public",
+      "location": {
+        "file": "api/src/orders/orders.repository.ts",
+        "line": 1,
+        "endLine": 40
+      },
+      "tags": [
+        "repository"
+      ],
+      "metrics": {
+        "loc": 40
+      }
+    },
+    {
+      "id": "ts:api:src/shared/request-context.ts",
+      "kind": "module",
+      "level": "type",
+      "name": "request-context.ts",
+      "fullName": "api/src/shared/request-context.ts",
+      "parent": "ts:ns:api/shared",
+      "project": "ts:project:api",
+      "namespace": "shared",
+      "accessibility": "public",
+      "location": {
+        "file": "api/src/shared/request-context.ts",
+        "line": 1,
+        "endLine": 20
+      },
+      "metrics": {
+        "loc": 20
+      }
+    },
+    {
+      "id": "ts:domain:src/order.ts",
+      "kind": "module",
+      "level": "type",
+      "name": "order.ts",
+      "fullName": "domain/src/order.ts",
+      "parent": "ts:ns:domain/(root)",
+      "project": "ts:project:domain",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "location": {
+        "file": "domain/src/order.ts",
+        "line": 1,
+        "endLine": 30
+      },
+      "metrics": {
+        "loc": 30
+      }
+    },
+    {
+      "id": "ts:domain:src/index.ts",
+      "kind": "module",
+      "level": "type",
+      "name": "index.ts",
+      "fullName": "domain/src/index.ts",
+      "parent": "ts:ns:domain/(root)",
+      "project": "ts:project:domain",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "location": {
+        "file": "domain/src/index.ts",
+        "line": 1,
+        "endLine": 3
+      },
+      "tags": [
+        "barrel"
+      ],
+      "metrics": {
+        "loc": 3
+      }
+    },
+    {
+      "id": "ts:domain:src/types.ts",
+      "kind": "module",
+      "level": "type",
+      "name": "types.ts",
+      "fullName": "domain/src/types.ts",
+      "parent": "ts:ns:domain/(root)",
+      "project": "ts:project:domain",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "location": {
+        "file": "domain/src/types.ts",
+        "line": 1,
+        "endLine": 12
+      },
+      "metrics": {
+        "loc": 12
+      }
+    },
+    {
+      "id": "ts:api:src/main.ts#bootstrap",
+      "kind": "function",
+      "level": "member",
+      "name": "bootstrap",
+      "fullName": "bootstrap",
+      "parent": "ts:api:src/main.ts",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "async function bootstrap(): Promise<void>",
+      "location": {
+        "file": "api/src/main.ts",
+        "line": 3,
+        "endLine": 10
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "loc": 8,
+        "complexity": 1
+      }
+    },
+    {
+      "id": "ts:api:src/app.ts#createApp",
+      "kind": "function",
+      "level": "member",
+      "name": "createApp",
+      "fullName": "createApp",
+      "parent": "ts:api:src/app.ts",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "function createApp(): Express",
+      "location": {
+        "file": "api/src/app.ts",
+        "line": 6,
+        "endLine": 22
+      },
+      "metrics": {
+        "loc": 17,
+        "complexity": 2
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.routes.ts#route:GET /orders/:id",
+      "kind": "function",
+      "level": "member",
+      "name": "GET /orders/:id",
+      "fullName": "route:GET /orders/:id",
+      "parent": "ts:api:src/orders/orders.routes.ts",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "GET /orders/:id",
+      "location": {
+        "file": "api/src/orders/orders.routes.ts",
+        "line": 10,
+        "endLine": 16
+      },
+      "tags": [
+        "route",
+        "entrypoint"
+      ],
+      "metrics": {
+        "loc": 7,
+        "complexity": 2
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.routes.ts#route:POST /orders",
+      "kind": "function",
+      "level": "member",
+      "name": "POST /orders",
+      "fullName": "route:POST /orders",
+      "parent": "ts:api:src/orders/orders.routes.ts",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "POST /orders",
+      "location": {
+        "file": "api/src/orders/orders.routes.ts",
+        "line": 18,
+        "endLine": 28
+      },
+      "tags": [
+        "route",
+        "entrypoint"
+      ],
+      "metrics": {
+        "loc": 11,
+        "complexity": 3
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.service.ts#OrdersService",
+      "kind": "class",
+      "level": "member",
+      "name": "OrdersService",
+      "fullName": "OrdersService",
+      "parent": "ts:api:src/orders/orders.service.ts",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "class OrdersService",
+      "location": {
+        "file": "api/src/orders/orders.service.ts",
+        "line": 8,
+        "endLine": 44
+      },
+      "tags": [
+        "service"
+      ],
+      "metrics": {
+        "loc": 37
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.service.ts#OrdersService.constructor",
+      "kind": "constructor",
+      "level": "member",
+      "name": "constructor",
+      "fullName": "OrdersService.constructor",
+      "parent": "ts:api:src/orders/orders.service.ts#OrdersService",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "constructor(repository: OrdersRepository, context: RequestContext)",
+      "location": {
+        "file": "api/src/orders/orders.service.ts",
+        "line": 9,
+        "endLine": 12
+      },
+      "metrics": {
+        "loc": 4,
+        "complexity": 1
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.service.ts#OrdersService.place",
+      "kind": "method",
+      "level": "member",
+      "name": "place",
+      "fullName": "OrdersService.place",
+      "parent": "ts:api:src/orders/orders.service.ts#OrdersService",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "place(input: OrderInput): Promise<Order>",
+      "location": {
+        "file": "api/src/orders/orders.service.ts",
+        "line": 14,
+        "endLine": 30
+      },
+      "metrics": {
+        "loc": 17,
+        "complexity": 4
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.service.ts#OrdersService.find",
+      "kind": "method",
+      "level": "member",
+      "name": "find",
+      "fullName": "OrdersService.find",
+      "parent": "ts:api:src/orders/orders.service.ts#OrdersService",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "find(id: OrderId): Promise<Order | undefined>",
+      "location": {
+        "file": "api/src/orders/orders.service.ts",
+        "line": 32,
+        "endLine": 42
+      },
+      "metrics": {
+        "loc": 11,
+        "complexity": 2
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.service.ts#legacyTotal",
+      "kind": "function",
+      "level": "member",
+      "name": "legacyTotal",
+      "fullName": "legacyTotal",
+      "parent": "ts:api:src/orders/orders.service.ts",
+      "project": "ts:project:api",
+      "accessibility": "private",
+      "signature": "function legacyTotal(items: number[]): number",
+      "location": {
+        "file": "api/src/orders/orders.service.ts",
+        "line": 46,
+        "endLine": 48
+      },
+      "metrics": {
+        "loc": 3,
+        "complexity": 1
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.service.ts#OrderInput",
+      "kind": "interface",
+      "level": "member",
+      "name": "OrderInput",
+      "fullName": "OrderInput",
+      "parent": "ts:api:src/orders/orders.service.ts",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "interface OrderInput",
+      "location": {
+        "file": "api/src/orders/orders.service.ts",
+        "line": 3,
+        "endLine": 6
+      },
+      "metrics": {
+        "loc": 4
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.repository.ts#OrdersRepository",
+      "kind": "interface",
+      "level": "member",
+      "name": "OrdersRepository",
+      "fullName": "OrdersRepository",
+      "parent": "ts:api:src/orders/orders.repository.ts",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "interface OrdersRepository",
+      "location": {
+        "file": "api/src/orders/orders.repository.ts",
+        "line": 4,
+        "endLine": 8
+      },
+      "metrics": {
+        "loc": 5
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.repository.ts#OrdersRepository.save",
+      "kind": "method",
+      "level": "member",
+      "name": "save",
+      "fullName": "OrdersRepository.save",
+      "parent": "ts:api:src/orders/orders.repository.ts#OrdersRepository",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "save(order: Order): Promise<void>",
+      "location": {
+        "file": "api/src/orders/orders.repository.ts",
+        "line": 6,
+        "endLine": 6
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository",
+      "kind": "class",
+      "level": "member",
+      "name": "SqlOrdersRepository",
+      "fullName": "SqlOrdersRepository",
+      "parent": "ts:api:src/orders/orders.repository.ts",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "class SqlOrdersRepository implements OrdersRepository",
+      "location": {
+        "file": "api/src/orders/orders.repository.ts",
+        "line": 10,
+        "endLine": 38
+      },
+      "metrics": {
+        "loc": 29
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository.save",
+      "kind": "method",
+      "level": "member",
+      "name": "save",
+      "fullName": "SqlOrdersRepository.save",
+      "parent": "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "save(order: Order): Promise<void>",
+      "location": {
+        "file": "api/src/orders/orders.repository.ts",
+        "line": 12,
+        "endLine": 24
+      },
+      "metrics": {
+        "loc": 13,
+        "complexity": 3
+      }
+    },
+    {
+      "id": "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository.findById",
+      "kind": "method",
+      "level": "member",
+      "name": "findById",
+      "fullName": "SqlOrdersRepository.findById",
+      "parent": "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "findById(id: OrderId): Promise<Order | undefined>",
+      "location": {
+        "file": "api/src/orders/orders.repository.ts",
+        "line": 26,
+        "endLine": 36
+      },
+      "metrics": {
+        "loc": 11,
+        "complexity": 2
+      }
+    },
+    {
+      "id": "ts:api:src/shared/request-context.ts#RequestContext",
+      "kind": "class",
+      "level": "member",
+      "name": "RequestContext",
+      "fullName": "RequestContext",
+      "parent": "ts:api:src/shared/request-context.ts",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "class RequestContext",
+      "location": {
+        "file": "api/src/shared/request-context.ts",
+        "line": 3,
+        "endLine": 18
+      },
+      "metrics": {
+        "loc": 16
+      }
+    },
+    {
+      "id": "ts:api:src/shared/request-context.ts#RequestContext.user",
+      "kind": "method",
+      "level": "member",
+      "name": "user",
+      "fullName": "RequestContext.user",
+      "parent": "ts:api:src/shared/request-context.ts#RequestContext",
+      "project": "ts:project:api",
+      "accessibility": "public",
+      "signature": "user(): string",
+      "location": {
+        "file": "api/src/shared/request-context.ts",
+        "line": 8,
+        "endLine": 16
+      },
+      "metrics": {
+        "loc": 9,
+        "complexity": 2
+      }
+    },
+    {
+      "id": "ts:domain:src/order.ts#Order",
+      "kind": "class",
+      "level": "member",
+      "name": "Order",
+      "fullName": "Order",
+      "parent": "ts:domain:src/order.ts",
+      "project": "ts:project:domain",
+      "accessibility": "public",
+      "signature": "class Order",
+      "location": {
+        "file": "domain/src/order.ts",
+        "line": 5,
+        "endLine": 28
+      },
+      "metrics": {
+        "loc": 24
+      }
+    },
+    {
+      "id": "ts:domain:src/order.ts#Order.constructor",
+      "kind": "constructor",
+      "level": "member",
+      "name": "constructor",
+      "fullName": "Order.constructor",
+      "parent": "ts:domain:src/order.ts#Order",
+      "project": "ts:project:domain",
+      "accessibility": "public",
+      "signature": "constructor(id: OrderId, items: Money[])",
+      "location": {
+        "file": "domain/src/order.ts",
+        "line": 6,
+        "endLine": 10
+      },
+      "metrics": {
+        "loc": 5,
+        "complexity": 1
+      }
+    },
+    {
+      "id": "ts:domain:src/order.ts#Order.total",
+      "kind": "method",
+      "level": "member",
+      "name": "total",
+      "fullName": "Order.total",
+      "parent": "ts:domain:src/order.ts#Order",
+      "project": "ts:project:domain",
+      "accessibility": "public",
+      "signature": "total(): Money",
+      "location": {
+        "file": "domain/src/order.ts",
+        "line": 12,
+        "endLine": 22
+      },
+      "metrics": {
+        "loc": 11,
+        "complexity": 3
+      }
+    },
+    {
+      "id": "ts:domain:src/order.ts#OrderId",
+      "kind": "typeAlias",
+      "level": "member",
+      "name": "OrderId",
+      "fullName": "OrderId",
+      "parent": "ts:domain:src/order.ts",
+      "project": "ts:project:domain",
+      "accessibility": "public",
+      "signature": "type OrderId = string",
+      "location": {
+        "file": "domain/src/order.ts",
+        "line": 3,
+        "endLine": 3
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "ts:domain:src/order.ts#MAX_ITEMS",
+      "kind": "variable",
+      "level": "member",
+      "name": "MAX_ITEMS",
+      "fullName": "MAX_ITEMS",
+      "parent": "ts:domain:src/order.ts",
+      "project": "ts:project:domain",
+      "accessibility": "public",
+      "signature": "const MAX_ITEMS = 100",
+      "location": {
+        "file": "domain/src/order.ts",
+        "line": 30,
+        "endLine": 30
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "ts:domain:src/types.ts#Money",
+      "kind": "interface",
+      "level": "member",
+      "name": "Money",
+      "fullName": "Money",
+      "parent": "ts:domain:src/types.ts",
+      "project": "ts:project:domain",
+      "accessibility": "public",
+      "signature": "interface Money",
+      "location": {
+        "file": "domain/src/types.ts",
+        "line": 3,
+        "endLine": 8
+      },
+      "metrics": {
+        "loc": 6
+      }
+    },
+    {
+      "id": "ts:domain:src/types.ts#Currency",
+      "kind": "typeAlias",
+      "level": "member",
+      "name": "Currency",
+      "fullName": "Currency",
+      "parent": "ts:domain:src/types.ts",
+      "project": "ts:project:domain",
+      "accessibility": "public",
+      "signature": "type Currency = 'EUR' | 'PLN'",
+      "location": {
+        "file": "domain/src/types.ts",
+        "line": 10,
+        "endLine": 12
+      },
+      "metrics": {
+        "loc": 3
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "ts:project:api",
+      "target": "ts:project:domain",
+      "kind": "projectReference",
+      "weight": 1
+    },
+    {
+      "source": "ts:project:api",
+      "target": "ts:npm:express",
+      "kind": "packageReference",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/main.ts",
+      "target": "ts:api:src/app.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/app.ts",
+      "target": "ts:api:src/orders/orders.routes.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/app.ts",
+      "target": "ts:api:src/orders/orders.repository.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/app.ts",
+      "target": "ts:api:src/orders/orders.service.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.routes.ts",
+      "target": "ts:api:src/orders/orders.service.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts",
+      "target": "ts:api:src/orders/orders.repository.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.repository.ts",
+      "target": "ts:api:src/orders/orders.service.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts",
+      "target": "ts:domain:src/index.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts",
+      "target": "ts:api:src/shared/request-context.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.repository.ts",
+      "target": "ts:domain:src/index.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:domain:src/index.ts",
+      "target": "ts:domain:src/order.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:domain:src/order.ts",
+      "target": "ts:domain:src/types.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/main.ts#bootstrap",
+      "target": "ts:api:src/app.ts#createApp",
+      "kind": "calls",
+      "weight": 1,
+      "line": 5
+    },
+    {
+      "source": "ts:api:src/app.ts#createApp",
+      "target": "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "ts:api:src/app.ts#createApp",
+      "target": "ts:api:src/orders/orders.service.ts#OrdersService",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "ts:api:src/orders/orders.routes.ts#route:GET /orders/:id",
+      "target": "ts:api:src/orders/orders.service.ts#OrdersService.find",
+      "kind": "calls",
+      "weight": 1,
+      "line": 12
+    },
+    {
+      "source": "ts:api:src/orders/orders.routes.ts#route:POST /orders",
+      "target": "ts:api:src/orders/orders.service.ts#OrdersService.place",
+      "kind": "calls",
+      "weight": 1,
+      "line": 21
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService.place",
+      "target": "ts:domain:src/order.ts#Order",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 18
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService.place",
+      "target": "ts:domain:src/order.ts#Order.total",
+      "kind": "calls",
+      "weight": 1,
+      "line": 19
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService.place",
+      "target": "ts:api:src/orders/orders.repository.ts#OrdersRepository.save",
+      "kind": "calls",
+      "weight": 1,
+      "line": 22
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService.place",
+      "target": "ts:api:src/shared/request-context.ts#RequestContext.user",
+      "kind": "calls",
+      "weight": 1,
+      "line": 26
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService.find",
+      "target": "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository.findById",
+      "kind": "calls",
+      "weight": 1,
+      "line": 36
+    },
+    {
+      "source": "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository",
+      "target": "ts:api:src/orders/orders.repository.ts#OrdersRepository",
+      "kind": "implements",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository.save",
+      "target": "ts:api:src/orders/orders.repository.ts#OrdersRepository.save",
+      "kind": "implements",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService",
+      "target": "ts:api:src/orders/orders.repository.ts#OrdersRepository",
+      "kind": "injects",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService",
+      "target": "ts:api:src/shared/request-context.ts#RequestContext",
+      "kind": "injects",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService",
+      "target": "ts:api:src/orders/orders.repository.ts#OrdersRepository",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService",
+      "target": "ts:api:src/shared/request-context.ts#RequestContext",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService.place",
+      "target": "ts:api:src/orders/orders.service.ts#OrderInput",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService.place",
+      "target": "ts:domain:src/order.ts#Order",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService.find",
+      "target": "ts:domain:src/order.ts#Order",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.service.ts#OrdersService.find",
+      "target": "ts:domain:src/order.ts#OrderId",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository.save",
+      "target": "ts:domain:src/order.ts#Order",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "ts:api:src/orders/orders.repository.ts#OrdersRepository.save",
+      "target": "ts:domain:src/order.ts#Order",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "ts:domain:src/order.ts#Order",
+      "target": "ts:domain:src/types.ts#Money",
+      "kind": "uses",
+      "weight": 1
+    },
+    {
+      "source": "ts:domain:src/order.ts#Order.constructor",
+      "target": "ts:domain:src/order.ts#OrderId",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "ts:domain:src/order.ts#Order.total",
+      "target": "ts:domain:src/types.ts#Money",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "ts:domain:src/types.ts#Money",
+      "target": "ts:domain:src/types.ts#Currency",
+      "kind": "uses",
+      "weight": 1
+    }
+  ],
+  "analysis": {
+    "warnings": [
+      "3 imports could not be resolved (bundler aliases?)"
+    ],
+    "di": {
+      "registrations": [
+        {
+          "service": "ts:api:src/orders/orders.repository.ts#OrdersRepository",
+          "implementation": "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository",
+          "lifetime": "singleton",
+          "kind": "type",
+          "registeredIn": "ts:api:src/app.ts#createApp",
+          "location": {
+            "file": "api/src/app.ts",
+            "line": 8,
+            "endLine": 8
+          }
+        },
+        {
+          "service": "ts:api:src/orders/orders.service.ts#OrdersService",
+          "lifetime": "singleton",
+          "kind": "type",
+          "registeredIn": "ts:api:src/app.ts#createApp",
+          "location": {
+            "file": "api/src/app.ts",
+            "line": 9,
+            "endLine": 9
+          }
+        },
+        {
+          "service": "ts:api:src/shared/request-context.ts#RequestContext",
+          "lifetime": "scoped",
+          "kind": "type",
+          "registeredIn": "ts:api:src/app.ts#createApp",
+          "location": {
+            "file": "api/src/app.ts",
+            "line": 10,
+            "endLine": 10
+          }
+        }
+      ],
+      "dependencies": [
+        {
+          "consumer": "ts:api:src/orders/orders.service.ts#OrdersService",
+          "service": "ts:api:src/orders/orders.repository.ts#OrdersRepository"
+        },
+        {
+          "consumer": "ts:api:src/orders/orders.service.ts#OrdersService",
+          "service": "ts:api:src/shared/request-context.ts#RequestContext"
+        }
+      ]
+    }
+  }
+}

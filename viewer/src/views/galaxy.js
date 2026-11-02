@@ -19,7 +19,7 @@ import {
   Vector3,
 } from 'three';
 import { SpriteNodeMaterial } from 'three/webgpu';
-import { EDGE_KINDS } from '../data/palette.js';
+import { EDGE_KINDS, KIND_SHAPES } from '../data/palette.js';
 import { unitMaterial } from '../scene/materials.js';
 import { LinkMesh } from '../scene/link-mesh.js';
 import { GpuParticles, particlesPerLink } from '../scene/particles.js';
@@ -44,24 +44,6 @@ const GEOMETRIES = {
   ring: () => new TorusGeometry(1, 0.28, 10, 32),
 };
 
-const SHAPE_OF = {
-  project: 'orb',
-  package: 'ring',
-  assembly: 'ring',
-  namespace: 'orb',
-  class: 'sphere',
-  interface: 'octa',
-  struct: 'box',
-  record: 'dodeca',
-  recordStruct: 'dodeca',
-  enum: 'tetra',
-  delegate: 'cone',
-  method: 'sphere',
-  constructor: 'octa',
-  property: 'box',
-  field: 'tetra',
-  event: 'cone',
-};
 
 const RADIUS = {
   project: [9, 26],
@@ -248,7 +230,7 @@ export class GalaxyView {
     this.meshes = [];
     const groups = new Map();
     for (const unit of this.units) {
-      const shape = SHAPE_OF[unit.node.kind] ?? 'sphere';
+      const shape = KIND_SHAPES[unit.node.kind] ?? 'sphere';
       if (!groups.has(shape)) groups.set(shape, []);
       groups.get(shape).push(unit);
     }

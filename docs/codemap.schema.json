@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/tomeqs/CodeMap/docs/codemap.schema.json",
   "title": "CodeMap graph",
-  "description": "Relationship graph of a C# code base produced by the codemap tool. See docs/format.md.",
+  "description": "Relationship graph of a code base (C#, and other languages through plugins) produced by the codemap tool. See docs/format.md.",
   "type": "object",
   "required": ["format", "version", "nodes", "edges"],
   "properties": {
@@ -20,6 +20,28 @@
         "root": { "type": "string" },
         "kind": { "enum": ["solution", "project", "directory", "file"] },
         "name": { "type": "string" },
+        "languages": {
+          "type": "array",
+          "description": "Languages found in the source, with what their maps call each level",
+          "items": {
+            "type": "object",
+            "required": ["id", "name"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "levels": {
+                "type": "object",
+                "properties": {
+                  "project": { "$ref": "#/$defs/levelLabel" },
+                  "namespace": { "$ref": "#/$defs/levelLabel" },
+                  "type": { "$ref": "#/$defs/levelLabel" },
+                  "member": { "$ref": "#/$defs/levelLabel" }
+                }
+              },
+              "external": { "type": "string" }
+            }
+          }
+        },
         "git": {
           "type": "object",
           "properties": {
@@ -105,16 +127,24 @@
       "properties": {
         "id": { "type": "string" },
         "kind": {
-          "enum": [
-            "project", "package", "assembly", "namespace",
-            "class", "interface", "struct", "record", "recordStruct", "enum", "delegate",
-            "method", "constructor", "property", "field", "event"
+          "anyOf": [
+            {
+              "enum": [
+                "project", "package", "assembly", "namespace",
+                "class", "interface", "struct", "record", "recordStruct", "enum", "delegate",
+                "method", "constructor", "property", "field", "event",
+                "module", "function", "typeAlias", "variable"
+              ]
+            },
+            { "type": "string", "pattern": "^[a-z][A-Za-z0-9]*$", "description": "other languages may add kinds; give them a level" }
           ]
         },
+        "level": { "$ref": "#/$defs/level" },
         "name": { "type": "string" },
         "fullName": { "type": "string" },
         "parent": { "type": "string" },
         "project": { "type": "string" },
+        "language": { "type": "string", "description": "project and package nodes: id of a source.languages entry" },
         "namespace": { "type": "string" },
         "accessibility": { "enum": ["public", "internal", "protected", "private", "protected internal", "private protected"] },
         "modifiers": { "type": "array", "items": { "type": "string" } },
@@ -136,10 +166,15 @@
         "source": { "type": "string" },
         "target": { "type": "string" },
         "kind": {
-          "enum": [
-            "projectReference", "packageReference", "inherits", "implements", "overrides", "calls",
-            "instantiates", "accesses", "subscribes", "throws", "catches", "uses", "holds", "returns",
-            "accepts", "injects", "extends", "decoratedWith", "changesWith"
+          "anyOf": [
+            {
+              "enum": [
+                "projectReference", "packageReference", "inherits", "implements", "overrides", "calls",
+                "instantiates", "accesses", "subscribes", "throws", "catches", "uses", "holds", "returns",
+                "accepts", "injects", "extends", "decoratedWith", "imports", "changesWith"
+              ]
+            },
+            { "type": "string", "pattern": "^[a-z][A-Za-z0-9]*$" }
           ]
         },
         "weight": { "type": "integer", "minimum": 1 },
@@ -155,6 +190,8 @@
         "endLine": { "type": "integer", "minimum": 1 }
       }
     },
+    "level": { "enum": ["project", "namespace", "type", "member"] },
+    "levelLabel": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2, "description": "[singular, plural]" },
     "lifetime": { "enum": ["singleton", "scoped", "transient"] },
     "di": {
       "type": "object",

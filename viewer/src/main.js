@@ -2,7 +2,7 @@ import './styles.css';
 import { Stage } from './scene/stage.js';
 import { LabelLayer } from './scene/labels.js';
 import { CodeModel, LEVELS, defaultEdgeKinds } from './data/model.js';
-import { KIND_COLORS } from './data/palette.js';
+import { kindColor } from './data/palette.js';
 import { GalaxyView } from './views/galaxy.js';
 import { CityView } from './views/city.js';
 import { LayeredView } from './views/layered.js';
@@ -85,7 +85,7 @@ class App {
     this.flowView.radiusScale = 2.4;
     this.zoomView = new ZoomView(this.stage, model, this.labels);
     this.zoomView.onUnitsChanged = () => this.onZoomUnits();
-    document.querySelector('#view-toggle [data-view="di"]').disabled = !model.doc.analysis?.di;
+    this.applyModelWords(model);
 
     const typeCount = model.nodes.filter((n) => n.level === 'type' && !n.external).length;
     this.state = {
@@ -127,6 +127,22 @@ class App {
     }
   }
 
+  /** The level buttons in the language's words (Types / Files…), and the DI view only when there is DI data. */
+  applyModelWords(model) {
+    for (const level of LEVELS) {
+      const button = document.querySelector(`#level-toggle [data-level="${level}"]`);
+      if (button) button.textContent = model.labels[level][1];
+    }
+
+    document.querySelector('#view-toggle [data-view="di"]').disabled = !model.doc.analysis?.di;
+  }
+
+  /** "types", "files"… for counts. */
+  levelWord(level, count = 2) {
+    const words = this.model.labels[level];
+    return (words ? words[count === 1 ? 0 : 1] : level + 's').toLowerCase();
+  }
+
   reload(doc) {
     const model = new CodeModel(doc);
     const typeIds = (m) => new Set(m.nodes.filter((n) => n.level === 'type' && !n.external).map((n) => n.id));
@@ -138,7 +154,13 @@ class App {
     this.model = model;
     this.entryPoints = null;
     for (const view of [this.galaxy, this.city, this.layers, this.diView, this.flowView, this.zoomView]) view.model = model;
+    this.applyModelWords(model);
     const s = this.state;
+    if (s.view === 'di' && !model.doc.analysis?.di) {
+      s.view = 'galaxy';
+      this.activateView();
+    }
+
     if (s.scope && !model.get(s.scope)) s.scope = null;
     s.flowRoots = s.flowRoots.filter((id) => model.get(id));
     for (const id of [...s.hiddenProjects]) if (!model.get(id)) s.hiddenProjects.delete(id);
@@ -155,7 +177,7 @@ class App {
     if (this.selection) this.details.show(model.get(this.selection.nodeId), this.selection.unitId ? model.get(this.selection.unitId)?.level : undefined);
 
     const changes = [added && `+${added}`, removed && `−${removed}`].filter(Boolean).join(' / ');
-    const plural = added + removed === 1 ? 'type' : 'types';
+    const plural = this.levelWord('type', added + removed);
     this.toast(changes ? `Map updated: ${changes} ${plural}` : 'Map updated', 'info');
   }
 
@@ -367,7 +389,7 @@ class App {
     } else if (s.view === 'galaxy') {
       let units = model.units(s);
       if (units.length > maxUnits() && s.level !== 'project') {
-        this.toast(`${fmt(units.length)} ${s.level}s is too many to lay out smoothly – drill into a project or namespace first.`);
+        this.toast(`${fmt(units.length)} ${this.levelWord(s.level)} is too many to lay out smoothly – drill into a ${this.levelWord('project', 1)} or ${this.levelWord('namespace', 1)} first.`);
         s.level = LEVELS[Math.max(0, LEVELS.indexOf(s.level) - 1)];
         return this.rebuild();
       }
@@ -377,7 +399,7 @@ class App {
     } else if (s.view === 'layers') {
       const units = model.units(s);
       if (units.length > maxUnits() && s.level !== 'project') {
-        this.toast(`${fmt(units.length)} ${s.level}s is too many to lay out smoothly – drill into a project or namespace first.`);
+        this.toast(`${fmt(units.length)} ${this.levelWord(s.level)} is too many to lay out smoothly – drill into a ${this.levelWord('project', 1)} or ${this.levelWord('namespace', 1)} first.`);
         s.level = LEVELS[Math.max(0, LEVELS.indexOf(s.level) - 1)];
         return this.rebuild();
       }
@@ -397,6 +419,13 @@ class App {
       this.layers.build(units, links, s, { layerOf: result.layerOf, layers });
     } else if (s.view === 'di') {
       const graph = buildDiGraph(model, s);
+      if (!graph) {
+        this.toast('No dependency-injection registrations were found in this code.');
+        s.view = 'galaxy';
+        this.activateView();
+        return this.rebuild();
+      }
+
       this.diStats = graph.stats;
       this.diView.build(graph.units, graph.links, { ...s, level: 'type' }, graph.layering);
     } else if (s.view === 'flow') {
@@ -812,7 +841,7 @@ class App {
     const links = this.view.links?.length ?? 0;
     const view = this.state.view;
     const semantic = this.view === this.zoomView;
-    const lines = [`${fmt(units)} ${view === 'city' ? 'buildings' : view === 'di' ? 'services' : semantic ? 'nodes' : this.state.level + 's'} · ${fmt(links)} links`];
+    const lines = [`${fmt(units)} ${view === 'city' ? 'buildings' : view === 'di' ? 'services' : semantic ? 'nodes' : this.levelWord(this.state.level, units)} · ${fmt(links)} links`];
     if (semantic) {
       const open = this.zoomView.semantic ? this.zoomView.open.size : 0;
       lines.unshift(open ? `Semantic zoom · ${open} cluster${open === 1 ? '' : 's'} open` : 'Semantic zoom: fly into a cluster to open it');
@@ -831,8 +860,8 @@ class App {
     if (view === 'flow' && this.flow) {
       const { methods, types, depth, truncated, maxDepth } = this.flow.stats;
       const roots = this.flow.roots;
-      const from = roots.length === 1 ? shortName(roots[0]) : `${roots[0]?.typeNode?.name ?? ''} (${roots.length} entry methods)`;
-      lines[lines.length - 1] = `${fmt(methods)} methods in ${fmt(types)} types · depth ${depth}${truncated ? ` (cut at ${maxDepth})` : ''}`;
+      const from = roots.length === 1 ? shortName(roots[0]) : `${(roots[0]?.ownerNode ?? roots[0]?.typeNode)?.name ?? ''} (${roots.length} entry methods)`;
+      lines[lines.length - 1] = `${fmt(methods)} methods in ${fmt(types)} ${this.levelWord('type', types)} · depth ${depth}${truncated ? ` (cut at ${maxDepth})` : ''}`;
       lines.unshift(`Call flow from ${from}`);
     }
 
@@ -1016,7 +1045,7 @@ class App {
     if (m.commits) parts.push(`${fmt(m.commits)} commits`);
     // DOM append() would print "null" for the missing rows.
     clear(this.tooltip).append(...[
-      h('div', { class: 't-kind', style: { color: KIND_COLORS[node.kind] } }, node.kind + (node.external ? ' · external' : '')),
+      h('div', { class: 't-kind', style: { color: kindColor(node.kind) } }, node.kind + (node.external ? ' · external' : '')),
       h('div', { class: 't-name' }, shortName(node)),
       node.fullName && node.fullName !== node.name ? h('div', { class: 't-full' }, node.fullName) : null,
       parts.length ? h('div', { class: 't-metrics' }, parts.join(' · ')) : null,
@@ -1042,7 +1071,7 @@ class App {
       results.forEach((node, i) =>
         list.append(
           h('div', { class: 'item' + (i === active ? ' active' : ''), onMousedown: (e) => (e.preventDefault(), choose(node)) },
-            h('span', { style: { width: '8px', height: '8px', borderRadius: '50%', flex: 'none', background: KIND_COLORS[node.kind] ?? '#888' } }),
+            h('span', { style: { width: '8px', height: '8px', borderRadius: '50%', flex: 'none', background: kindColor(node.kind) } }),
             h('div', { style: { minWidth: 0 } },
               h('div', { class: 'name' }, shortName(node), h('span', { class: 'faint small' }, '  ' + node.kind)),
               h('div', { class: 'full' }, node.fullName ?? node.location?.file ?? ''),

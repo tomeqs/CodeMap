@@ -1,6 +1,6 @@
 // Shared by the benchmark runner and the smoke tests: a static server for the built viewer and the
 // test graphs, and a Chromium that can run both renderers (WebGL 2 and WebGPU) without a GPU.
-import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
+import { copyFileSync, createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +38,14 @@ export async function graph(types, options = {}) {
   const name = `bench-${types}${options.members !== undefined ? `-m${options.members}` : ''}.codemap.json`;
   const file = join(dataDir, name);
   if (!existsSync(file)) await writeDoc(generate({ types, ...options }), file);
+  return `/data/${name}`;
+}
+
+/** A graph kept in the repository (path relative to its root), copied to bench/.data. Returns its URL path. */
+export function fixture(path) {
+  mkdirSync(dataDir, { recursive: true });
+  const name = path.split('/').pop();
+  copyFileSync(resolve(viewerRoot, '..', path), join(dataDir, name));
   return `/data/${name}`;
 }
 

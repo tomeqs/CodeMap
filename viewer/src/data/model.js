@@ -1,10 +1,14 @@
 import { Color } from 'three';
-import { EDGE_KINDS, KIND_COLORS, TAG_COLORS, projectColor, turbo, vary } from './palette.js';
+import { EDGE_KINDS, TAG_COLORS, kindColor, projectColor, turbo, vary } from './palette.js';
 import { LIFETIME_COLORS } from './di.js';
+import { levelLabels } from './labels.js';
 
 export const LEVELS = ['project', 'namespace', 'type', 'member'];
+/** Class-like kinds: they own members (and are what a member's name is qualified with). */
 export const TYPE_KINDS = new Set(['class', 'interface', 'struct', 'record', 'recordStruct', 'enum', 'delegate']);
 export const MEMBER_KINDS = new Set(['method', 'constructor', 'property', 'field', 'event']);
+/** Kinds that sit at the member level unless a node says otherwise (as in the analyzer's NodeLevels). */
+const MEMBER_LEVEL_KINDS = new Set([...MEMBER_KINDS, 'function', 'variable']);
 
 /** Metrics the user can colour / size / extrude by. `scale` decides normalisation. */
 export const METRICS = {
@@ -26,7 +30,9 @@ export const METRICS = {
   distance: { label: 'Distance from main sequence', scale: 'linear' },
 };
 
+/** The node's own level when the file gives one (other languages), else the level of its kind. */
 export function levelOf(node) {
+  if (LEVELS.includes(node.level)) return node.level;
   switch (node.kind) {
     case 'project':
     case 'package':
@@ -35,9 +41,7 @@ export function levelOf(node) {
     case 'namespace':
       return 'namespace';
     default:
-      if (TYPE_KINDS.has(node.kind)) return 'type';
-      if (MEMBER_KINDS.has(node.kind)) return 'member';
-      return 'type';
+      return MEMBER_LEVEL_KINDS.has(node.kind) ? 'member' : 'type';
   }
 }
 
@@ -92,13 +96,15 @@ export class CodeModel {
         rootOf[i] = rootOf[parent.idx];
         projectOf[i] = isProject ? node : projectOf[parent.idx];
         node.namespaceNode = node.kind === 'namespace' ? node : parent.namespaceNode;
-        node.typeNode = TYPE_KINDS.has(node.kind) ? node : parent.typeNode;
+        node.typeNode = li === 2 ? node : parent.typeNode;
+        node.ownerNode = TYPE_KINDS.has(node.kind) ? node : parent.ownerNode;
       } else {
         node.anc = [node, node, node, node];
         rootOf[i] = node;
         projectOf[i] = isProject ? node : null;
         node.namespaceNode = node.kind === 'namespace' ? node : null;
-        node.typeNode = TYPE_KINDS.has(node.kind) ? node : null;
+        node.typeNode = li === 2 ? node : null;
+        node.ownerNode = TYPE_KINDS.has(node.kind) ? node : null;
       }
 
       state[i] = 2;
@@ -160,6 +166,16 @@ export class CodeModel {
     for (const node of this.nodes) {
       if (node.baseColor) continue;
       node.baseColor = (node.namespaceNode ?? node.projectNode)?.baseColor ?? externalColor;
+    }
+
+    this.labels = levelLabels(doc);
+    const di = doc.analysis?.di;
+    if (di) {
+      // Every list may be left out by a language that has nothing to say.
+      di.registrations ??= [];
+      di.dependencies ??= [];
+      di.issues ??= [];
+      for (const d of di.dependencies) d.implementations ??= [];
     }
 
     this.edgeKindCounts = {};
@@ -235,7 +251,7 @@ export class CodeModel {
       case 'project':
         return target.copy(node.baseColor);
       case 'kind':
-        return target.set(KIND_COLORS[node.kind] ?? '#9e9e9e');
+        return target.set(kindColor(node.kind));
       case 'role': {
         const tag = node.tags.find((t) => TAG_COLORS[t]);
         return tag ? target.set(TAG_COLORS[tag]) : target.set('#3a4560');
@@ -478,7 +494,7 @@ function finishLinks(links, state) {
   return result;
 }
 
-const PRIORITY = { inherits: 9, implements: 8, injects: 7, calls: 6, instantiates: 5, subscribes: 5, holds: 4, throws: 4, extends: 3, projectReference: 9 };
+const PRIORITY = { inherits: 9, implements: 8, injects: 7, calls: 6, instantiates: 5, subscribes: 5, holds: 4, throws: 4, extends: 3, imports: 2, projectReference: 9 };
 function priority(kind) {
   return PRIORITY[kind] ?? 0;
 }
@@ -612,8 +628,11 @@ export class MixedLinks {
   }
 }
 
-/** Fields the model adds to the graph's nodes at runtime (ancestors, colours…): not part of the file format. */
-const RUNTIME_NODE_KEYS = new Set(['level', 'levelIndex', 'idx', 'anc', 'projectNode', 'namespaceNode', 'typeNode', 'isTest', 'searchText', 'baseColor']);
+/**
+ * Fields the model adds to the graph's nodes at runtime (ancestors, colours…): not part of the file format.
+ * `level` is, and stays: other languages' nodes need it.
+ */
+const RUNTIME_NODE_KEYS = new Set(['levelIndex', 'idx', 'anc', 'projectNode', 'namespaceNode', 'typeNode', 'ownerNode', 'isTest', 'searchText', 'baseColor']);
 
 /** The loaded graph as CodeMap JSON again (the nodes hold circular runtime references). */
 export function serializeDoc(doc) {
@@ -626,6 +645,8 @@ export function serializeDoc(doc) {
 export function defaultEdgeKinds(model) {
   const kinds = new Set();
   for (const [kind, info] of Object.entries(EDGE_KINDS)) if (info.on) kinds.add(kind);
+  // Kinds another language brings that the palette does not know: shown until switched off.
+  for (const kind of Object.keys(model.edgeKindCounts)) if (!EDGE_KINDS[kind]) kinds.add(kind);
   // Tiny graphs read better with every relation; huge ones need the noise removed.
   if (model.edges.length < 150) for (const kind of Object.keys(model.edgeKindCounts)) kinds.add(kind);
   return kinds;

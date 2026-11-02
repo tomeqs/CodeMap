@@ -5,7 +5,7 @@
 //   npm run test:smoke [-- --renderers webgl,webgpu] [--headed] [--only 'name part'] [--dist other/build]
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { graph, launch, open, serve, settled } from './lib.mjs';
+import { fixture, graph, launch, open, serve, settled } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -411,6 +411,81 @@ try {
       });
     }
     await large.page.close();
+
+    // A TypeScript-shaped map (written by hand, after the analyzer's shared analysis: tests/CodeMap.Tests/Golden):
+    // packages, folders, files as the units, classes and functions in them, class methods inside the classes.
+    const ts = await open(browser, query(fixture('tests/CodeMap.Tests/Golden/ts-mini.codemap.json')));
+    await test('a TypeScript map: files are the units, in the language\'s words', async () => {
+      await settled(ts.page, 60000);
+      const info = await ts.page.evaluate(() => ({
+        buttons: [...document.querySelectorAll('#level-toggle [data-level]')].map((b) => b.textContent),
+        hud: document.getElementById('hud').textContent,
+        units: window.codemap.view.units.map((u) => u.node.kind),
+        method: (() => {
+          const node = window.codemap.model.get('ts:api:src/orders/orders.service.ts#OrdersService.place');
+          return { level: node.level, type: node.typeNode?.id, owner: node.ownerNode?.id };
+        })(),
+      }));
+      assert.deepEqual(info.buttons, ['Packages', 'Folders', 'Files', 'Declarations', 'Auto']);
+      assert.match(info.hud, /\d+ files · \d+ links/);
+      assert.ok(info.units.length === 9 && info.units.every((k) => k === 'module'), `units: ${info.units}`);
+      assert.deepEqual(info.method, { level: 'member', type: 'ts:api:src/orders/orders.service.ts', owner: 'ts:api:src/orders/orders.service.ts#OrdersService' });
+      const names = await ts.page.evaluate(() => {
+        const { shortName } = window.codemapLayout;
+        const model = window.codemap.model;
+        return ['OrdersService.place', 'legacyTotal'].map((name) => shortName(model.get(`ts:api:src/orders/orders.service.ts#${name}`)));
+      });
+      // A method is named with its class, a function on its own.
+      assert.deepEqual(names, ['OrdersService.place', 'legacyTotal']);
+    });
+
+    for (const view of ['galaxy', 'city', 'layers', 'di', 'auto']) {
+      await test(`a TypeScript map: ${view} view draws`, async () => {
+        await settled(ts.page, 60000);
+        await ts.page.evaluate((v) => (v === 'auto' ? window.codemap.setLevel('auto') : (window.codemap.setLevel('type'), window.codemap.setView(v))), view);
+        await ts.page.waitForFunction(() => {
+          const app = window.codemap;
+          return app.view.units.length && app.view.settled !== false && (app.view !== app.zoomView || app.zoomView.semantic);
+        }, null, { timeout: 60000, polling: 100 });
+        await ts.page.waitForTimeout(300);
+        assert.ok(await litPixels(ts.page) > 400, 'the canvas shows the map');
+      });
+    }
+
+    await test('a TypeScript map: the call flow starts at the routes and dispatches through the interface', async () => {
+      await settled(ts.page, 60000);
+      const flow = await ts.page.evaluate(() => {
+        const app = window.codemap;
+        app.setLevel('type');
+        app.setView('galaxy');
+        app.setView('flow'); // the toolbar button: the best entry point
+        return {
+          entries: app.getEntryPoints().map((e) => ({ id: e.node.id, methods: e.methods.map((m) => m.id) })),
+          roots: app.flow?.roots.map((r) => r.id) ?? [],
+          methods: app.flow?.stats.methods ?? 0,
+          nodes: [...(app.flow?.nodes.keys() ?? [])],
+          hud: document.getElementById('hud').textContent,
+        };
+      });
+      const routes = ['ts:api:src/orders/orders.routes.ts#route:GET /orders/:id', 'ts:api:src/orders/orders.routes.ts#route:POST /orders'];
+      assert.ok(flow.entries.some((e) => e.id === 'ts:api:src/orders/orders.routes.ts' && routes.every((r) => e.methods.includes(r))), `entries: ${JSON.stringify(flow.entries)}`);
+      assert.ok(flow.roots.some((r) => routes.includes(r)), `roots: ${flow.roots}`);
+      assert.ok(flow.methods > 2, `methods in the flow: ${flow.methods}`);
+      // POST /orders → OrdersService.place → OrdersRepository.save (interface) → SqlOrdersRepository.save
+      assert.ok(flow.nodes.includes('ts:api:src/orders/orders.repository.ts#SqlOrdersRepository.save'), `flow: ${flow.nodes}`);
+      assert.match(flow.hud, /methods in \d+ files?/);
+    });
+
+    await test('a TypeScript map keeps its levels when saved, without errors', async () => {
+      await settled(ts.page, 60000);
+      const saved = await ts.page.evaluate(() => {
+        const text = window.codemapLayout.serializeDoc(window.codemap.model.doc);
+        return JSON.parse(text).nodes.find((n) => n.id === 'ts:api:src/orders/orders.service.ts')?.level;
+      });
+      assert.equal(saved, 'type');
+      assert.deepEqual(ts.errors, []);
+    });
+    await ts.page.close();
 
     // AR glasses: side-by-side stereo at the glasses' 3D-mode resolution.
     const ar = await open(browser, query('/sample.codemap.json') + '&ar=full', { width: 3840, height: 1080 });

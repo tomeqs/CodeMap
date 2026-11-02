@@ -1,4 +1,4 @@
-import { EDGE_KINDS, KIND_COLORS, TAG_COLORS, turboCss } from '../data/palette.js';
+import { EDGE_KINDS, KIND_COLORS, KIND_SHAPES, SHAPE_GLYPHS, TAG_COLORS, edgeColor, kindColor, turboCss } from '../data/palette.js';
 import { LIFETIMES } from '../data/di.js';
 import { VIOLATION_COLORS } from '../views/galaxy.js';
 import { METRICS, defaultEdgeKinds, serializeDoc } from '../data/model.js';
@@ -41,7 +41,7 @@ export class Sidebar {
       h('select', { onChange: (e) => onChange(e.target.value) }, options.map(([v, label]) => h('option', { value: v, selected: v === value }, label)));
 
     const colorOptions = [
-      ['project', 'Project / namespace'],
+      ['project', `${model.labels.project[0]} / ${model.labels.namespace[0].toLowerCase()}`],
       ['kind', 'Kind (class, interface…)'],
       ['role', 'Role (controller, repository…)'],
       ['cycles', 'Cycles & unused code'],
@@ -78,11 +78,14 @@ export class Sidebar {
     }
 
     if (model.hasTests) appearance.append(toggle('Include tests', state.showTests, (v) => app.setState({ showTests: v })));
-    if (model.hasExternal || model.hasPackages) appearance.append(toggle('Include external (BCL / NuGet)', state.showExternal, (v) => app.setState({ showExternal: v })));
+    if (model.hasExternal || model.hasPackages) appearance.append(toggle(`Include external (${model.labels.external})`, state.showExternal, (v) => app.setState({ showExternal: v })));
     el.append(appearance);
 
     // relationship kinds
-    const kinds = Object.keys(EDGE_KINDS).filter((k) => model.edgeKindCounts[k]);
+    const kinds = [
+      ...Object.keys(EDGE_KINDS).filter((k) => model.edgeKindCounts[k]),
+      ...Object.keys(model.edgeKindCounts).filter((k) => !EDGE_KINDS[k]).sort(), // kinds another language brings
+    ];
     const edges = h('div', { class: 'section' },
       h('h3', {}, 'Relationships',
         h('span', { class: 'links' },
@@ -93,7 +96,7 @@ export class Sidebar {
       ),
     );
     for (const kind of kinds) {
-      const info = EDGE_KINDS[kind];
+      const info = EDGE_KINDS[kind] ?? { label: kind, hint: kind, color: '#' + edgeColor(kind).getHexString() };
       edges.append(
         h('label', { class: 'check', title: info.hint },
           h('input', {
@@ -232,7 +235,7 @@ export class Sidebar {
         if (!node) continue;
         section.append(
           h('div', { class: 'insight', title: node.fullName, onClick: () => app.reveal(node.id) },
-            h('span', { class: 'swatch', style: { width: '8px', height: '8px', borderRadius: '50%', background: KIND_COLORS[node.kind], flex: 'none' } }),
+            h('span', { class: 'swatch', style: { width: '8px', height: '8px', borderRadius: '50%', background: kindColor(node.kind), flex: 'none' } }),
             h('span', { class: 'name' }, shortName(node)),
             h('span', { class: 'score' }, render(item)),
           ),
@@ -468,6 +471,28 @@ function groupBy(items, key) {
   return [...groups];
 }
 
+/** Kinds in the palette's order, then any others. */
+function orderedKinds(present) {
+  return [...Object.keys(KIND_COLORS).filter((k) => present.has(k)), ...[...present].filter((k) => !(k in KIND_COLORS)).sort()];
+}
+
+const KIND_WORDS = { constructor: 'ctor', recordStruct: 'record struct', typeAlias: 'type alias' };
+
+/** "● class · ◆ interface · …" for the kinds shown at a level. */
+function shapeLegend(model, level) {
+  const present = new Set(model.nodes.filter((n) => n.level === level && !n.external).map((n) => n.kind));
+  const seen = new Set();
+  const parts = [];
+  for (const kind of orderedKinds(present)) {
+    const word = KIND_WORDS[kind] ?? kind;
+    if (seen.has(word)) continue;
+    seen.add(word);
+    parts.push(`${SHAPE_GLYPHS[KIND_SHAPES[kind] ?? 'sphere']} ${word}`);
+  }
+
+  return parts.slice(0, 8).join(' · ');
+}
+
 /** Bottom legend for the current colour mode. */
 export function renderLegend(el, app) {
   const { model, state } = app;
@@ -480,7 +505,7 @@ export function renderLegend(el, app) {
       break;
     case 'kind': {
       const present = new Set(model.nodes.filter((n) => n.level === state.level || (state.view === 'city' && n.level === 'type')).map((n) => n.kind));
-      for (const [kind, color] of Object.entries(KIND_COLORS)) if (present.has(kind)) el.append(item(color, kind));
+      for (const kind of orderedKinds(present)) el.append(item(kindColor(kind), kind));
       break;
     }
     case 'role':
@@ -516,7 +541,7 @@ export function renderLegend(el, app) {
   }
 
   const shapes = (state.view === 'galaxy' || state.view === 'layers') && state.level !== 'project' && state.level !== 'namespace'
-    ? (state.level === 'member' ? '● method · ◆ ctor · ■ property · ▲ field' : '● class · ◆ interface · ■ struct · ⬟ record · ▲ enum')
+    ? shapeLegend(model, state.level)
     : state.view === 'city' ? `height = ${METRICS[state.heightMetric]?.label ?? state.heightMetric} · footprint = ${METRICS[state.footprintMetric]?.label ?? state.footprintMetric}` : '';
   if (shapes) el.append(h('span', { class: 'li faint' }, shapes));
 }

@@ -19,6 +19,7 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
         Name = "C#",
         Inputs = "a .sln, .slnx, .slnf, .csproj, .cs file",
         Markers = ".csproj or .cs files",
+        External = "BCL / NuGet",
         Unused = new UnusedPolicy
         {
             MemberAccessibility = NonPublic,

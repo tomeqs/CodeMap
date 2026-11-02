@@ -2,14 +2,18 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using CodeMap.Analysis;
 using CodeMap.Export;
+using CodeMap.Languages;
 using CodeMap.Model;
 
 namespace CodeMap.Tests;
 
 /// <summary>
-/// The whole map of samples/Shop against a stored copy: any change to what the analyzer writes shows up here.
+/// Whole maps against stored copies: any change to what the analysis writes shows up here.
+/// - shop: samples/Shop (C#);
+/// - ts-mini: a TypeScript-shaped raw graph written by hand (ts-mini.fragment.json) after the shared analysis;
+///   the viewer's smoke tests load it too.
 /// After an intended change, regenerate with CODEMAP_UPDATE_GOLDEN=1 dotnet test --filter GoldenTests and review
-/// the diff of Golden/shop.codemap.json.
+/// the diff of Golden/*.codemap.json.
 /// </summary>
 public class GoldenTests
 {
@@ -18,9 +22,23 @@ public class GoldenTests
     {
         var root = RepoRoot();
         var graph = CodeMapAnalyzer.Analyze(Path.Combine(root, "samples", "Shop", "Shop.sln"), new AnalyzerOptions { Git = false });
-        var actual = Normalize(graph, root);
+        AssertGolden("shop", Normalize(graph, root));
+    }
 
-        var golden = Path.Combine(root, "tests", "CodeMap.Tests", "Golden", "shop.codemap.json");
+    [Fact]
+    public void Typescript_shaped_map_matches_the_golden_file()
+    {
+        AssertGolden("ts-mini", Normalize(TsMini(), RepoRoot()));
+    }
+
+    /// <summary>The TypeScript-shaped test map after the shared analysis.</summary>
+    internal static CodeGraph TsMini() =>
+        CodeMapAnalyzer.Analyze(Path.Combine(RepoRoot(), "tests", "CodeMap.Tests", "Golden", "ts-mini.fragment.json"),
+            new LanguageRegistry(new[] { new FragmentLanguage() }), new AnalyzerOptions { Git = false });
+
+    private static void AssertGolden(string name, string actual)
+    {
+        var golden = Path.Combine(RepoRoot(), "tests", "CodeMap.Tests", "Golden", name + ".codemap.json");
         if (Environment.GetEnvironmentVariable("CODEMAP_UPDATE_GOLDEN") == "1")
         {
             File.WriteAllText(golden, actual);
@@ -36,7 +54,7 @@ public class GoldenTests
         var actualLines = actual.Split('\n');
         var line = 0;
         while (line < expectedLines.Length && line < actualLines.Length && expectedLines[line] == actualLines[line]) line++;
-        Assert.Fail($"The Shop map differs from {golden} at line {line + 1} (written to {actualPath}):\n" +
+        Assert.Fail($"The {name} map differs from {golden} at line {line + 1} (written to {actualPath}):\n" +
                     $"  expected: {expectedLines.ElementAtOrDefault(line)?.Trim()}\n  actual:   {actualLines.ElementAtOrDefault(line)?.Trim()}");
     }
 

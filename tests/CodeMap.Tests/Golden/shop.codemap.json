@@ -1,6 +1,6 @@
 {
   "format": "codemap",
-  "version": "1.0",
+  "version": "1.1",
   "generator": {
     "name": "codemap",
     "version": "(version)"
@@ -10,7 +10,32 @@
     "path": "(repo)/samples/Shop/Shop.sln",
     "root": "(repo)/samples/Shop",
     "kind": "solution",
-    "name": "Shop"
+    "name": "Shop",
+    "languages": [
+      {
+        "id": "csharp",
+        "name": "C#",
+        "levels": {
+          "project": [
+            "Project",
+            "Projects"
+          ],
+          "namespace": [
+            "Namespace",
+            "Namespaces"
+          ],
+          "type": [
+            "Type",
+            "Types"
+          ],
+          "member": [
+            "Member",
+            "Members"
+          ]
+        },
+        "external": "BCL / NuGet"
+      }
+    ]
   },
   "stats": {
     "projects": 5,
@@ -46,6 +71,7 @@
       "name": "Shop.Api",
       "fullName": "src/Shop.Api/Shop.Api.csproj",
       "project": "project:Shop.Api",
+      "language": "csharp",
       "signature": "Microsoft.NET.Sdk.Web · net8.0 · Exe",
       "location": {
         "file": "src/Shop.Api/Shop.Api.csproj",
@@ -74,6 +100,7 @@
       "name": "Shop.Application",
       "fullName": "src/Shop.Application/Shop.Application.csproj",
       "project": "project:Shop.Application",
+      "language": "csharp",
       "signature": "Microsoft.NET.Sdk · net8.0 · Library",
       "location": {
         "file": "src/Shop.Application/Shop.Application.csproj",
@@ -99,6 +126,7 @@
       "name": "Shop.Domain",
       "fullName": "src/Shop.Domain/Shop.Domain.csproj",
       "project": "project:Shop.Domain",
+      "language": "csharp",
       "signature": "Microsoft.NET.Sdk · net8.0 · Library",
       "location": {
         "file": "src/Shop.Domain/Shop.Domain.csproj",
@@ -124,6 +152,7 @@
       "name": "Shop.Infrastructure",
       "fullName": "src/Shop.Infrastructure/Shop.Infrastructure.csproj",
       "project": "project:Shop.Infrastructure",
+      "language": "csharp",
       "signature": "Microsoft.NET.Sdk · net8.0 · Library",
       "location": {
         "file": "src/Shop.Infrastructure/Shop.Infrastructure.csproj",
@@ -149,6 +178,7 @@
       "name": "Shop.Tests",
       "fullName": "tests/Shop.Tests/Shop.Tests.csproj",
       "project": "project:Shop.Tests",
+      "language": "csharp",
       "signature": "Microsoft.NET.Sdk · net8.0 · Library",
       "location": {
         "file": "tests/Shop.Tests/Shop.Tests.csproj",
@@ -5567,6 +5597,7 @@
       "kind": "package",
       "name": "Microsoft.NET.Test.Sdk",
       "fullName": "Microsoft.NET.Test.Sdk",
+      "language": "csharp",
       "signature": "17.12.0",
       "external": true
     },
@@ -5575,6 +5606,7 @@
       "kind": "package",
       "name": "xunit",
       "fullName": "xunit",
+      "language": "csharp",
       "signature": "2.9.3",
       "external": true
     }

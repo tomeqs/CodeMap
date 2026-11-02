@@ -43,8 +43,14 @@ public static class GraphPipeline
 
         if (fragments.Count == 0) throw new InvalidOperationException(string.Join(Environment.NewLine, failures));
 
+        foreach (var (language, fragment) in fragments)
+        {
+            foreach (var node in fragment.Nodes.Where(n => n.Kind is NodeKinds.Project or NodeKinds.Package)) node.Language ??= language.Info.Id;
+        }
+
         var graph = fragments.Count == 1 ? fragments[0].Graph : GraphMerger.Merge(Path.GetFullPath(path), fragments.Select(f => f.Graph).ToList());
         graph.Analysis.Warnings.AddRange(failures);
+        graph.Source.Languages = fragments.Select(f => f.Language.Info.Summary()).ToList();
 
         var languageOfProject = new Dictionary<string, LanguageInfo>(StringComparer.Ordinal);
         foreach (var (language, fragment) in fragments)

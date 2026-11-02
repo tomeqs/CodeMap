@@ -48,6 +48,14 @@ public sealed class LanguageInfo
     /// <summary>What a folder needs to contain, for messages: ".csproj or .cs files".</summary>
     public required string Markers { get; init; }
 
+    /// <summary>What the language's maps call each level (C#'s words unless given).</summary>
+    public LevelLabels Levels { get; init; } = new();
+
+    /// <summary>What code outside the analyzed sources is called, e.g. "BCL / NuGet", "npm packages".</summary>
+    public string External { get; init; } = "external";
+
     /// <summary>Which declarations may be reported as unused.</summary>
     public UnusedPolicy Unused { get; init; } = UnusedPolicy.None;
+
+    public LanguageSummary Summary() => new() { Id = Id, Name = Name, Levels = Levels, External = External };
 }

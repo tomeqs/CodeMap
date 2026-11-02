@@ -225,7 +225,7 @@ między uruchomieniami i zgodne z tym, czego używają XML docs i Roslyn.
 
 ```json
 {
-  "format": "codemap", "version": "1.0",
+  "format": "codemap", "version": "1.1",
   "nodes": [
     { "id": "T:Shop.Domain.Orders.Order", "kind": "class", "name": "Order",
       "parent": "namespace:Shop.Domain/Shop.Domain.Orders", "project": "project:Shop.Domain",

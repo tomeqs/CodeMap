@@ -68,20 +68,31 @@ internal static class GraphMetrics
             }
         }
 
+        // Members can hold members (a TypeScript class in its file): sizes come from the innermost ones.
+        List<GraphNode> LeafMembers(GraphNode owner)
+        {
+            var leaves = new List<GraphNode>();
+            var pending = new Stack<GraphNode>(children[owner.Id].Where(NodeLevels.IsMember));
+            while (pending.Count > 0)
+            {
+                var member = pending.Pop();
+                var inner = children[member.Id].Where(NodeLevels.IsMember).ToList();
+                if (inner.Count == 0) leaves.Add(member);
+                foreach (var child in inner) pending.Push(child);
+            }
+
+            return leaves;
+        }
+
+        foreach (var owner in graph.Nodes.Where(n => NodeLevels.IsMember(n) && !n.External && children[n.Id].Any(NodeLevels.IsMember)))
+        {
+            SetSizes(owner, LeafMembers(owner));
+        }
+
         var types = graph.Nodes.Where(n => NodeLevels.IsType(n) && !n.External).ToList();
         foreach (var type in types)
         {
-            var members = children[type.Id].Where(NodeLevels.IsMember).ToList();
-            type.SetMetric("members", members.Count);
-            SetIfPositive(type, "methods", members.Count(m => m.Kind == NodeKinds.Method));
-            SetIfPositive(type, "constructors", members.Count(m => m.Kind == NodeKinds.Constructor));
-            SetIfPositive(type, "properties", members.Count(m => m.Kind == NodeKinds.Property));
-            SetIfPositive(type, "fields", members.Count(m => m.Kind == NodeKinds.Field));
-            SetIfPositive(type, "events", members.Count(m => m.Kind == NodeKinds.Event));
-
-            var behavioural = members.Where(m => m.Kind is NodeKinds.Method or NodeKinds.Constructor or NodeKinds.Property or NodeKinds.Event).ToList();
-            type.SetMetric("complexity", behavioural.Sum(m => m.Metric("complexity")));
-            if (behavioural.Count > 0) type.SetMetric("maxComplexity", behavioural.Max(m => m.Metric("complexity")));
+            SetSizes(type, LeafMembers(type));
 
             var ce = typeDeps.TryGetValue(type.Id, out var deps) ? deps.Count : 0;
             var ca = typeDependents.TryGetValue(type.Id, out var dependents) ? dependents.Count : 0;
@@ -95,8 +106,16 @@ internal static class GraphMetrics
         var nsDeps = Roll(typeDeps, NamespaceOf);
         var projectDeps = Roll(typeDeps, id => byId[id].Project);
 
-        AggregateContainers(graph.Nodes.Where(n => n.Kind == NodeKinds.Namespace), types, t => NamespaceOf(t.Id), nsDeps);
-        AggregateContainers(graph.Nodes.Where(n => n.Kind == NodeKinds.Project), types, t => t.Project, projectDeps);
+        // Abstract: interfaces and abstract classes, or a unit (a file) that only declares those and type aliases.
+        bool IsAbstract(GraphNode type)
+        {
+            if (type.Kind == NodeKinds.Interface || type.Modifiers?.Contains("abstract") == true) return true;
+            var members = children[type.Id].Where(NodeLevels.IsMember).ToList();
+            return members.Count > 0 && members.All(m => m.Kind is NodeKinds.Interface or NodeKinds.TypeAlias || m.Modifiers?.Contains("abstract") == true);
+        }
+
+        AggregateContainers(graph.Nodes.Where(n => n.Kind == NodeKinds.Namespace), types, t => NamespaceOf(t.Id), nsDeps, IsAbstract);
+        AggregateContainers(graph.Nodes.Where(n => n.Kind == NodeKinds.Project), types, t => t.Project, projectDeps, IsAbstract);
 
         // ---------------------------------------------------------- cycles
         foreach (var cycle in CycleDetector.FindCycles(typeDeps))
@@ -156,7 +175,7 @@ internal static class GraphMetrics
     }
 
     private static void AggregateContainers(IEnumerable<GraphNode> containers, List<GraphNode> types, Func<GraphNode, string?> containerOf,
-        Dictionary<string, HashSet<string>> deps)
+        Dictionary<string, HashSet<string>> deps, Func<GraphNode, bool> isAbstract)
     {
         var typesByContainer = types.Where(t => containerOf(t) != null).ToLookup(t => containerOf(t)!, StringComparer.Ordinal);
         var dependents = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
@@ -175,7 +194,7 @@ internal static class GraphMetrics
             container.SetMetric("loc", topLevel.Sum(t => t.Metric("loc")));
             container.SetMetric("complexity", own.Sum(t => t.Metric("complexity")));
 
-            var abstractCount = own.Count(t => t.Kind == NodeKinds.Interface || t.Modifiers?.Contains("abstract") == true);
+            var abstractCount = own.Count(isAbstract);
             var abstractness = own.Count == 0 ? 0 : (double)abstractCount / own.Count;
             var ce = deps.TryGetValue(container.Id, out var d) ? d.Count : 0;
             var ca = dependents.TryGetValue(container.Id, out var a) ? a.Count : 0;
@@ -273,6 +292,21 @@ internal static class GraphMetrics
     {
         if (!map.TryGetValue(key, out var set)) map[key] = set = new HashSet<string>(StringComparer.Ordinal);
         set.Add(value);
+    }
+
+    /// <summary>Members by kind and their complexity, from the members a type (or a member holding members) contains.</summary>
+    private static void SetSizes(GraphNode node, List<GraphNode> members)
+    {
+        node.SetMetric("members", members.Count);
+        SetIfPositive(node, "methods", members.Count(m => m.Kind is NodeKinds.Method or NodeKinds.Function));
+        SetIfPositive(node, "constructors", members.Count(m => m.Kind == NodeKinds.Constructor));
+        SetIfPositive(node, "properties", members.Count(m => m.Kind == NodeKinds.Property));
+        SetIfPositive(node, "fields", members.Count(m => m.Kind == NodeKinds.Field));
+        SetIfPositive(node, "events", members.Count(m => m.Kind == NodeKinds.Event));
+
+        var behavioural = members.Where(m => m.Kind is NodeKinds.Method or NodeKinds.Function or NodeKinds.Constructor or NodeKinds.Property or NodeKinds.Event).ToList();
+        node.SetMetric("complexity", behavioural.Sum(m => m.Metric("complexity")));
+        if (behavioural.Count > 0) node.SetMetric("maxComplexity", behavioural.Max(m => m.Metric("complexity")));
     }
 
     private static void SetIfPositive(GraphNode node, string metric, double value)
