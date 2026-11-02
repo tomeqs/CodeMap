@@ -420,8 +420,9 @@ internal static class Cli
         if (graph.Analysis.Di is { } di)
         {
             var errors = di.Issues.Count(i => i.Severity == "error");
-            var warnings = di.Issues.Count - errors;
-            Console.WriteLine($"DI: {di.Registrations.Count} registrations, {errors} error(s), {warnings} warning(s)");
+            var notes = di.Issues.Count(i => i.Severity == "info");
+            var warnings = di.Issues.Count - errors - notes;
+            Console.WriteLine($"DI: {di.Registrations.Count} registrations, {errors} error(s), {warnings} warning(s)" + (notes > 0 ? $", {notes} note(s)" : ""));
         }
 
         var hiddenCoupling = graph.Analysis.ChangeCoupling.Count(c => c.Hidden);

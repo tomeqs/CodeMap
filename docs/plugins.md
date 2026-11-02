@@ -6,6 +6,7 @@ nieużywany kod, warstwy, analizę DI, historię gita, łączenie kilku językó
 
 Pierwszą wtyczką jest TypeScript / JavaScript ([`analyzers/typescript`](../analyzers/typescript)): Node.js + TypeScript compiler API,
 z Expressem (trasy), NestJS i Angularem (role, punkty wejścia, kontener DI) rozpoznawanymi po importach.
+Jak wygląda jej wynik, widać na [`samples/shop-ts`](../samples/shop-ts): `codemap samples/shop-ts -f json --indent`.
 
 ## Gdzie CodeMap szuka wtyczek
 

@@ -68,15 +68,22 @@ jobs:
       - run: npm ci
       - name: Chromium for the smoke tests
         run: npx playwright install --with-deps chromium
-      - name: Sample graph for the smoke tests (the analyzer on samples/Shop)
+      - name: TypeScript plugin (the analyzer maps samples/shop-ts with it)
+        run: npm ci --prefix ../analyzers/typescript
+      - name: Sample graphs for the smoke tests (the analyzer on samples/Shop, samples/shop-ts and samples/ as a whole)
         run: |
-          dotnet run --project ../src/CodeMap.Cli -c Release -- ../samples/Shop/Shop.sln -f json --no-git -o "$RUNNER_TEMP/shop"
+          dotnet build ../src/CodeMap.Cli -c Release -v quiet
+          codemap() { dotnet ../src/CodeMap.Cli/bin/Release/net8.0/codemap.dll "$@" -f json --no-git -q; }
+          codemap ../samples/Shop/Shop.sln -o "$RUNNER_TEMP/shop"
           mkdir -p public && cp "$RUNNER_TEMP/shop/Shop.codemap.json" public/sample.codemap.json
+          codemap ../samples/shop-ts -o "$RUNNER_TEMP/samples"
+          codemap ../samples -o "$RUNNER_TEMP/samples"
+          ls "$RUNNER_TEMP/samples"
       - run: npm run build
       - name: The viewer built into the CLI matches the sources
         run: git diff --exit-code --stat -- ../src/CodeMap.Cli/Assets/viewer.html
       - name: Smoke tests on WebGPU and WebGL 2 (headless Chromium without a GPU)
-        run: npm run test:smoke -- --renderers webgpu,webgl
+        run: npm run test:smoke -- --renderers webgpu,webgl --samples "$RUNNER_TEMP/samples"
 
   vscode:
     runs-on: ubuntu-latest

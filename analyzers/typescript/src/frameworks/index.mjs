@@ -1,4 +1,4 @@
-import { expressRoutes } from './express.mjs';
+import { expressRoutes, finishRoutes } from './express.mjs';
 import { nest } from './nest.mjs';
 import { angular } from './angular.mjs';
 
@@ -20,6 +20,8 @@ export function applyFrameworks(ctx, sf, info, owners) {
   angular(ctx, sf, info, owners);
   return routes;
 }
+
+export { finishRoutes };
 
 /** After every file: registrations whose lifetime comes from their class' scope. */
 export function finishDi(ctx) {

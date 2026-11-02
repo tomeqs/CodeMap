@@ -3,6 +3,8 @@
 // work, no errors – once per renderer.
 //
 //   npm run test:smoke [-- --renderers webgl,webgpu] [--headed] [--only 'name part'] [--dist other/build]
+//                      [--samples dir]  with shop-ts.codemap.json and samples.codemap.json, the analyzer's maps of
+//                                       samples/shop-ts and of samples/ (C# and TypeScript in one map); CI passes it
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { fixture, graph, launch, open, serve, settled } from './lib.mjs';
@@ -14,6 +16,7 @@ const option = (name, fallback) => {
 };
 const renderers = option('renderers', 'auto').split(',');
 const only = option('only'); // run just the tests whose name contains this
+const samples = option('samples');
 
 const server = await serve(option('dist') ? resolve(option('dist')) : undefined);
 const browser = await launch({ headed: args.includes('--headed') });
@@ -513,6 +516,9 @@ try {
     });
     await ts.page.close();
 
+    if (samples) await sampleTests(query);
+    else if (renderer === renderers[0]) console.log('  - the analyzer\'s maps of samples/shop-ts and samples/: skipped (no --samples)');
+
     // AR glasses: side-by-side stereo at the glasses' 3D-mode resolution.
     const ar = await open(browser, query('/sample.codemap.json') + '&ar=full', { width: 3840, height: 1080 });
     await test('AR glasses mode draws the map once per eye, with depth', async () => {
@@ -624,6 +630,94 @@ try {
 } finally {
   await browser.close();
   await server.close();
+}
+
+/**
+ * The analyzer's own maps: samples/shop-ts (NestJS API, Express gateway, Angular web on a domain library) and
+ * samples/ (that and the C# Shop in one map).
+ */
+async function sampleTests(query) {
+  const views = async (app, list) => {
+    for (const view of list) {
+      await app.page.evaluate((v) => (window.codemap.setLevel('type'), window.codemap.setView(v)), view);
+      await app.page.waitForFunction(() => window.codemap.view.units.length && window.codemap.view.settled !== false, null, { timeout: 60000, polling: 100 });
+      await app.page.waitForTimeout(300);
+      assert.ok(await litPixels(app.page) > 400, `the ${view} view shows the map`);
+    }
+  };
+
+  const shop = await open(browser, query(fixture(resolve(samples, 'shop-ts.codemap.json'))));
+  await test('samples/shop-ts: packages, folders, files; every view draws', async () => {
+    await settled(shop.page, 60000);
+    const info = await shop.page.evaluate(() => ({
+      buttons: [...document.querySelectorAll('#level-toggle [data-level]')].map((b) => b.textContent),
+      hud: document.getElementById('hud').textContent,
+    }));
+    assert.deepEqual(info.buttons, ['Packages', 'Folders', 'Files', 'Declarations', 'Auto']);
+    assert.match(info.hud, /\d+ files · \d+ links/);
+    await views(shop, ['galaxy', 'city', 'layers', 'di']);
+  });
+
+  await test('samples/shop-ts: flows start at Nest handlers and Express routes and reach the implementation', async () => {
+    await settled(shop.page, 60000);
+    const result = await shop.page.evaluate(() => {
+      const app = window.codemap;
+      app.setLevel('type');
+      app.setView('galaxy');
+      const entries = app.getEntryPoints().map((e) => ({ id: e.node.id, methods: e.methods.map((m) => m.id) }));
+      const nodesOf = (ids) => {
+        app.showFlow(ids);
+        return [...(app.flow?.nodes.keys() ?? [])];
+      };
+      return {
+        entries,
+        pay: nodesOf(['ts:@shop/api:src/orders/orders.controller.ts#OrdersController.pay']),
+        product: nodesOf(['ts:@shop/gateway:src/catalog/catalog.routes.ts#route:GET /:id']),
+        label: app.model.get('ts:@shop/gateway:src/catalog/catalog.routes.ts#route:GET /:id').name,
+      };
+    });
+    const api = 'ts:@shop/api:src/';
+    assert.ok(result.entries.some((e) => e.id === api + 'orders/orders.controller.ts#OrdersController' && e.methods.includes(api + 'orders/orders.controller.ts#OrdersController.pay')), JSON.stringify(result.entries));
+    assert.ok(result.entries.some((e) => e.id === 'ts:@shop/gateway:src/catalog/catalog.routes.ts'), JSON.stringify(result.entries));
+    // POST /orders/:id/pay → OrdersService.pay → PaymentsService.charge → PaymentGateway.charge (interface) → FakePaymentGateway.charge
+    assert.ok(result.pay.includes(api + 'payments/payments.service.ts#PaymentsService.charge'), `pay: ${result.pay}`);
+    assert.ok(result.pay.includes(api + 'payments/payment-gateway.ts#FakePaymentGateway.charge'), `pay: ${result.pay}`);
+    // GET /catalog/:id → productById → ApiClient.get, in another file
+    assert.ok(result.product.includes('ts:@shop/gateway:src/api-client.ts#ApiClient.get'), `product: ${result.product}`);
+    assert.equal(result.label, 'GET /catalog/:id');
+  });
+
+  await test('samples/shop-ts: the DI view shows the Angular error, the Nest warning and the request scope notes', async () => {
+    await settled(shop.page, 60000);
+    const hud = await shop.page.evaluate(() => {
+      window.codemap.setLevel('type');
+      window.codemap.setView('di');
+      return document.getElementById('hud').textContent;
+    });
+    assert.match(hud, /1 lifetime error\(s\) · 1 warning\(s\) · 4 note\(s\)/);
+    assert.deepEqual(shop.errors, []);
+  });
+  await shop.page.close();
+
+  const mixed = await open(browser, query(fixture(resolve(samples, 'samples.codemap.json'))));
+  await test('samples/: C# and TypeScript in one map, in both languages\' words', async () => {
+    await settled(mixed.page, 60000);
+    const info = await mixed.page.evaluate(() => {
+      const app = window.codemap;
+      return {
+        buttons: [...document.querySelectorAll('#level-toggle [data-level]')].map((b) => b.textContent),
+        languages: [...new Set(app.model.nodes.filter((n) => n.kind === 'project').map((n) => n.language))],
+        entries: app.getEntryPoints().map((e) => e.node.id),
+      };
+    });
+    assert.deepEqual(info.buttons, ['Projects / Packages', 'Namespaces / Folders', 'Types / Files', 'Members / Declarations', 'Auto']);
+    assert.deepEqual(info.languages.sort(), ['csharp', 'typescript']);
+    assert.ok(info.entries.includes('T:Shop.Api.Controllers.OrdersController'), `entries: ${info.entries}`);
+    assert.ok(info.entries.includes('ts:@shop/api:src/orders/orders.controller.ts#OrdersController'), `entries: ${info.entries}`);
+    await views(mixed, ['galaxy', 'city', 'layers', 'di', 'flow']);
+    assert.deepEqual(mixed.errors, []);
+  });
+  await mixed.page.close();
 }
 
 if (failed) {

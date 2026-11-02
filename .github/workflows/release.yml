@@ -85,8 +85,11 @@ jobs:
           "$exe" samples/Shop/Shop.sln -o smoke -f json,html -q
           test -s smoke/Shop.codemap.json
           test -s smoke/Shop.html
-          "$exe" analyzers/typescript/test/fixtures/basic -o smoke-ts -f json -q
-          grep -q '"typescript"' smoke-ts/basic.codemap.json
+          "$exe" samples/shop-ts -o smoke-ts -f json -q
+          grep -q '"ts:@shop/api:src/orders/orders.controller.ts#OrdersController"' smoke-ts/shop-ts.codemap.json
+          "$exe" samples -o smoke-mixed -f json -q
+          grep -q '"T:Shop.Domain.Orders.Order"' smoke-mixed/samples.codemap.json
+          grep -q '"ts:project:@shop/domain"' smoke-mixed/samples.codemap.json
 
       - name: Archive
         run: |

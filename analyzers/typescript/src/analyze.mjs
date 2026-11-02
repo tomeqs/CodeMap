@@ -7,7 +7,7 @@ import { folderId, moduleId, packageId, projectId } from './ids.mjs';
 import { declareModule } from './extract/declarations.mjs';
 import { collectReferences } from './extract/references.mjs';
 import { collectImports } from './extract/imports.mjs';
-import { applyFrameworks, finishDi } from './frameworks/index.mjs';
+import { applyFrameworks, finishDi, finishRoutes } from './frameworks/index.mjs';
 
 const LEVEL_RANK = { project: 0, namespace: 1, type: 2, member: 3 };
 
@@ -93,7 +93,7 @@ export function analyze(ts, request, log = () => {}) {
 
   const sourceCache = new Map();
   const resolver = new Resolver(ts, packages);
-  const shared = { di: { registrations: [], dependencies: [] }, claimed: new Map(), nestScopes: new Map() };
+  const shared = { di: { registrations: [], dependencies: [] }, claimed: new Map(), nestScopes: new Map(), express: { routers: new Map(), mounts: new Map(), routes: [] } };
   projects.forEach((project, i) => {
     if (!project.analyzedFiles.length) return;
     log(`[${i + 1}/${projects.length}] ${project.name}: ${project.analyzedFiles.length} file(s)`);
@@ -116,6 +116,7 @@ export function analyze(ts, request, log = () => {}) {
   });
 
   markEntryPoints(graph, projects, resolver, files);
+  finishRoutes({ ...shared, graph });
   const di = finishDi(shared);
 
   if (stats.unresolved) warnings.push(`${stats.unresolved} relative import(s) could not be resolved (paths only a bundler knows, or missing files).`);

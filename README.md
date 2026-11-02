@@ -1,7 +1,8 @@
 # CodeMap
 
-**Mapa kodu dla projektów C#**: analizator oparty na Roslynie, który zamienia solucję w graf powiązań
-(klasy, interfejsy, metody, wywołania, dziedziczenie, wstrzykiwanie zależności…), oraz interaktywna
+**Mapa kodu dla C# oraz TypeScript / JavaScript**: analizator (Roslyn dla C#, TypeScript compiler API we wtyczce
+dla TypeScriptu i JavaScriptu, kolejne języki jako [wtyczki](docs/plugins.md)), który zamienia kod w graf powiązań
+(klasy, interfejsy, metody, funkcje, wywołania, importy, dziedziczenie, wstrzykiwanie zależności…), oraz interaktywna
 **mapa 3D** z czterema widokami: *Galaxy* (graf siłowy w przestrzeni), *City* (miasto kodu, w którym typy są budynkami),
 *Layers* (warstwy architektury wyliczone z kodu), *DI* (kontener zależności z czasami życia usług)
 i *Flow* (przepływ wywołań od punktu wejścia, z diagramem sekwencji).
@@ -33,7 +34,8 @@ rozpakuj go i uruchom `codemap` (na Windows wystarczy dwuklik na `codemap.exe`).
 | macOS (Apple Silicon, Intel) | `codemap-<wersja>-osx-arm64.tar.gz`, `…-osx-x64.tar.gz` |
 | Linux | `codemap-<wersja>-linux-x64.tar.gz`, `…-linux-arm64.tar.gz` |
 
-To jeden plik wykonywalny (około 50 MB) z wbudowanym środowiskiem .NET, więc działa bez .NET. Jeśli .NET SDK
+To jeden plik wykonywalny (około 50 MB) z wbudowanym środowiskiem .NET, więc działa bez .NET, i obok niego folder
+`plugins/` z wtyczką TypeScript / JavaScript (ta potrzebuje Node.js 18+; bez niego mapuje się sam C#). Jeśli .NET SDK
 jest zainstalowany, `codemap` i tak go znajdzie i użyje jego bibliotek (najnowszej wersji) do rozwiązywania
 typów frameworka. `codemap --version` pokazuje, skąd je bierze.
 
@@ -95,12 +97,14 @@ dotnet publish src/CodeMap.Cli -c Release -r win-x64 -o dist/win-x64     # albo 
 `codemap` bez argumentów uruchamia lokalny serwer (tylko `127.0.0.1`) i otwiera przeglądarkę
 z ekranem wyboru projektu:
 
-* **przeglądarka folderów**: od razu widać, gdzie leżą solucje (◆) i projekty (●); dwuklik analizuje;
+* **przeglądarka folderów**: od razu widać, gdzie leżą solucje (◆), projekty i paczki (●), z językiem (C#, TS); dwuklik analizuje;
+  folder z solucją i kodem TypeScript obok analizuje się w całości, jako jedna mapa;
 * **klonowanie z Gita**: wklej URL repozytorium, a CodeMap sklonuje je do `~/.codemap/repos` i sam znajdzie solucję;
 * **ostatnie projekty**: zapamiętane mapy otwierają się natychmiast z cache (`~/.codemap/cache`);
 * **postęp analizy na żywo**, z możliwością anulowania;
 * **↻** na mapie: ponowna analiza bez utraty kamery, filtrów i zaznaczenia;
-* **Live**: mapa sama się odświeża, gdy zapiszesz plik `.cs`/`.csproj`, a toast pokazuje, ile typów przybyło lub ubyło.
+* **Live**: mapa sama się odświeża, gdy zapiszesz plik `.cs`/`.csproj`, `.ts`/`.js`, `package.json` albo `tsconfig.json`,
+  a toast pokazuje, ile typów przybyło lub ubyło (`node_modules` i wyniki budowania są pomijane).
 
 ```bash
 codemap                                   # ekran wyboru projektu
@@ -147,7 +151,7 @@ z zainstalowanego .NET. Jeśli wcześniej był `dotnet restore`, typy z paczek N
 ### TypeScript i JavaScript
 
 Jeśli na komputerze jest **Node.js 18+**, CodeMap mapuje też TypeScript i JavaScript (wtyczka `analyzers/typescript`,
-dołączana do wydań). Jednostką mapy jest **plik**: paczki (`package.json`) → foldery → pliki → deklaracje
+dołączana do wydań; rozszerzenie VS Code używa Node.js wbudowanego w VS Code). Jednostką mapy jest **plik**: paczki (`package.json`) → foldery → pliki → deklaracje
 (klasy, interfejsy, funkcje, typy, stałe) i składowe klas. Krawędzie: `imports` między plikami, wywołania (z kolejnością,
 także przez pliki-beczki `index.ts` i przez interfejsy), `new` i JSX, dziedziczenie i implementacje, typy w sygnaturach,
 dekoratory, paczki npm i zależności między paczkami monorepo (workspaces) – bez `npm install`.
@@ -155,8 +159,8 @@ dekoratory, paczki npm i zależności między paczkami monorepo (workspaces) –
 Frameworki rozpoznawane po importach:
 
 * **Express**: każde `app.get('/orders/:id', …)` / `router.post(…)` / `router.route(…).put(…)` to osobny węzeł trasy
-  (`GET /orders/:id`); kod handlerów inline należy do trasy, nazwane handlery i middleware są przez nią wywoływane.
-  Widok Flow startuje od tras.
+  (`GET /orders/:id`, z prefiksem z `app.use('/catalog', router)`); kod handlerów inline należy do trasy, nazwane handlery
+  i middleware są przez nią wywoływane. Widok Flow startuje od tras.
 * **NestJS**: kontrolery (trasy z pełną ścieżką), providery, guardy, interceptory, moduły, resolvery GraphQL, gatewaye,
   `@Cron`/`@MessagePattern`… jako punkty wejścia, a w widoku DI kontener Nesta: providery modułów (`useClass`, `useValue`,
   `useFactory`, `useExisting`, tokeny), zasięgi `Scope.REQUEST`/`TRANSIENT`, `@Inject`, `@InjectRepository`, `@Optional`.
@@ -170,6 +174,12 @@ codemap path/to/repo                # C# i TypeScript w jednym repo: jedna mapa 
 codemap path/to/repo --lang csharp  # tylko jeden język
 codemap --version                   # które języki są dostępne (i czy jest Node.js)
 ```
+
+Przykład: [`samples/shop-ts`](samples/shop-ts) to sklep w TypeScripcie (API w NestJS, bramka w Expressie, front w Angularze
+na wspólnej bibliotece domenowej), z celowym cyklem, martwym kodem i problemami kontenerów DI. `codemap samples/shop-ts`
+mapuje sam TypeScript, a `codemap samples` daje jedną mapę z nim i z solucją C# [`samples/Shop`](samples/Shop) obok siebie
+(poziomy nazywają się wtedy „Projects / Packages”, „Types / Files”…). Mapy z różnych języków nie mają na razie krawędzi
+między sobą (np. wywołań HTTP z TypeScriptu do kontrolerów C#).
 
 Jak dopisać kolejny język: [docs/plugins.md](docs/plugins.md).
 
@@ -402,18 +412,19 @@ Pełne 6DoF (chodzenie wokół mapy) wymaga kamery XREAL Eye i natywnego SDK XRE
 ```
 src/CodeMap.Core      analizator, model grafu, metryki, eksportery
   Languages/          języki: ILanguageAnalyzer (każdy język zwraca surowy graf), rejestr, C# (Roslyn)
+  Languages/External/ wtyczki językowe: manifest, wyszukiwanie, uruchamianie programu wtyczki, sprawdzanie jej wyniku
   Pipeline/           wspólna część analizy: wybór języków, łączenie ich grafów w jedną mapę, metryki, git, statystyki
   Loading/            .sln/.slnx/.slnf/.csproj → kompilacje Roslyn (bez MSBuild i bez budowania)
   Analysis/           deklaracje, walker referencji, metryki, cykle, warstwy, DI, git (churn, change coupling), tagi
   Export/             JSON, DGML, GraphML, Cypher, Markdown, HTML
 src/CodeMap.Server    lokalna aplikacja: API (ASP.NET Core), przeglądarka folderów, klonowanie, cache, tryb live
-  Languages/External/ wtyczki językowe: manifest, wyszukiwanie, uruchamianie programu wtyczki, sprawdzanie jej wyniku
 src/CodeMap.Cli       narzędzie `codemap` (dotnet tool albo samodzielny plik wykonywalny), osadza zbudowany viewer
 analyzers/typescript  wtyczka TypeScript / JavaScript (Node.js + TypeScript compiler API), kopiowana do plugins/typescript
 vscode/               rozszerzenie VS Code: mapa w webview, przejścia kod ↔ mapa, odświeżanie na żywo
 viewer/               mapa 3D: Vite + three.js + d3-force-3d + d3-hierarchy, budowana do jednego pliku HTML
-tests/CodeMap.Tests   testy xUnit analizatora i eksporterów; Golden/ to zapisana mapa samples/Shop
+tests/CodeMap.Tests   testy xUnit analizatora i eksporterów; Golden/ to zapisane mapy samples/Shop i małej aplikacji TS
 samples/Shop          przykładowa solucja (DDD, DI, zdarzenia, celowy cykl i martwy kod)
+samples/shop-ts       ten sam sklep w TypeScripcie: monorepo npm z NestJS, Expressem i Angularem
 docs/                 specyfikacja formatu, JSON Schema i protokół wtyczek
 ```
 
@@ -425,6 +436,7 @@ cd analyzers/typescript && npm install && npm test   # wtyczka TypeScript (npm i
 cd viewer && npm install && npm run dev       # viewer z hot-reload: http://localhost:5173/?data=sample.codemap.json
 npm run build                                 # buduje dist/index.html i kopiuje go do src/CodeMap.Cli/Assets/viewer.html
 npm run test:smoke -- --renderers webgpu,webgl   # smoke testy zbudowanego viewera w headless Chromium (bez GPU)
+npm run test:smoke -- --samples <folder>      # …także na mapach samples/shop-ts i samples/ (shop-ts.codemap.json, samples.codemap.json)
 npm run bench -- --sizes 1k,7k,20k            # benchmark na wygenerowanych grafach, porównanie z bench/baseline.json
 ```
 
@@ -464,4 +476,6 @@ nadal jest mapowany, a nierozwiązane symbole są po prostu pomijane.
 * tryb VR/WebXR dla widoku City
 * własność kodu (autorzy z gita) jako kolor dzielnic
 * serwer MCP, który odpowiada na pytania o architekturę na podstawie grafu
-* rozszerzenie VS Code / Visual Studio z mapą w panelu edytora i przejściem do kodu jednym kliknięciem
+* rozszerzenie Visual Studio z mapą w panelu edytora (dla VS Code już jest)
+* krawędzie między językami: wywołania HTTP z TypeScriptu (`fetch`, `HttpClient`) do tras kontrolerów C#
+* kolejne języki jako wtyczki (Python, Java, Go): protokół w [docs/plugins.md](docs/plugins.md)

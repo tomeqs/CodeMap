@@ -19,8 +19,12 @@ test('Express: routes are members of their file, their handlers\' code is theirs
   const { graph, node, hasEdge } = run('express');
   const R = 'ts:shop-gateway:src/orders/orders.routes.ts';
   const routes = graph.nodes.filter((n) => n.tags?.includes('route')).map((n) => n.name).sort();
-  assert.deepEqual(routes, ['DELETE /cache', 'GET /', 'GET /:id', 'GET /health', 'POST /:id/lines']);
+  // A mounted router's routes are named with their full path (app.use('/orders', ordersRouter) in server.ts, a router
+  // in a router: /admin/cache); their ids keep the path as declared. A computed mount path is not guessed (/daily).
+  assert.deepEqual(routes, ['DELETE /admin/cache', 'DELETE /cache', 'GET /daily', 'GET /health', 'GET /orders', 'GET /orders/:id', 'POST /orders/:id/lines']);
+  node('ts:shop-gateway:src/admin.routes.ts#route:DELETE /');
   const get = node(`${R}#route:GET /:id`);
+  assert.equal(get.name, 'GET /orders/:id');
   assert.deepEqual([get.kind, get.level, get.parent, get.tags], ['function', 'member', R, ['route', 'entrypoint']]);
   assert.equal(get.metrics.complexity, 2); // the inline handler's if
   assert.deepEqual(node(R).tags, ['controller']);
