@@ -4,7 +4,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <Version>0.1.0</Version>
+    <Version>0.2.1</Version>
     <Authors>CodeMap contributors</Authors>
+    <Copyright>Copyright (c) 2026 CodeMap contributors</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/tomeqs/CodeMap</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/tomeqs/CodeMap</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 </Project>

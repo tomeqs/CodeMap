@@ -3,3 +3,4 @@ analyzer/
 media/viewer.html
 *.vsix
 .vscode-test/
+/LICENSE
