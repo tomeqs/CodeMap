@@ -108,4 +108,4 @@ jobs:
       - name: Integration tests in VS Code
         run: xvfb-run -a npm run test:integration
       - name: Package
-        run: npx vsce package --no-dependencies --skip-license -o codemap.vsix
+        run: npx vsce package --no-dependencies -o codemap.vsix

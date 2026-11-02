@@ -1,131 +1,134 @@
 # CodeMap
 
-**Mapa kodu dla C# oraz TypeScript / JavaScript**: analizator (Roslyn dla C#, TypeScript compiler API we wtyczce
-dla TypeScriptu i JavaScriptu, kolejne języki jako [wtyczki](docs/plugins.md)), który zamienia kod w graf powiązań
-(klasy, interfejsy, metody, funkcje, wywołania, importy, dziedziczenie, wstrzykiwanie zależności…), oraz interaktywna
-**mapa 3D** z czterema widokami: *Galaxy* (graf siłowy w przestrzeni), *City* (miasto kodu, w którym typy są budynkami),
-*Layers* (warstwy architektury wyliczone z kodu), *DI* (kontener zależności z czasami życia usług)
-i *Flow* (przepływ wywołań od punktu wejścia, z diagramem sekwencji).
+**A code map for C# and TypeScript / JavaScript**: an analyzer (Roslyn for C#, the TypeScript compiler API in a plugin
+for TypeScript and JavaScript, more languages as [plugins](docs/plugins.md)) that turns code into a graph of relationships
+(classes, interfaces, methods, functions, calls, imports, inheritance, dependency injection…), and an interactive
+**3D map** with five views: *Galaxy* (a force-directed graph in space), *City* (a code city where types are buildings),
+*Layers* (architecture layers computed from the code), *DI* (the dependency injection container with service lifetimes)
+and *Flow* (the call flow from an entry point, with a sequence diagram).
 
 ```
-codemap MySolution.sln            →  MySolution.codemap.json   (graf: format do dalszego przetwarzania)
-                                     MySolution.html           (interaktywna mapa 3D, działa offline)
-                                     MySolution.md             (raport: warstwy, DI, cykle, hotspoty, martwy kod…)
+codemap MySolution.sln            →  MySolution.codemap.json   (the graph: a format for further processing)
+                                     MySolution.html           (interactive 3D map, works offline)
+                                     MySolution.md             (report: layers, DI, cycles, hotspots, dead code…)
 ```
 
-| Galaxy: typy jako gwiazdy, projekty jako układy słoneczne | City: wysokość = złożoność, kolor = hotspot |
+| Galaxy: types as stars, projects as solar systems | City: height = complexity, colour = hotspot |
 |---|---|
 | ![galaxy](docs/img/galaxy.png) | ![city](docs/img/city.png) |
-| **Layers: zależności w górę (czerwone) łamią warstwy** | **DI: singleton trzymający usługę scoped (captive dependency)** |
+| **Layers: upward dependencies (red) break the layers** | **DI: a singleton holding a scoped service (captive dependency)** |
 | ![layers](docs/img/layers.png) | ![di](docs/img/di.png) |
-| **Flow: przepływ wywołań od akcji kontrolera, z diagramem sekwencji** | **Auto: zoom semantyczny, typ rozwinięty w składowe** |
+| **Flow: the call flow from a controller action, with a sequence diagram** | **Auto: semantic zoom, a type unfolded into its members** |
 | ![flow](docs/img/flow.png) | ![zoom](docs/img/zoom.png) |
 
-## Szybki start
+## Quick start
 
-### Gotowy program (bez instalowania czegokolwiek)
+### Ready-made program (nothing to install)
 
-Z zakładki [Releases](https://github.com/tomeqs/CodeMap/releases) pobierz plik dla swojego systemu,
-rozpakuj go i uruchom `codemap` (na Windows wystarczy dwuklik na `codemap.exe`). Otworzy się przeglądarka z ekranem wyboru projektu.
+Download the file for your system from [Releases](https://github.com/tomeqs/CodeMap/releases),
+unpack it and run `codemap` (on Windows, double-click `codemap.exe`). A browser opens with the project picker.
 
-| System | Plik |
+| System | File |
 |---|---|
-| Windows (Intel/AMD, ARM) | `codemap-<wersja>-win-x64.zip`, `…-win-arm64.zip` |
-| macOS (Apple Silicon, Intel) | `codemap-<wersja>-osx-arm64.tar.gz`, `…-osx-x64.tar.gz` |
-| Linux | `codemap-<wersja>-linux-x64.tar.gz`, `…-linux-arm64.tar.gz` |
+| Windows (Intel/AMD, ARM) | `codemap-<version>-win-x64.zip`, `…-win-arm64.zip` |
+| macOS (Apple Silicon, Intel) | `codemap-<version>-osx-arm64.tar.gz`, `…-osx-x64.tar.gz` |
+| Linux | `codemap-<version>-linux-x64.tar.gz`, `…-linux-arm64.tar.gz` |
 
-To jeden plik wykonywalny (około 50 MB) z wbudowanym środowiskiem .NET, więc działa bez .NET, i obok niego folder
-`plugins/` z wtyczką TypeScript / JavaScript (ta potrzebuje Node.js 18+; bez niego mapuje się sam C#). Jeśli .NET SDK
-jest zainstalowany, `codemap` i tak go znajdzie i użyje jego bibliotek (najnowszej wersji) do rozwiązywania
-typów frameworka. `codemap --version` pokazuje, skąd je bierze.
+It is a single executable (about 50 MB) with .NET built in, so it runs without .NET, and next to it a `plugins/`
+folder with the TypeScript / JavaScript plugin (which needs Node.js 18+; without it only C# is mapped). If the .NET SDK
+is installed, `codemap` still finds it and uses its libraries (the newest version) to resolve framework types.
+`codemap --version` shows where it takes them from.
 
-* **Windows**: plik nie jest podpisany, więc SmartScreen może pokazać ostrzeżenie (*Więcej informacji → Uruchom mimo to*).
-* **macOS**: po pobraniu z przeglądarki zdejmij kwarantannę: `xattr -d com.apple.quarantine ./codemap`.
-* Warto dodać folder z programem do `PATH`, żeby `codemap` działał z każdego terminala i w skrótach IDE.
+* **Windows**: the file is not signed, so SmartScreen may show a warning (*More info → Run anyway*).
+* **macOS**: after downloading in a browser, remove the quarantine flag: `xattr -d com.apple.quarantine ./codemap`.
+* Add the program's folder to `PATH` so `codemap` works from any terminal and in IDE shortcuts.
 
-### Jako narzędzie .NET
+### As a .NET tool
 
-Wymagany jest .NET SDK 8 lub nowszy. Node.js jest potrzebny tylko do przebudowania viewera.
+Requires the .NET SDK 8 or newer. Node.js 18+ is needed for TypeScript / JavaScript (and to rebuild the viewer).
 
 ```bash
-# z pliku .nupkg z Releases albo zbudowanego lokalnie
+dotnet tool install -g CodeMap.Tool           # from nuget.org
+
+# or from a .nupkg from Releases, or built locally
 dotnet pack src/CodeMap.Cli -o nupkg
 dotnet tool install -g CodeMap.Tool --add-source nupkg
 
-codemap            # otwiera aplikację w przeglądarce
+codemap            # opens the app in the browser
 ```
 
-### Rozszerzenie VS Code
+### VS Code extension
 
-Mapa otwiera się w karcie edytora, a z kodu do mapy i z powrotem przechodzisz jednym kliknięciem:
+The map opens in an editor tab, and you go from the code to the map and back in one click:
 
-* **CodeMap: Open Code Map** z palety poleceń albo prawym przyciskiem na `.sln` / `.slnx` / `.csproj` / `package.json` / `tsconfig.json` / folderze w Explorerze;
-  gdy w workspace jest C# i TypeScript / JavaScript, rozszerzenie pyta, a folder daje jedną mapę z obydwoma;
-* **Open** w panelu szczegółów (albo dwuklik na metodzie) otwiera kod w edytorze obok;
-* **Show in Code Map** (`Ctrl+Alt+M`) zaznacza na mapie metodę, funkcję, klasę albo plik spod kursora (C#, TypeScript, JavaScript);
-* **Show Call Flow** (menu kontekstowe edytora) pokazuje przepływ wywołań i diagram sekwencji metody albo funkcji spod kursora;
-* po zapisaniu pliku `.cs`, `.ts`, `.js`, projektu albo `package.json` mapa sama się odświeża i nie gubi kamery ani zaznaczenia;
-* Mermaid i JSON zapisujesz przez okno zapisu VS Code.
+* **CodeMap: Open Code Map** from the command palette, or right-click a `.sln` / `.slnx` / `.csproj` / `package.json` / `tsconfig.json` / folder in the Explorer;
+  when the workspace has both C# and TypeScript / JavaScript, the extension asks, and the folder gives one map with both;
+* **Open** in the details panel (or double-click a method) opens the code in the editor next to the map;
+* **Show in Code Map** (`Ctrl+Alt+M`) selects the method, function, class or file under the cursor on the map (C#, TypeScript, JavaScript);
+* **Show Call Flow** (editor context menu) shows the call flow and sequence diagram of the method or function under the cursor;
+* after saving a `.cs`, `.ts` or `.js` file, a project or `package.json`, the map refreshes itself and keeps the camera and selection;
+* Mermaid and JSON are saved through VS Code's save dialog.
 
-Instalacja: plik `codemap-<wersja>.vsix` z [Releases](https://github.com/tomeqs/CodeMap/releases), potem
-*Extensions → … → Install from VSIX…* albo `code --install-extension codemap-0.2.0.vsix`. Rozszerzenie ma w sobie
-analizator (wymaga .NET SDK 8+, który i tak masz do C#). Bez .NET ustaw `codemap.analyzerPath` na samodzielny plik `codemap`.
-TypeScript i JavaScript analizuje wtyczka dołączona do rozszerzenia, na Node.js wbudowanym w VS Code (inny: `codemap.nodePath`).
-Kod rozszerzenia jest w [`vscode/`](vscode/).
+Install it from the Extensions view (search for **CodeMap**: VS Code Marketplace; Cursor, VSCodium and others: Open VSX), or
+take `codemap-<version>.vsix` from [Releases](https://github.com/tomeqs/CodeMap/releases) and use
+*Extensions → … → Install from VSIX…* or `code --install-extension codemap-<version>.vsix`. The extension contains the
+analyzer (it needs the .NET SDK 8+, which you have for C# anyway). Without .NET, set `codemap.analyzerPath` to the standalone `codemap` executable.
+TypeScript and JavaScript are analyzed by the plugin bundled with the extension, on the Node.js built into VS Code (another one: `codemap.nodePath`).
+The extension's code is in [`vscode/`](vscode/).
 
-### Wydawanie nowej wersji
+### Releasing a new version
 
-Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) uruchamia testy i buduje programy
-dla 6 platform. Dla każdej sprawdza, czy program uruchamia się i analizuje przykładową solucję, a do tego pakuje narzędzie .NET
-i rozszerzenie VS Code (`.vsix`).
+The [`.github/workflows/release.yml`](.github/workflows/release.yml) workflow runs the tests and builds the program
+for 6 platforms. For each one it checks that the program starts and analyzes the sample solution, and it also packs the .NET tool
+and the VS Code extension (`.vsix`).
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0     # GitHub release z plikami i sumami SHA256
+git tag v0.3.0 && git push origin v0.3.0     # GitHub release with the files and SHA256 checksums
 ```
 
-Workflow można też uruchomić ręcznie (*Actions → Release → Run workflow*). Z podaną wersją (np. `0.2.0`) sam tworzy tag `v0.2.0`
-i release. Bez wersji pliki trafiają tylko do artefaktów.
-Opcjonalne sekrety repozytorium publikują dalej: `NUGET_API_KEY` wysyła narzędzie do nuget.org
-(`dotnet tool install -g CodeMap.Tool`), `VSCE_PAT` rozszerzenie do VS Code Marketplace, a `OVSX_PAT` do Open VSX (VSCodium, Cursor). Lokalnie program dla wybranej platformy buduje:
+The workflow can also be run by hand (*Actions → Release → Run workflow*). Given a version (e.g. `0.3.0`), it creates the tag `v0.3.0`
+and the release itself. Without a version, the files only go to the run's artifacts.
+Optional repository secrets publish further: `NUGET_API_KEY` sends the tool to nuget.org
+(`dotnet tool install -g CodeMap.Tool`), `VSCE_PAT` the extension to the VS Code Marketplace, and `OVSX_PAT` to Open VSX (VSCodium, Cursor). To build the program for one platform locally:
 
 ```bash
-dotnet publish src/CodeMap.Cli -c Release -r win-x64 -o dist/win-x64     # albo linux-x64, osx-arm64…
+dotnet publish src/CodeMap.Cli -c Release -r win-x64 -o dist/win-x64     # or linux-x64, osx-arm64…
 ```
 
-### Aplikacja w przeglądarce (najwygodniej)
+### The app in the browser (the most convenient way)
 
-`codemap` bez argumentów uruchamia lokalny serwer (tylko `127.0.0.1`) i otwiera przeglądarkę
-z ekranem wyboru projektu:
+`codemap` without arguments starts a local server (`127.0.0.1` only) and opens the browser
+with the project picker:
 
-* **przeglądarka folderów**: od razu widać, gdzie leżą solucje (◆), projekty i paczki (●), z językiem (C#, TS); dwuklik analizuje;
-  folder z solucją i kodem TypeScript obok analizuje się w całości, jako jedna mapa;
-* **klonowanie z Gita**: wklej URL repozytorium, a CodeMap sklonuje je do `~/.codemap/repos` i sam znajdzie solucję;
-* **ostatnie projekty**: zapamiętane mapy otwierają się natychmiast z cache (`~/.codemap/cache`);
-* **postęp analizy na żywo**, z możliwością anulowania;
-* **↻** na mapie: ponowna analiza bez utraty kamery, filtrów i zaznaczenia;
-* **Live**: mapa sama się odświeża, gdy zapiszesz plik `.cs`/`.csproj`, `.ts`/`.js`, `package.json` albo `tsconfig.json`,
-  a toast pokazuje, ile typów przybyło lub ubyło (`node_modules` i wyniki budowania są pomijane).
+* **folder browser**: you see right away where solutions (◆), projects and packages (●) are, with their language (C#, TS); double-click analyzes;
+  a folder with a solution and TypeScript code next to it is analyzed as a whole, as one map;
+* **clone from Git**: paste a repository URL, and CodeMap clones it to `~/.codemap/repos` and finds the solution itself;
+* **recent projects**: saved maps open instantly from the cache (`~/.codemap/cache`);
+* **live analysis progress**, which you can cancel;
+* **↻** on the map: analyze again without losing the camera, filters and selection;
+* **Live**: the map refreshes itself when you save a `.cs`/`.csproj`, `.ts`/`.js`, `package.json` or `tsconfig.json` file,
+  and a toast shows how many types were added or removed (`node_modules` and build output are ignored).
 
 ```bash
-codemap                                   # ekran wyboru projektu
-codemap ui path/to/MySolution.sln         # od razu analizuje wskazaną solucję
-codemap ui . --watch                      # bieżący folder + odświeżanie na żywo
-codemap ui --port 6000 --no-open          # inny port, bez otwierania przeglądarki
+codemap                                   # project picker
+codemap ui path/to/MySolution.sln         # analyzes the given solution right away
+codemap ui . --watch                      # current folder + live refresh
+codemap ui --port 6000 --no-open          # another port, without opening the browser
 ```
 
-Serwer przyjmuje połączenia tylko z `127.0.0.1`, odrzuca obce nagłówki `Host` (DNS rebinding),
-a każde wywołanie API wymaga tokenu sesji, który jest wstrzykiwany tylko do strony serwowanej
-przez `codemap`. Inne strony otwarte w przeglądarce nie mogą więc z niego korzystać.
+The server only accepts connections from `127.0.0.1`, rejects foreign `Host` headers (DNS rebinding),
+and every API call needs a session token that is injected only into the page served
+by `codemap`. Other pages open in the browser therefore cannot use it.
 
-### Skrót w IDE
+### IDE shortcut
 
 **Visual Studio**: *Tools → External Tools… → Add*
-* Command: `%USERPROFILE%\.dotnet\tools\codemap.exe` (albo ścieżka do pobranego `codemap.exe`)
+* Command: `%USERPROFILE%\.dotnet\tools\codemap.exe` (or the path to the downloaded `codemap.exe`)
 * Arguments: `ui "$(SolutionDir)$(SolutionFileName)" --watch`
 
 **JetBrains Rider**: *Settings → Tools → External Tools*, Program `codemap`, Arguments `ui "$SolutionPath$" --watch`.
 
-**VS Code**: `.vscode/tasks.json`
+**VS Code** (without the extension): `.vscode/tasks.json`
 ```json
 {
   "version": "2.0.0",
@@ -133,138 +136,141 @@ przez `codemap`. Inne strony otwarte w przeglądarce nie mogą więc z niego kor
 }
 ```
 
-### Generowanie plików (CI, raporty)
+### Generating files (CI, reports)
 
 ```bash
-# analiza solucji (.sln / .slnx / .slnf), projektu (.csproj), pliku .cs albo dowolnego folderu
+# analyze a solution (.sln / .slnx / .slnf), a project (.csproj), a .cs file or any folder
 codemap path/to/MySolution.sln -o out --open
-# bez instalacji: dotnet run --project src/CodeMap.Cli -- path/to/MySolution.sln -o out
+# without installing: dotnet run --project src/CodeMap.Cli -- path/to/MySolution.sln -o out
 ```
 
-Otwórz `out/MySolution.html` w przeglądarce. Plik jest samowystarczalny (viewer i dane w jednym pliku),
-więc można go wysłać komuś mailem albo dołączyć do artefaktów CI.
+Open `out/MySolution.html` in a browser. The file is self-contained (viewer and data in one file),
+so you can email it or attach it to CI artifacts.
 
-Projekty **nie muszą być zbudowane**. CodeMap czyta `.csproj` bezpośrednio, a typy frameworka bierze
-z zainstalowanego .NET. Jeśli wcześniej był `dotnet restore`, typy z paczek NuGet też są rozpoznawane
-(przez `obj/project.assets.json`).
+Projects **don't need to be built**. CodeMap reads `.csproj` files directly and takes framework types
+from the installed .NET. If `dotnet restore` has run, types from NuGet packages are recognised too
+(through `obj/project.assets.json`).
 
-### TypeScript i JavaScript
+### TypeScript and JavaScript
 
-Jeśli na komputerze jest **Node.js 18+**, CodeMap mapuje też TypeScript i JavaScript (wtyczka `analyzers/typescript`,
-dołączana do wydań; rozszerzenie VS Code używa Node.js wbudowanego w VS Code). Jednostką mapy jest **plik**: paczki (`package.json`) → foldery → pliki → deklaracje
-(klasy, interfejsy, funkcje, typy, stałe) i składowe klas. Krawędzie: `imports` między plikami, wywołania (z kolejnością,
-także przez pliki-beczki `index.ts` i przez interfejsy), `new` i JSX, dziedziczenie i implementacje, typy w sygnaturach,
-dekoratory, paczki npm i zależności między paczkami monorepo (workspaces) – bez `npm install`.
+With **Node.js 18+** on the machine, CodeMap also maps TypeScript and JavaScript (the `analyzers/typescript` plugin,
+included in releases; the VS Code extension uses the Node.js built into VS Code). The unit of the map is the **file**: packages (`package.json`) → folders → files → declarations
+(classes, interfaces, functions, types, constants) and class members. Edges: `imports` between files, calls (in order,
+also through `index.ts` barrel files and through interfaces), `new` and JSX, inheritance and implementations, types in signatures,
+decorators, npm packages and dependencies between monorepo packages (workspaces), all without `npm install`.
 
-Frameworki rozpoznawane po importach:
+Frameworks recognised from the imports:
 
-* **Express**: każde `app.get('/orders/:id', …)` / `router.post(…)` / `router.route(…).put(…)` to osobny węzeł trasy
-  (`GET /orders/:id`, z prefiksem z `app.use('/catalog', router)`); kod handlerów inline należy do trasy, nazwane handlery
-  i middleware są przez nią wywoływane. Widok Flow startuje od tras.
-* **NestJS**: kontrolery (trasy z pełną ścieżką), providery, guardy, interceptory, moduły, resolvery GraphQL, gatewaye,
-  `@Cron`/`@MessagePattern`… jako punkty wejścia, a w widoku DI kontener Nesta: providery modułów (`useClass`, `useValue`,
-  `useFactory`, `useExisting`, tokeny), zasięgi `Scope.REQUEST`/`TRANSIENT`, `@Inject`, `@InjectRepository`, `@Optional`.
-  CodeMap pokazuje, gdzie zasięg żądania „rozlewa się” na zależne usługi (uwaga, nie błąd) i gdzie wstrzykiwany jest interfejs bez tokenu.
-* **Angular**: komponenty, dyrektywy, pipe’y, moduły i serwisy; `providedIn: 'root'`, providery modułów i komponentów,
-  `inject()`. Błąd, gdy serwis z roota potrzebuje czegoś, co dostarczają tylko komponenty.
+* **Express**: every `app.get('/orders/:id', …)` / `router.post(…)` / `router.route(…).put(…)` is its own route node
+  (`GET /orders/:id`, with the prefix from `app.use('/catalog', router)`); the code of inline handlers belongs to the route, named handlers
+  and middleware are called by it. The Flow view starts from the routes.
+* **NestJS**: controllers (routes with their full path), providers, guards, interceptors, modules, GraphQL resolvers, gateways,
+  `@Cron`/`@MessagePattern`… as entry points, and in the DI view Nest's container: module providers (`useClass`, `useValue`,
+  `useFactory`, `useExisting`, tokens), `Scope.REQUEST`/`TRANSIENT` scopes, `@Inject`, `@InjectRepository`, `@Optional`.
+  CodeMap shows where the request scope "spreads" to dependent services (a note, not an error) and where an interface is injected without a token.
+* **Angular**: components, directives, pipes, modules and services; `providedIn: 'root'`, module and component providers,
+  `inject()`. An error when a root service needs something only components provide.
 
 ```bash
-codemap path/to/app                 # folder z package.json / tsconfig.json
-codemap path/to/repo                # C# i TypeScript w jednym repo: jedna mapa z obu języków
-codemap path/to/repo --lang csharp  # tylko jeden język
-codemap --version                   # które języki są dostępne (i czy jest Node.js)
+codemap path/to/app                 # a folder with package.json / tsconfig.json
+codemap path/to/repo                # C# and TypeScript in one repo: one map of both languages
+codemap path/to/repo --lang csharp  # one language only
+codemap --version                   # which languages are available (and whether Node.js is there)
 ```
 
-Przykład: [`samples/shop-ts`](samples/shop-ts) to sklep w TypeScripcie (API w NestJS, bramka w Expressie, front w Angularze
-na wspólnej bibliotece domenowej), z celowym cyklem, martwym kodem i problemami kontenerów DI. `codemap samples/shop-ts`
-mapuje sam TypeScript, a `codemap samples` daje jedną mapę z nim i z solucją C# [`samples/Shop`](samples/Shop) obok siebie
-(poziomy nazywają się wtedy „Projects / Packages”, „Types / Files”…). Mapy z różnych języków nie mają na razie krawędzi
-między sobą (np. wywołań HTTP z TypeScriptu do kontrolerów C#).
+Example: [`samples/shop-ts`](samples/shop-ts) is a shop in TypeScript (a NestJS API, an Express gateway, an Angular front end
+on a shared domain library), with a deliberate cycle, dead code and DI container problems. `codemap samples/shop-ts`
+maps the TypeScript alone, and `codemap samples` gives one map of it and the C# solution [`samples/Shop`](samples/Shop) side by side
+(the levels are then called "Projects / Packages", "Types / Files"…). Maps of different languages have no edges
+between them yet (e.g. HTTP calls from TypeScript to C# controllers).
 
-Jak dopisać kolejny język: [docs/plugins.md](docs/plugins.md).
+How to add another language: [docs/plugins.md](docs/plugins.md).
 
-### Opcje CLI
+### CLI options
 
-| Opcja | Znaczenie |
+| Option | Meaning |
 |---|---|
-| `-o, --output <dir>` | katalog wyjściowy (domyślnie `codemap-out`) |
-| `-f, --format <list>` | `json,html,md,dgml,graphml,cypher` lub `all` (domyślnie `json,html,md`) |
-| `--external` | dołącz typy z BCL / NuGet, od których zależy kod (np. `DbContext`, `ILogger<T>`) |
-| `--types-only` | usuń węzły składowych (metody, pola…), a ich relacje podnieś na poziom typów; dużo mniejszy plik |
-| `--no-tests` | pomiń projekty testowe |
-| `--generated` | analizuj też kod generowany (`*.g.cs`, `*.Designer.cs`, `<auto-generated>`) |
-| `--lang <list>` | tylko wybrane języki, np. `csharp`, `typescript` (domyślnie każdy, który jest w folderze) |
-| `--plugins <dir>` | dodatkowy folder z wtyczkami językowymi ([docs/plugins.md](docs/plugins.md)) |
-| `--no-git` / `--git-since "1 year ago"` | historia gita: churn, autorzy, hotspoty |
-| `--indent` | sformatowany JSON |
-| `--open` | otwórz mapę w przeglądarce |
-| `--port <n>` / `--no-open` / `--watch` | opcje aplikacji (`codemap` / `codemap ui`) |
-| `codemap export graph.codemap.json -f dgml,cypher` | konwersja istniejącego grafu na inne formaty |
+| `-o, --output <dir>` | output directory (default `codemap-out`) |
+| `-f, --format <list>` | `json,html,md,dgml,graphml,cypher` or `all` (default `json,html,md`) |
+| `--external` | include BCL / NuGet / npm types the code depends on (e.g. `DbContext`, `ILogger<T>`) |
+| `--types-only` | drop member nodes (methods, fields…) and lift their relationships to the types; a much smaller file |
+| `--no-tests` | skip test projects and test files |
+| `--generated` | also analyze generated code (`*.g.cs`, `*.Designer.cs`, `<auto-generated>`) |
+| `--lang <list>` | only these languages, e.g. `csharp`, `typescript` (default: every language found in the folder) |
+| `--plugins <dir>` | an extra folder with language plugins ([docs/plugins.md](docs/plugins.md)) |
+| `--no-git` / `--git-since "1 year ago"` | git history: churn, authors, hotspots |
+| `--indent` | indented JSON |
+| `--open` | open the map in the browser |
+| `--port <n>` / `--no-open` / `--watch` | app options (`codemap` / `codemap ui`) |
+| `codemap export graph.codemap.json -f dgml,cypher` | convert an existing graph to other formats |
 
-## Co jest najciekawsze w mapie kodu
+## What makes the code map interesting
 
-Sama lista klas niewiele mówi. Wartość mapy bierze się z **relacji** i z tego, co da się z nich policzyć.
+A list of classes says little. The value of the map comes from the **relationships** and from what can be computed from them.
 
-### 1. Relacje: 19 rodzajów krawędzi, z wagą (liczbą wystąpień)
+### 1. Relationships: 19 kinds of edges, weighted (number of occurrences)
 
-| Rodzaj | Przykład w C# | Po co |
+| Kind | C# example | What for |
 |---|---|---|
-| `inherits`, `implements` | `class Order : AggregateRoot, IAuditable` | hierarchie, kontrakty |
-| `implements` (metoda → metoda interfejsu) | `HandleAsync` → `ICommandHandler.HandleAsync` | nawigacja przez abstrakcje |
-| `overrides` | `override decimal DiscountFor(...)` | polimorfizm |
-| `calls` | `_repo.AddAsync(order)` | graf wywołań metoda → metoda |
-| `instantiates` | `new OrderLine(...)` | kto tworzy obiekty (fabryki, `new` w złych miejscach) |
-| `injects` | `public Handler(IOrderRepository repo)` / primary ctor | **graf zależności DI**, czyli prawdziwa architektura aplikacji |
-| `holds` | `private readonly List<Order> _orders` | kompozycja i agregacja |
-| `accesses` | `order.Total`, `_clock.Now` | odczyt/zapis pól i właściwości (spójność klas) |
-| `subscribes` | `bus.Published += OnPublished` | ukryte przepływy przez zdarzenia |
-| `throws`, `catches` | `throw new DomainException(..)` | przepływ wyjątków |
-| `returns`, `accepts` | sygnatury metod | kontrakty API |
-| `extends` | `static IServiceCollection AddShop(this IServiceCollection s)` | metody rozszerzające |
-| `decoratedWith` | `[ApiController]`, `[Fact]` | atrybuty |
-| `uses` | `typeof(X)`, wywołania statyczne, `is X` | pozostałe zależności |
-| `projectReference`, `packageReference` | `.csproj` | architektura na poziomie projektów |
-| `changesWith` | dwa pliki zmieniane w tych samych commitach | **ukryte powiązania** z historii gita (to nie jest zależność w kodzie) |
+| `inherits`, `implements` | `class Order : AggregateRoot, IAuditable` | hierarchies, contracts |
+| `implements` (method → interface method) | `HandleAsync` → `ICommandHandler.HandleAsync` | navigating through abstractions |
+| `overrides` | `override decimal DiscountFor(...)` | polymorphism |
+| `calls` | `_repo.AddAsync(order)` | the method → method call graph |
+| `instantiates` | `new OrderLine(...)` | who creates objects (factories, `new` in the wrong places) |
+| `injects` | `public Handler(IOrderRepository repo)` / primary ctor | **the DI dependency graph**, the real architecture of the application |
+| `holds` | `private readonly List<Order> _orders` | composition and aggregation |
+| `accesses` | `order.Total`, `_clock.Now` | reads/writes of fields and properties (class cohesion) |
+| `subscribes` | `bus.Published += OnPublished` | hidden flows through events |
+| `throws`, `catches` | `throw new DomainException(..)` | exception flow |
+| `returns`, `accepts` | method signatures | API contracts |
+| `extends` | `static IServiceCollection AddShop(this IServiceCollection s)` | extension methods |
+| `decoratedWith` | `[ApiController]`, `[Fact]` | attributes |
+| `uses` | `typeof(X)`, static calls, `is X` | other dependencies |
+| `projectReference`, `packageReference` | `.csproj` | architecture at the project level |
+| `changesWith` | two files changed in the same commits | **hidden coupling** from git history (not a dependency in the code) |
 
-### 2. Metryki (na każdym poziomie: projekt → namespace → typ → składowa)
+TypeScript adds `imports` between files.
 
-* **rozmiar**: LOC, liczba składowych, metod, pól…
-* **złożoność cyklomatyczna** każdej metody i suma dla typu (WMC)
-* **coupling**: `Ca` (ile typów mnie używa), `Ce` (ilu typów ja używam), **instability** `Ce/(Ca+Ce)`
-* **abstractness** i **odległość od main sequence** (Robert C. Martin) dla namespace’ów i projektów,
-  dzięki czemu widać „strefę bólu” (konkretne i bardzo używane) i „strefę bezużyteczności”
-* **DIT / NOC**: głębokość dziedziczenia i liczba podklas
-* **fan-in / fan-out** metod
+### 2. Metrics (at every level: project → namespace → type → member)
 
-### 3. Wnioski, których nie widać w IDE
+* **size**: LOC, number of members, methods, fields…
+* **cyclomatic complexity** of every method and the sum per type (WMC)
+* **coupling**: `Ca` (how many types use me), `Ce` (how many types I use), **instability** `Ce/(Ca+Ce)`
+* **abstractness** and **distance from the main sequence** (Robert C. Martin) for namespaces and projects,
+  which shows the "zone of pain" (concrete and heavily used) and the "zone of uselessness"
+* **DIT / NOC**: depth of inheritance and number of subclasses
+* **fan-in / fan-out** of methods
 
-* **Hotspoty** = złożoność × częstotliwość zmian z gita. Kod, który jest skomplikowany *i* ciągle
-  zmieniany, to najlepsi kandydaci do refaktoryzacji (podejście Adama Tornhilla, „Your Code as a Crime Scene”).
-* **Cykle zależności** (Tarjan SCC) między typami, namespace’ami i projektami.
-* **Warstwy architektury** wyliczane z samego kodu: każdy namespace i projekt dostaje numer warstwy
-  (zależności mają wskazywać w dół), a **zależności „w górę”** to minimalny zestaw krawędzi, których
-  usunięcie rozbija wszystkie cykle, czyli najlepsze miejsca do cięcia.
-* **Ukryte powiązania z gita** (change coupling): typy, które ciągle zmieniają się razem
-  (wspólne commity / średnia liczba zmian), a nie mają między sobą żadnej zależności w kodzie.
-  Zwykle to zduplikowana logika, ukryty kontrakt (np. format JSON, nazwa kolejki) albo para klient–serwer.
-* **Mapa DI**: rejestracje z `IServiceCollection` (`AddSingleton/Scoped/Transient`, `TryAdd*`, `Keyed*`,
-  `AddHostedService`, `AddDbContext`, `AddHttpClient<T>`, fabryki i przekierowania), czas życia każdej usługi,
-  a na tej podstawie **captive dependencies** (singleton trzymający usługę scoped albo transient)
-  i **brakujące rejestracje** (konstruktor potrzebuje czegoś, czego nikt nie rejestruje).
-  Kontrolery, huby i middleware aktywowane przez framework też są brane pod uwagę.
-* **Kandydaci na martwy kod**: niepubliczne symbole, do których nic się nie odwołuje.
-* **Role** rozpoznawane heurystycznie: controller, DbContext, repository, handler (MediatR/CQRS),
+### 3. Insights you don't see in the IDE
+
+* **Hotspots** = complexity × change frequency from git. Code that is complicated *and* constantly
+  changing is the best candidate for refactoring (Adam Tornhill's approach, "Your Code as a Crime Scene").
+* **Dependency cycles** (Tarjan SCC) between types, namespaces and projects.
+* **Architecture layers** computed from the code alone: every namespace and project gets a layer number
+  (dependencies should point down), and **upward dependencies** are the minimal set of edges whose
+  removal breaks all the cycles, i.e. the best places to cut.
+* **Hidden coupling from git** (change coupling): types that keep changing together
+  (shared commits / average number of changes) but have no dependency on each other in the code.
+  Usually duplicated logic, a hidden contract (e.g. a JSON format, a queue name) or a client–server pair.
+* **DI map**: registrations from `IServiceCollection` (`AddSingleton/Scoped/Transient`, `TryAdd*`, `Keyed*`,
+  `AddHostedService`, `AddDbContext`, `AddHttpClient<T>`, factories and forwardings), the lifetime of every service,
+  and from that **captive dependencies** (a singleton holding a scoped or transient service)
+  and **missing registrations** (a constructor needs something nobody registers).
+  Controllers, hubs and middleware activated by the framework are taken into account too.
+  For TypeScript the same view shows the NestJS and Angular containers.
+* **Dead code candidates**: non-public symbols nothing refers to.
+* **Roles** recognised heuristically: controller, DbContext, repository, handler (MediatR/CQRS),
   hosted service, middleware, test, options, DTO, extensions…
-* **Analiza wpływu** (w viewerze): co się zepsuje, jeśli zmienię ten typ (przechodnie zależności wsteczne),
-  a także **ścieżka** między dwoma dowolnymi elementami („jak kontroler dochodzi do bazy?”).
+* **Impact analysis** (in the viewer): what breaks if I change this type (transitive reverse dependencies),
+  and the **path** between any two elements ("how does the controller reach the database?").
 
-## Format danych
+## Data format
 
-Głównym formatem jest **CodeMap JSON** (`*.codemap.json`): czytelny dla ludzi, prosty do wczytania
-w dowolnym języku i dla LLM-ów. Węzły tworzą drzewo zawierania (`parent`), krawędzie opisują resztę relacji.
-Identyfikatory to standardowe *documentation comment IDs* z C# (`T:Shop.Domain.Orders.Order`,
-`M:Shop.Domain.Orders.Order.AddLine(Shop.Domain.Catalog.Product,System.Int32)`), więc są stabilne
-między uruchomieniami i zgodne z tym, czego używają XML docs i Roslyn.
+The main format is **CodeMap JSON** (`*.codemap.json`): readable for people, easy to load
+in any language and for LLMs. Nodes form a containment tree (`parent`), edges describe the other relationships.
+C# identifiers are the standard C# *documentation comment IDs* (`T:Shop.Domain.Orders.Order`,
+`M:Shop.Domain.Orders.Order.AddLine(Shop.Domain.Catalog.Product,System.Int32)`), so they are stable
+between runs and match what XML docs and Roslyn use. Other languages use their own prefix (TypeScript: `ts:<package>:<file>#<name>`).
 
 ```json
 {
@@ -285,197 +291,203 @@ między uruchomieniami i zgodne z tym, czego używają XML docs i Roslyn.
 }
 ```
 
-Pełna specyfikacja: [docs/format.md](docs/format.md), JSON Schema: [docs/codemap.schema.json](docs/codemap.schema.json).
+Full specification: [docs/format.md](docs/format.md), JSON Schema: [docs/codemap.schema.json](docs/codemap.schema.json).
 
-Formaty dodatkowe:
+Other formats:
 
-* **DGML**: otwiera się natywnie w Visual Studio (Code Map / DGML editor), grupy projekt → namespace → typ.
+* **DGML**: opens natively in Visual Studio (Code Map / DGML editor), grouped project → namespace → type.
 * **GraphML**: Gephi, yEd, Cytoscape, NetworkX.
-* **Cypher**: import do Neo4j/Memgraph, potem zapytania typu
+* **Cypher**: import into Neo4j/Memgraph, then queries such as
   `MATCH p=(c:Class {name:'OrdersController'})-[:CALLS|INJECTS*1..6]->(r:Interface) RETURN p`.
-* **Markdown**: raport z przeglądem architektury, który można wkleić do PR-a, wiki albo promptu.
+* **Markdown**: an architecture overview report you can paste into a PR, a wiki or a prompt.
 
-## Mapa 3D
+## The 3D map
 
-* **Galaxy**: graf siłowy 3D. Projekty to „układy słoneczne”, namespace’y skupiska, typy gwiazdy.
-  Kształt oznacza rodzaj (● klasa, ◆ interfejs, ■ struct, ⬟ record, ▲ enum), rozmiar wybraną metrykę,
-  a kolor projekt, rodzaj, rolę albo dowolną metrykę (skala *turbo*). Po zaznaczeniu elementu
-  cząsteczki płyną wzdłuż krawędzi w kierunku zależności.
-* **City**: miasto kodu. Dzielnice to projekty, kwartały namespace’y, budynki typy.
-  Powierzchnia odpowiada LOC, wysokość złożoności (lub innej metryce), a kolor np. hotspotom.
-  Relacje rysowane są jako łuki nad miastem.
-* **Layers**: węzły leżą na poziomych płaszczyznach warstw wyliczonych z widocznych relacji
-  (projekty to kolumny przechodzące przez warstwy). Zależności wskazujące w górę są czerwone.
-* **DI**: typy budowane przez kontener na płaszczyznach *Singleton / Scoped / Transient / Not registered*.
-  Zdrowa zależność wskazuje w dół albo w bok (do czegoś, co żyje co najmniej tak długo),
-  captive dependency jest czerwona, a brakująca rejestracja pomarańczowa.
-* **Flow**: co się dzieje, gdy wywołasz akcję kontrolera, handler albo `ExecuteAsync` usługi w tle.
-  Wywołania są śledzone w kolejności z kodu, przez interfejsy aż do implementacji, którą wstrzyknie kontener DI
-  (`IEnumerable<T>` → wszystkie). Górna płaszczyzna to punkt wejścia, a każda niższa to jedno wywołanie głębiej.
-  **Diagram sekwencji** pokazuje ten sam przepływ jako uczestników (typy) i komunikaty (`alt` dla kilku możliwych implementacji, `loop` dla `IEnumerable<T>`).
-  Można go skopiować jako **Mermaid** (wklejasz do GitHuba, GitLaba, Notion albo dokumentacji) lub pobrać jako `.mmd` / `.svg`.
-  Punkt wejścia wybierasz w Insights (*Entry points*), na liście w widoku albo przyciskiem *Call flow ↘* przy dowolnej metodzie.
-* **Auto (zoom semantyczny)**: zamiast przełączać poziomy, po prostu lecisz kamerą. Z daleka namespace to jedna gwiazda
-  w środku swoich typów. Gdy się zbliżysz, rozwija się w typy, a najbliższe typy w swoje składowe (metody, właściwości, pola).
-  Po oddaleniu wszystko zwija się z powrotem. Układ liczony jest raz, więc mapa się nie przestawia, a wyszukiwarka sama doleci do składowej ukrytej w zwiniętym typie.
-* Poziomy szczegółowości: **Projects / Namespaces / Types / Members** i drill-down dwuklikiem
-  (projekt → namespace’y → typy → składowe, z „duchami” sąsiadów spoza zakresu).
-* Panel szczegółów: sygnatura, dokumentacja XML, metryki, tagi, link *Open in VS Code*,
-  relacje wychodzące i przychodzące pogrupowane według rodzaju, lista składowych.
-* **Neighbours / Dependencies ↓ / Impact ↑ / Path to…** (albo Shift+klik na drugim elemencie).
-* Zakładka **Insights**: punkty wejścia (kontrolery, handlery, usługi w tle, `Main`), problemy DI, zależności w górę, ukryte powiązania z gita, cykle, hotspoty,
-  najbardziej złożone typy, najczęściej używane typy, możliwy martwy kod. Kliknięcie przenosi do właściwego widoku.
-* Kolor **DI lifetime** w każdym widoku (namespace’y i projekty dostają dominujący czas życia swoich typów),
-  a w panelu szczegółów sekcje *Dependency injection* i *Changes together with*.
-* Filtry rodzajów relacji, projektów, testów, typów zewnętrznych, minimalnej siły powiązania.
-* Wyszukiwarka (`/`), skróty: `1`–`4` poziom, `Z` zoom semantyczny, `G`/`C`/`L`/`D`/`E` widok (Galaxy, City, Layers, DI, Flow), `F` dopasuj, `Esc` wstecz.
+* **Galaxy**: a 3D force-directed graph. Projects are "solar systems", namespaces clusters, types stars.
+  The shape shows the kind (● class, ◆ interface, ■ struct, ⬟ record, ▲ enum), the size a chosen metric,
+  and the colour the project, kind, role or any metric (*turbo* scale). When an element is selected,
+  particles flow along its edges in the direction of the dependency.
+* **City**: a code city. Districts are projects, blocks namespaces, buildings types.
+  The footprint is LOC, the height complexity (or another metric), and the colour e.g. hotspots.
+  Relationships are drawn as arcs over the city.
+* **Layers**: nodes lie on horizontal planes of the layers computed from the visible relationships
+  (projects are columns through the layers). Dependencies pointing upwards are red.
+* **DI**: types built by the container on *Singleton / Scoped / Transient / Not registered* planes.
+  A healthy dependency points down or sideways (to something that lives at least as long),
+  a captive dependency is red, and a missing registration orange.
+* **Flow**: what happens when you call a controller action, a handler, a route or a background service's `ExecuteAsync`.
+  Calls are followed in source order, through interfaces down to the implementation the DI container injects
+  (`IEnumerable<T>` → all of them). The top plane is the entry point, and each lower one is one call deeper.
+  The **sequence diagram** shows the same flow as participants (types) and messages (`alt` for several possible implementations, `loop` for `IEnumerable<T>`).
+  It can be copied as **Mermaid** (paste it into GitHub, GitLab, Notion or docs) or downloaded as `.mmd` / `.svg`.
+  You choose the entry point in Insights (*Entry points*), in the list in the view, or with the *Call flow ↘* button on any method.
+* **Auto (semantic zoom)**: instead of switching levels, you just fly the camera. From afar a namespace is one star
+  in the middle of its types. As you get closer it unfolds into its types, and the nearest types into their members (methods, properties, fields).
+  Moving away folds everything back. The layout is computed once, so the map doesn't rearrange, and search flies to a member hidden in a folded type by itself.
+* Levels of detail: **Projects / Namespaces / Types / Members** (TypeScript: Packages / Folders / Files / Declarations) and drill-down by double-click
+  (project → namespaces → types → members, with "ghosts" of neighbours outside the scope).
+* Details panel: signature, XML documentation, metrics, tags, an *Open in VS Code* link,
+  outgoing and incoming relationships grouped by kind, list of members.
+* **Neighbours / Dependencies ↓ / Impact ↑ / Path to…** (or Shift+click on a second element).
+* **Insights** tab: entry points (controllers, handlers, routes, background services, `Main`), DI problems, upward dependencies, hidden coupling from git, cycles, hotspots,
+  most complex types, most used types, possible dead code. A click takes you to the right view.
+* **DI lifetime** colour in every view (namespaces and projects get the dominant lifetime of their types),
+  and *Dependency injection* and *Changes together with* sections in the details panel.
+* Filters for relationship kinds, projects, tests, external types, minimum link strength.
+* Search (`/`), shortcuts: `1`–`4` level, `Z` semantic zoom, `G`/`C`/`L`/`D`/`E` view (Galaxy, City, Layers, DI, Flow), `F` fit, `Esc` back.
 
-Viewer można też otworzyć bez danych i przeciągnąć na niego dowolny plik `*.codemap.json`
-albo użyć parametru `?data=url.json`.
+The viewer can also be opened without data: drop any `*.codemap.json` file on it
+or use the `?data=url.json` parameter.
 
 ### GPU
 
-* Mapa rysuje przez **WebGPU**: Metal na macOS, Direct3D 12 na Windows, Vulkan na Linuksie.
-  Gdy przeglądarka (albo VS Code) nie ma WebGPU, przechodzi na **WebGL 2**.
-  Backend można wymusić w zakładce *Data* (*Graphics → Renderer*), parametrem `?renderer=webgpu|webgl`
-  albo ustawieniem `codemap.renderer` w VS Code.
-* Układ siłowy liczy się na **GPU** (compute shadery WebGPU): wszystkie węzły równolegle. Pozycje trafiają wprost
-  do tekstury, z której rysują shadery, a na CPU wracają tylko co ok. 200 ms (etykiety, klikanie, kamera).
-  Siły odpychania do 12 000 elementów liczone są dokładnie, kafelkami w pamięci współdzielonej grupy roboczej.
-  Powyżej tej liczby liczone są na siatce: węzły sortowane do komórek w każdym kroku, bliscy sąsiedzi parami,
-  dalsi przez środki ładunku komórek na kilku poziomach. Wynik jest w granicach 1% od dokładnego.
-  `?layoutMode=grid|exact` wymusza tryb. Do 100 000 elementów na poziom.
-* Bez WebGPU układ liczy **Web Worker**, więc mapa i interfejs zostają płynne (do 15 000 elementów).
-  Bez workera, na przykład gdy CSP go blokuje, liczy główny wątek z limitem 7000. Małe grafy (do 300 elementów)
-  układają się od razu na głównym wątku. `?layout=gpu|worker|main` wymusza wybór.
-* Pozycje elementów leżą w teksturze na GPU. Węzły, relacje (wstęgi o miękkich krawędziach, w City łuki)
-  i płynące cząsteczki odczytują je w shaderach, więc ruch grafu to jedno przesłanie tekstury na klatkę,
-  zamiast przepisywania macierzy i wierzchołków. Przy 20 000 elementów koszt CPU klatki spadł z 5 ms do 0,25 ms.
-* Efekty liczone w shaderach, bez kosztu CPU na klatkę:
-  - **Poświata:** bloom całej sceny i miękka, oddychająca korona wokół każdego węzła.
-  - **Niebo:** tysiące gwiazd migoczących każda w swoim rytmie, kilka jaśniejszych z iskrą, kolorowe mgławice w tle.
-  - **Komety:** cząsteczki z warkoczem płyną wzdłuż relacji w stronę zależności. Na żywej mapie płyną też bez zaznaczenia,
-    po najmocniejszych relacjach. Gęstość ustawisz w *Particles* (Off / Few / Normal / Many).
-  - **Kreski:** zaznaczone i podświetlone relacje, problemy (np. zależności w górę) i *Flow particles on all links*
-    mają płynące kreski, więc kierunek widać także bez cząsteczek.
-  - **Rozwijanie:** nowy graf wybucha z ciasnej kuli, a węzły po drill-down wychodzą ze swojego rodzica.
-    W City budynki wyrastają z ziemi.
-  - **Fala:** po kliknięciu fala światła biegnie od węzła po jego relacjach, węzeł po węźle, z pierścieniem uderzeniowym.
-* Duże solucje: model, agregacja relacji, semantyczny zoom i automatyczne warstwy działają na indeksach liczbowych.
-  Warstwy 20 000 typów liczą się w 0,13 s (wcześniej 37 s), a 100 000 typów w ok. 0,9 s.
-* Ruch ustawisz w *Appearance → Motion*:
-  - **Living** (domyślnie): mapa żyje w pełnym fps ekranu i pauzuje tylko na ukrytej karcie.
-  - **Calm (battery):** ozdoby chodzą w 30 fps i stają 20 s po ostatnim ruchu myszy, a nieruchoma mapa nie zużywa GPU.
-    To domyślny tryb bez GPU i przy systemowym *ogranicz ruch*.
-  - **Off:** nic nie rusza się samo.
-  
-  Wybór zostaje w przeglądarce; `?motion=living|calm|off` wymusza tryb.
-* Natywne renderery (Metal / Direct3D 12 poza przeglądarką) to osobny temat: [tomeqs/CodeMap#6](https://github.com/tomeqs/CodeMap/issues/6).
+* The map draws with **WebGPU**: Metal on macOS, Direct3D 12 on Windows, Vulkan on Linux.
+  When the browser (or VS Code) has no WebGPU, it falls back to **WebGL 2**.
+  The backend can be forced in the *Data* tab (*Graphics → Renderer*), with `?renderer=webgpu|webgl`
+  or with the `codemap.renderer` setting in VS Code.
+* The force layout runs on the **GPU** (WebGPU compute shaders): all nodes in parallel. Positions go straight
+  into a texture the shaders draw from, and only come back to the CPU about every 200 ms (labels, picking, camera).
+  Repulsion between up to 12,000 elements is computed exactly, in tiles in the workgroup's shared memory.
+  Above that it is computed on a grid: nodes are sorted into cells every step, near neighbours in pairs,
+  farther ones through the cells' centres of charge on several levels. The result is within 1% of the exact one.
+  `?layoutMode=grid|exact` forces the mode. Up to 100,000 elements per level.
+* Without WebGPU the layout runs in a **Web Worker**, so the map and the UI stay smooth (up to 15,000 elements).
+  Without a worker, e.g. when a CSP blocks it, the main thread computes it with a limit of 7,000. Small graphs (up to 300 elements)
+  are laid out right away on the main thread. `?layout=gpu|worker|main` forces the choice.
+* Element positions live in a texture on the GPU. Nodes, links (soft-edged ribbons, arcs in City)
+  and flowing particles read them in shaders, so moving the graph is one texture upload per frame
+  instead of rewriting matrices and vertices. At 20,000 elements the CPU cost of a frame dropped from 5 ms to 0.25 ms.
+* Effects computed in shaders, with no CPU cost per frame:
+  - **Glow:** bloom over the whole scene and a soft, breathing corona around every node.
+  - **Sky:** thousands of stars twinkling each in its own rhythm, a few brighter ones with a sparkle, coloured nebulae in the background.
+  - **Comets:** particles with a tail flow along relationships towards the dependency. On a living map they also flow without a selection,
+    along the strongest relationships. Set the density in *Particles* (Off / Few / Normal / Many).
+  - **Dashes:** selected and highlighted relationships, problems (e.g. upward dependencies) and *Flow particles on all links*
+    have flowing dashes, so the direction is visible even without particles.
+  - **Unfolding:** a new graph bursts out of a tight ball, and nodes after a drill-down come out of their parent.
+    In City, the buildings rise from the ground.
+  - **Wave:** after a click, a wave of light runs out from the node along its relationships, node by node, with a shock ring.
+* Large solutions: the model, link aggregation, semantic zoom and automatic layers work on numeric indices.
+  Layers for 20,000 types take 0.13 s (previously 37 s), and for 100,000 types about 0.9 s.
+* Set the motion in *Appearance → Motion*:
+  - **Living** (default): the map lives at the screen's full fps and only pauses on a hidden tab.
+  - **Calm (battery):** decorations run at 30 fps and stop 20 s after the last mouse movement, and a still map uses no GPU.
+    This is the default without a GPU and with the system's *reduce motion*.
+  - **Off:** nothing moves by itself.
 
-### Okulary AR (XREAL 1S / One / One Pro)
+  The choice is kept in the browser; `?motion=living|calm|off` forces the mode.
+* Native renderers (Metal / Direct3D 12 outside the browser) are a separate topic: [tomeqs/CodeMap#6](https://github.com/tomeqs/CodeMap/issues/6).
 
-Mapa może unosić się w pokoju w okularach AR, które przyjmują obraz 3D side-by-side przez USB-C.
-Działa w przeglądarce (`codemap ui`, plik HTML z `codemap -f html`, `npm run dev`), nie w panelu VS Code.
+### AR glasses (XREAL 1S / One / One Pro)
 
-1. Podłącz okulary do komputera (np. Maca) jako rozszerzony ekran.
-2. Włącz 3D w okularach: dwuklik przycisku X → *Spatial Screen* → *3D Mode* → *Full SBS*.
-   Ekran okularów ma wtedy 3840×1080: lewa połowa trafia do lewego oka, prawa do prawego.
-   Jeśli *3D Mode* jest nieaktywne, najpierw przełącz ekran na 16:9 (nie ultra-wide).
-3. Opcjonalnie ustaw ekran na *Anchor*, żeby mapa została w miejscu, gdy obracasz głowę
-   (śledzenie 3DoF robią same okulary).
-4. W mapie kliknij **AR** (albo *Data → Graphics → View in AR glasses…*).
-5. W Chrome lub Edge przycisk *Find the glasses screen* znajdzie okulary i Start otworzy mapę na pełnym ekranie właśnie tam.
-   W innych przeglądarkach najpierw przeciągnij okno na okulary.
+The map can float in your room in AR glasses that take side-by-side 3D over USB-C.
+It works in the browser (`codemap ui`, an HTML file from `codemap -f html`, `npm run dev`), not in the VS Code panel.
 
-Każde oko dostaje własną kamerę. Czarne tło jest w okularach przezroczyste, a mapa ma rzeczywisty rozmiar
-(domyślnie 1,2 m, 1,8 m przed tobą). Etykiety i mały HUD rysują się osobno dla każdego oka.
-Kursor myszy (widoczny tylko w jednym oku) zastępuje pierścień na środku widoku:
+1. Connect the glasses to the computer (e.g. a Mac) as an extended display.
+2. Turn on 3D in the glasses: double-press the X button → *Spatial Screen* → *3D Mode* → *Full SBS*.
+   The glasses' screen is then 3840×1080: the left half goes to the left eye, the right half to the right eye.
+   If *3D Mode* is greyed out, first switch the screen to 16:9 (not ultra-wide).
+3. Optionally set the screen to *Anchor*, so the map stays in place when you turn your head
+   (the glasses do the 3DoF tracking themselves).
+4. In the map, click **AR** (or *Data → Graphics → View in AR glasses…*).
+5. In Chrome or Edge, the *Find the glasses screen* button finds the glasses, and Start opens the map full screen right there.
+   In other browsers, drag the window onto the glasses first.
 
-| Klawisz | Działanie |
+Each eye gets its own camera. The black background is transparent in the glasses, and the map has a real size
+(by default 1.2 m, 1.8 m in front of you). Labels and a small HUD are drawn separately for each eye.
+The mouse cursor (visible in one eye only) is replaced by a ring in the middle of the view:
+
+| Key | Action |
 |---|---|
-| klik / Spacja / Enter | zaznacza to, na co patrzy pierścień |
-| przeciąganie, strzałki | obrót mapy |
-| kółko, `+` / `−` | bliżej / dalej |
-| `[` / `]` | mniejsza / większa mapa |
-| `R` | wyśrodkowanie |
-| `G` `C` `L` `D` `E`, `1`–`4`, `Z` | widoki i poziomy jak zwykle |
-| `Esc` | odznacza, drugi raz wychodzi z AR |
+| click / Space / Enter | selects what the ring points at |
+| drag, arrow keys | rotate the map |
+| wheel, `+` / `−` | closer / farther |
+| `[` / `]` | smaller / bigger map |
+| `R` | re-centre |
+| `G` `C` `L` `D` `E`, `1`–`4`, `Z` | views and levels as usual |
+| `Esc` | clears the selection, a second time leaves AR |
 
-W oknie startowym są: profil okularów (pole widzenia: 1S 52° na ekranie 16:10, na którym obraz 16:9 ma pas
-u góry i u dołu; One Pro 57°; One 50°), Full lub Half SBS,
-rozstaw oczu (IPD), odległość i rozmiar mapy oraz płaszczyzna ekranu okularów (tam, gdzie oba oczy widzą to samo;
-zmniejsz ją, gdy mapa się dwoi). Ustawienia zostają w przeglądarce. `?ar=full` lub `?ar=half` uruchamia tryb od razu.
-Pełne 6DoF (chodzenie wokół mapy) wymaga kamery XREAL Eye i natywnego SDK XREAL na Androida, więc tu go nie ma.
+The start dialog has: the glasses profile (field of view: 1S 52° on a 16:10 screen, where a 16:9 picture has a band
+at the top and bottom; One Pro 57°; One 50°), Full or Half SBS,
+eye distance (IPD), the map's distance and size, and the glasses' screen plane (where both eyes see the same thing;
+reduce it when the map looks doubled). Settings are kept in the browser. `?ar=full` or `?ar=half` starts the mode right away.
+Full 6DoF (walking around the map) needs the XREAL Eye camera and XREAL's native Android SDK, so it isn't available here.
 
-## Struktura repozytorium
+## Repository structure
 
 ```
-src/CodeMap.Core      analizator, model grafu, metryki, eksportery
-  Languages/          języki: ILanguageAnalyzer (każdy język zwraca surowy graf), rejestr, C# (Roslyn)
-  Languages/External/ wtyczki językowe: manifest, wyszukiwanie, uruchamianie programu wtyczki, sprawdzanie jej wyniku
-  Pipeline/           wspólna część analizy: wybór języków, łączenie ich grafów w jedną mapę, metryki, git, statystyki
-  Loading/            .sln/.slnx/.slnf/.csproj → kompilacje Roslyn (bez MSBuild i bez budowania)
-  Analysis/           deklaracje, walker referencji, metryki, cykle, warstwy, DI, git (churn, change coupling), tagi
+src/CodeMap.Core      analyzer, graph model, metrics, exporters
+  Languages/          languages: ILanguageAnalyzer (every language returns a raw graph), registry, C# (Roslyn)
+  Languages/External/ language plugins: manifest, discovery, running the plugin program, checking its output
+  Pipeline/           the shared part of the analysis: choosing languages, merging their graphs into one map, metrics, git, stats
+  Loading/            .sln/.slnx/.slnf/.csproj → Roslyn compilations (no MSBuild, no build)
+  Analysis/           declarations, reference walker, metrics, cycles, layers, DI, git (churn, change coupling), tags
   Export/             JSON, DGML, GraphML, Cypher, Markdown, HTML
-src/CodeMap.Server    lokalna aplikacja: API (ASP.NET Core), przeglądarka folderów, klonowanie, cache, tryb live
-src/CodeMap.Cli       narzędzie `codemap` (dotnet tool albo samodzielny plik wykonywalny), osadza zbudowany viewer
-analyzers/typescript  wtyczka TypeScript / JavaScript (Node.js + TypeScript compiler API), kopiowana do plugins/typescript
-vscode/               rozszerzenie VS Code: mapa w webview, przejścia kod ↔ mapa, odświeżanie na żywo
-viewer/               mapa 3D: Vite + three.js + d3-force-3d + d3-hierarchy, budowana do jednego pliku HTML
-tests/CodeMap.Tests   testy xUnit analizatora i eksporterów; Golden/ to zapisane mapy samples/Shop i małej aplikacji TS
-samples/Shop          przykładowa solucja (DDD, DI, zdarzenia, celowy cykl i martwy kod)
-samples/shop-ts       ten sam sklep w TypeScripcie: monorepo npm z NestJS, Expressem i Angularem
-docs/                 specyfikacja formatu, JSON Schema i protokół wtyczek
+src/CodeMap.Server    the local app: API (ASP.NET Core), folder browser, cloning, cache, live mode
+src/CodeMap.Cli       the `codemap` tool (dotnet tool or standalone executable), embeds the built viewer
+analyzers/typescript  TypeScript / JavaScript plugin (Node.js + TypeScript compiler API), copied to plugins/typescript
+vscode/               VS Code extension: the map in a webview, code ↔ map navigation, live refresh
+viewer/               3D map: Vite + three.js + d3-force-3d + d3-hierarchy, built into a single HTML file
+tests/CodeMap.Tests   xUnit tests of the analyzer and exporters; Golden/ holds saved maps of samples/Shop and a small TS app
+samples/Shop          sample solution (DDD, DI, events, a deliberate cycle and dead code)
+samples/shop-ts       the same shop in TypeScript: an npm monorepo with NestJS, Express and Angular
+docs/                 format specification, JSON Schema and the plugin protocol
 ```
 
-## Rozwój
+## Development
 
 ```bash
-dotnet test                                   # testy analizatora (testy wtyczek potrzebują Node.js)
-cd analyzers/typescript && npm install && npm test   # wtyczka TypeScript (npm install jest też potrzebne, żeby ją zbudować z CLI)
-cd viewer && npm install && npm run dev       # viewer z hot-reload: http://localhost:5173/?data=sample.codemap.json
-npm run build                                 # buduje dist/index.html i kopiuje go do src/CodeMap.Cli/Assets/viewer.html
-npm run test:smoke -- --renderers webgpu,webgl   # smoke testy zbudowanego viewera w headless Chromium (bez GPU)
-npm run test:smoke -- --samples <folder>      # …także na mapach samples/shop-ts i samples/ (shop-ts.codemap.json, samples.codemap.json)
-npm run bench -- --sizes 1k,7k,20k            # benchmark na wygenerowanych grafach, porównanie z bench/baseline.json
+dotnet test                                   # analyzer tests (the plugin tests need Node.js)
+cd analyzers/typescript && npm install && npm test   # TypeScript plugin (npm install is also needed to build it into the CLI)
+cd viewer && npm install && npm run dev       # viewer with hot reload: http://localhost:5173/?data=sample.codemap.json
+npm run build                                 # builds dist/index.html and copies it to src/CodeMap.Cli/Assets/viewer.html
+npm run test:smoke -- --renderers webgpu,webgl   # smoke tests of the built viewer in headless Chromium (no GPU)
+npm run test:smoke -- --samples <folder>      # …also on the maps of samples/shop-ts and samples/ (shop-ts.codemap.json, samples.codemap.json)
+npm run bench -- --sizes 1k,7k,20k            # benchmark on generated graphs, compared with bench/baseline.json
 ```
 
-Benchmark generuje syntetyczne solucje (`node bench/generate.mjs --types 100k`) i mierzy wczytanie, model,
-czas ułożenia grafu, płynność orbity, liczbę klatek w bezczynności, picking i przejścia po grafie.
-Bez `--headed` Chromium nie ma GPU (SwiftShader), więc liczby zależne od GPU mają sens tylko z `--headed` na prawdziwym komputerze.
+The benchmark generates synthetic solutions (`node bench/generate.mjs --types 100k`) and measures loading, the model,
+layout time, orbit smoothness, frames while idle, picking and graph traversals.
+Without `--headed` Chromium has no GPU (SwiftShader), so GPU-dependent numbers only make sense with `--headed` on a real computer.
 
-Do trybu dev wrzuć dowolny wygenerowany graf do `viewer/public/sample.codemap.json`.
-Żeby rozwijać ekran wyboru projektów, uruchom `CODEMAP_DEV=1 codemap ui --no-open` i otwórz
-wypisany adres „Dev viewer” (Vite przekierowuje `/api` do serwera).
-Zbudowany viewer (`src/CodeMap.Cli/Assets/viewer.html`) jest w repozytorium, żeby samo `dotnet run`
-generowało HTML bez Node.js. Po zmianach w `viewer/` trzeba uruchomić `npm run build`.
+For dev mode, put any generated graph into `viewer/public/sample.codemap.json`.
+To work on the project picker, run `CODEMAP_DEV=1 codemap ui --no-open` and open
+the printed "Dev viewer" address (Vite proxies `/api` to the server).
+The built viewer (`src/CodeMap.Cli/Assets/viewer.html`) is in the repository so that a plain `dotnet run`
+generates HTML without Node.js. After changes in `viewer/`, run `npm run build`.
 
-### Jak to działa
+### How it works
 
-1. `ProjectLoader` czyta solucję i pliki `.csproj` (z `Directory.Build.props`, `Compile Remove`,
-   `ImplicitUsings`, `<Using>`, referencjami projektów i paczek).
-2. `CompilationFactory` buduje kompilację Roslyn dla każdego projektu w kolejności topologicznej:
-   referencje frameworka z działającego runtime’u albo, w samodzielnym pliku wykonywalnym, z zainstalowanego .NET
-   lub z runtime’u wbudowanego w program (`FrameworkLocator`), plus ASP.NET Core / WindowsDesktop, gdy są potrzebne,
-   paczki z `project.assets.json`, a projekty jako `CompilationReference`.
-3. `TypeAnalyzer` + `ReferenceWalker` przechodzą równolegle drzewa składni: deklarują węzły i każdą
-   referencję w kodzie rozwiązują przez model semantyczny na krawędź z odpowiednim rodzajem.
-4. `GraphMetrics` liczy metryki, cykle i kandydatów na martwy kod, `Layering` warstwy i zależności w górę,
-   `DependencyInjectionAnalysis` łączy rejestracje z konstruktorami, a `GitHistory` i `ChangeCouplingAnalysis`
-   dokładają churn, hotspoty i ukryte powiązania.
-5. Eksportery zapisują wynik; HTML to viewer z osadzonym JSON-em.
+1. `ProjectLoader` reads the solution and the `.csproj` files (with `Directory.Build.props`, `Compile Remove`,
+   `ImplicitUsings`, `<Using>`, project and package references).
+2. `CompilationFactory` builds a Roslyn compilation for each project in topological order:
+   framework references from the running runtime or, in the standalone executable, from the installed .NET
+   or the runtime built into the program (`FrameworkLocator`), plus ASP.NET Core / WindowsDesktop when needed,
+   packages from `project.assets.json`, and projects as `CompilationReference`.
+3. `TypeAnalyzer` + `ReferenceWalker` walk the syntax trees in parallel: they declare nodes and resolve every
+   reference in the code through the semantic model into an edge of the right kind.
+4. `GraphMetrics` computes metrics, cycles and dead code candidates, `Layering` the layers and upward dependencies,
+   `DependencyInjectionAnalysis` connects registrations with constructors, and `GitHistory` and `ChangeCouplingAnalysis`
+   add churn, hotspots and hidden coupling.
+5. Exporters write the result; the HTML is the viewer with the JSON embedded.
 
-Analiza jest „best effort”: kod, który nie kompiluje się w izolacji (np. brak restore’u paczek),
-nadal jest mapowany, a nierozwiązane symbole są po prostu pomijane.
+Other languages plug in at step 3: a plugin returns the raw graph, and steps 4–5 are shared ([docs/plugins.md](docs/plugins.md)).
 
-## Pomysły na dalszy rozwój
+The analysis is "best effort": code that doesn't compile in isolation (e.g. packages not restored)
+is still mapped, and unresolved symbols are simply skipped.
 
-* reguły architektoniczne (np. „Domain nie może zależeć od Infrastructure”) z naruszeniami zaznaczonymi na mapie
-  (warstwy wyliczane automatycznie są dobrym punktem startowym)
-* porównanie dwóch wersji grafu (diff architektury między commitami / w PR)
-* tryb VR/WebXR dla widoku City
-* własność kodu (autorzy z gita) jako kolor dzielnic
-* serwer MCP, który odpowiada na pytania o architekturę na podstawie grafu
-* rozszerzenie Visual Studio z mapą w panelu edytora (dla VS Code już jest)
-* krawędzie między językami: wywołania HTTP z TypeScriptu (`fetch`, `HttpClient`) do tras kontrolerów C#
-* kolejne języki jako wtyczki (Python, Java, Go): protokół w [docs/plugins.md](docs/plugins.md)
+## Ideas for the future
+
+* architecture rules (e.g. "Domain must not depend on Infrastructure") with violations marked on the map
+  (the automatically computed layers are a good starting point)
+* comparing two versions of the graph (an architecture diff between commits / in a PR)
+* a VR/WebXR mode for the City view
+* code ownership (authors from git) as the colour of districts
+* an MCP server that answers questions about the architecture from the graph
+* a Visual Studio extension with the map in an editor panel (VS Code already has one)
+* edges between languages: HTTP calls from TypeScript (`fetch`, `HttpClient`) to C# controller routes
+* more languages as plugins (Python, Java, Go): the protocol is in [docs/plugins.md](docs/plugins.md)
+
+## License
+
+[MIT](LICENSE)

@@ -12,7 +12,17 @@
     <Product>CodeMap</Product>
     <PackageId>CodeMap.Tool</PackageId>
     <Description>Maps C# solutions (and TypeScript / JavaScript, with Node.js) into a relationship graph (JSON, DGML, GraphML, Cypher) and an interactive 3D map.</Description>
+    <PackageTags>code-map;architecture;dependency-graph;visualization;csharp;roslyn;typescript;javascript;nestjs;angular;dependency-injection;3d</PackageTags>
+    <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>
+
+  <!-- What nuget.org shows: the readme, the icon (the extension's) and the license text. -->
+  <ItemGroup>
+    <None Include="PACKAGE.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\vscode\media\icon.png" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
 
   <!-- `dotnet publish -r <rid>` (win-x64, linux-x64, osx-arm64...) produces one executable that runs without .NET installed. -->
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
@@ -46,7 +56,8 @@
     <Content Include="$(TypeScriptCompiler)package.json;$(TypeScriptCompiler)LICENSE.txt;$(TypeScriptCompiler)ThirdPartyNoticeText.txt" Link="plugins\typescript\vendor\typescript\%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
-    <Content Update="$(TypeScriptPlugin)**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <!-- Pack="false": the dotnet tool gets the plugin with the published program (tools/…/plugins), not as package content. -->
+    <Content Update="$(TypeScriptPlugin)**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" Pack="false" />
   </ItemGroup>
   <Target Name="TypeScriptPluginMissing" BeforeTargets="Build" Condition="!Exists('$(TypeScriptCompiler)lib\typescript.js')">
     <Warning Text="The TypeScript plugin is not included: run npm ci in analyzers/typescript to map TypeScript and JavaScript too." />

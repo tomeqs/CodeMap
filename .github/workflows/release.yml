@@ -140,7 +140,7 @@ jobs:
         run: |
           npm run prepare-assets
           npm test
-          npx vsce package --no-dependencies --skip-license -o "../codemap-${{ steps.version.outputs.version }}.vsix"
+          npx vsce package --no-dependencies -o "../codemap-${{ steps.version.outputs.version }}.vsix"
 
       - uses: actions/upload-artifact@v4
         with:

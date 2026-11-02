@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- First version on the VS Code Marketplace and Open VSX.
+- CodeMap is open source under the MIT license.
+
 ## 0.2.0
 
 - TypeScript and JavaScript: packages, folders, files and their declarations on the map, with imports, calls, routes (Express, NestJS) and the NestJS / Angular DI containers. Runs on the Node.js inside VS Code; setting `codemap.nodePath` for another one.
