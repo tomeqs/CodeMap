@@ -1,9 +1,11 @@
-import { EDGE_KINDS, KIND_COLORS, TAG_COLORS, turboCss } from '../data/palette.js';
+import { EDGE_KINDS, KIND_COLORS, KIND_SHAPES, SHAPE_GLYPHS, TAG_COLORS, edgeColor, kindColor, turboCss } from '../data/palette.js';
 import { LIFETIMES } from '../data/di.js';
 import { VIOLATION_COLORS } from '../views/galaxy.js';
 import { METRICS, defaultEdgeKinds, serializeDoc } from '../data/model.js';
 import { clear, fmt, h, shortName } from './dom.js';
 import { host } from '../data/host.js';
+import { rememberRenderer, rendererPreference } from '../gpu/renderer.js';
+import { layoutKind } from '../layout/engine.js';
 
 /** Left panel: filters, insights (cycles, hotspots, dead code...) and data info. */
 export class Sidebar {
@@ -39,7 +41,7 @@ export class Sidebar {
       h('select', { onChange: (e) => onChange(e.target.value) }, options.map(([v, label]) => h('option', { value: v, selected: v === value }, label)));
 
     const colorOptions = [
-      ['project', 'Project / namespace'],
+      ['project', `${model.labels.project[0]} / ${model.labels.namespace[0].toLowerCase()}`],
       ['kind', 'Kind (class, interface…)'],
       ['role', 'Role (controller, repository…)'],
       ['cycles', 'Cycles & unused code'],
@@ -62,6 +64,12 @@ export class Sidebar {
       h('label', { class: 'toggle-row', title }, h('span', {}, label), h('input', { type: 'checkbox', checked, onChange: (e) => onChange(e.target.checked) }));
 
     appearance.append(toggle('Labels', state.labels, (v) => app.setState({ labels: v }, 'options')));
+    const motionOptions = [['living', 'Living'], ['calm', 'Calm (battery)'], ['off', 'Off']];
+    appearance.append(h('div', { class: 'row', title: 'Living: the map always moves (twinkling sky, flowing links). Calm: decoration slows down and stops when you are away. Off: nothing moves by itself.' }, h('label', {}, 'Motion'),
+      select(app.stage.motion, motionOptions, (v) => app.setMotion(v))));
+    const particleOptions = [['0', 'Off'], ['0.34', 'Few'], ['1', 'Normal'], ['2', 'Many']];
+    appearance.append(h('div', { class: 'row', title: 'Particles flowing along links show the direction of dependencies' }, h('label', {}, 'Particles'),
+      select(String(state.particles), particleOptions, (v) => app.setState({ particles: Number(v) }, 'options'))));
     if (state.view !== 'city') {
       appearance.append(toggle('Flow particles on all links', state.flowAll, (v) => app.setState({ flowAll: v }, 'options')));
       appearance.append(toggle('Auto-rotate', state.autoRotate, (v) => app.setState({ autoRotate: v }, 'options')));
@@ -70,11 +78,14 @@ export class Sidebar {
     }
 
     if (model.hasTests) appearance.append(toggle('Include tests', state.showTests, (v) => app.setState({ showTests: v })));
-    if (model.hasExternal || model.hasPackages) appearance.append(toggle('Include external (BCL / NuGet)', state.showExternal, (v) => app.setState({ showExternal: v })));
+    if (model.hasExternal || model.hasPackages) appearance.append(toggle(`Include external (${model.labels.external})`, state.showExternal, (v) => app.setState({ showExternal: v })));
     el.append(appearance);
 
     // relationship kinds
-    const kinds = Object.keys(EDGE_KINDS).filter((k) => model.edgeKindCounts[k]);
+    const kinds = [
+      ...Object.keys(EDGE_KINDS).filter((k) => model.edgeKindCounts[k]),
+      ...Object.keys(model.edgeKindCounts).filter((k) => !EDGE_KINDS[k]).sort(), // kinds another language brings
+    ];
     const edges = h('div', { class: 'section' },
       h('h3', {}, 'Relationships',
         h('span', { class: 'links' },
@@ -85,7 +96,7 @@ export class Sidebar {
       ),
     );
     for (const kind of kinds) {
-      const info = EDGE_KINDS[kind];
+      const info = EDGE_KINDS[kind] ?? { label: kind, hint: kind, color: '#' + edgeColor(kind).getHexString() };
       edges.append(
         h('label', { class: 'check', title: info.hint },
           h('input', {
@@ -224,7 +235,7 @@ export class Sidebar {
         if (!node) continue;
         section.append(
           h('div', { class: 'insight', title: node.fullName, onClick: () => app.reveal(node.id) },
-            h('span', { class: 'swatch', style: { width: '8px', height: '8px', borderRadius: '50%', background: KIND_COLORS[node.kind], flex: 'none' } }),
+            h('span', { class: 'swatch', style: { width: '8px', height: '8px', borderRadius: '50%', background: kindColor(node.kind), flex: 'none' } }),
             h('span', { class: 'name' }, shortName(node)),
             h('span', { class: 'score' }, render(item)),
           ),
@@ -302,7 +313,7 @@ export class Sidebar {
     const { app } = this;
     const { model } = app;
     const counts = LIFETIMES.filter((l) => l.id !== 'missing')
-      .map((l) => [l, di.registrations.filter((r) => r.lifetime === l.id).length])
+      .map((l) => [l, di.registrations.filter((r) => (r.effective ?? r.lifetime) === l.id).length])
       .filter(([, n]) => n > 0);
     const section = h('div', { class: 'section' },
       h('h3', { title: 'Registrations found in code, resolved like the container would' }, 'Dependency injection',
@@ -316,7 +327,7 @@ export class Sidebar {
       section.append(
         h('div', { class: `issue ${issue.severity}`, title: issue.message, onClick: () => app.showDiIssue(issue) },
           h('div', { class: 'issue-head' },
-            h('span', { class: 'chip ' + (issue.severity === 'error' ? 'danger' : 'warn') }, issue.kind.replace('-', ' ')),
+            h('span', { class: 'chip ' + (issue.severity === 'error' ? 'danger' : issue.severity === 'info' ? 'note' : 'warn') }, issue.kind.replaceAll('-', ' ')),
             h('b', {}, consumer ? shortName(consumer) : issue.consumer),
           ),
           h('div', { class: 'small muted' }, issue.message),
@@ -377,6 +388,31 @@ export class Sidebar {
 
   // ------------------------------------------------------------------ data
 
+  /** How the map is drawn and laid out on this machine, and a choice of renderer (applies after a reload). */
+  renderGraphics(kv) {
+    const stage = this.app.stage;
+    const layout = this.app.view?.layout?.kind ?? layoutKind(Infinity, stage);
+    const names = { webgpu: 'WebGPU', webgl: 'WebGL 2' };
+    const choice = rendererPreference();
+    const select = h('select', {
+      onChange: (e) => {
+        rememberRenderer(e.target.value);
+        note.textContent = 'Reload the page to switch.';
+      },
+    }, ['auto', 'webgpu', 'webgl'].map((value) => h('option', { value, selected: value === choice }, value === 'auto' ? 'Automatic (WebGPU if available)' : names[value])));
+    const note = h('div', { class: 'small faint' });
+    return h('div', { class: 'section' }, h('h3', {}, 'Graphics'),
+      kv([
+        ['renderer', `${names[stage.backend] ?? '–'}${stage.software ? ' (software, no GPU)' : ''}`],
+        ['GPU', stage.adapter],
+        ['layout', ({ gpu: 'GPU compute', worker: 'web worker', main: 'main thread' }[layout] ?? layout) + (this.app.view?.layout?.mode === 'grid' ? ' (grid)' : '')],
+      ]),
+      h('label', { class: 'small' }, 'Renderer ', select),
+      note,
+      h('button', { class: 'small', title: 'Side-by-side 3D for AR glasses such as the XREAL 1S / One / One Pro', onClick: () => this.app.ar.openPanel() }, 'View in AR glasses…'),
+    );
+  }
+
   renderAbout() {
     const { model } = this.app;
     const doc = model.doc;
@@ -402,6 +438,7 @@ export class Sidebar {
       h('div', { class: 'section' }, h('h3', {}, 'Relationships'),
         kv(Object.entries(stats).filter(([k]) => k.startsWith('edges.')).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k.slice(6), fmt(v)])),
       ),
+      this.renderGraphics(kv),
       // Downloads are blocked inside sandboxed frames (embedded previews), so only offer them top-level.
       (host || window.self === window.top) && h('div', { class: 'section' },
         h('button', {
@@ -434,6 +471,28 @@ function groupBy(items, key) {
   return [...groups];
 }
 
+/** Kinds in the palette's order, then any others. */
+function orderedKinds(present) {
+  return [...Object.keys(KIND_COLORS).filter((k) => present.has(k)), ...[...present].filter((k) => !(k in KIND_COLORS)).sort()];
+}
+
+const KIND_WORDS = { constructor: 'ctor', recordStruct: 'record struct', typeAlias: 'type alias' };
+
+/** "● class · ◆ interface · …" for the kinds shown at a level. */
+function shapeLegend(model, level) {
+  const present = new Set(model.nodes.filter((n) => n.level === level && !n.external).map((n) => n.kind));
+  const seen = new Set();
+  const parts = [];
+  for (const kind of orderedKinds(present)) {
+    const word = KIND_WORDS[kind] ?? kind;
+    if (seen.has(word)) continue;
+    seen.add(word);
+    parts.push(`${SHAPE_GLYPHS[KIND_SHAPES[kind] ?? 'sphere']} ${word}`);
+  }
+
+  return parts.slice(0, 8).join(' · ');
+}
+
 /** Bottom legend for the current colour mode. */
 export function renderLegend(el, app) {
   const { model, state } = app;
@@ -446,7 +505,7 @@ export function renderLegend(el, app) {
       break;
     case 'kind': {
       const present = new Set(model.nodes.filter((n) => n.level === state.level || (state.view === 'city' && n.level === 'type')).map((n) => n.kind));
-      for (const [kind, color] of Object.entries(KIND_COLORS)) if (present.has(kind)) el.append(item(color, kind));
+      for (const kind of orderedKinds(present)) el.append(item(kindColor(kind), kind));
       break;
     }
     case 'role':
@@ -478,11 +537,12 @@ export function renderLegend(el, app) {
   } else if (state.view === 'di') {
     for (const l of LIFETIMES) el.append(item(l.color, `${l.title} plane`));
     el.append(line(VIOLATION_COLORS.error, 'captive (singleton → scoped)'), line(VIOLATION_COLORS.warning, 'warning'));
+    if (model.doc.analysis?.di?.issues?.some((i) => i.severity === 'info')) el.append(line(VIOLATION_COLORS.info, 'note (scope spreads)'));
     return;
   }
 
   const shapes = (state.view === 'galaxy' || state.view === 'layers') && state.level !== 'project' && state.level !== 'namespace'
-    ? (state.level === 'member' ? '● method · ◆ ctor · ■ property · ▲ field' : '● class · ◆ interface · ■ struct · ⬟ record · ▲ enum')
+    ? shapeLegend(model, state.level)
     : state.view === 'city' ? `height = ${METRICS[state.heightMetric]?.label ?? state.heightMetric} · footprint = ${METRICS[state.footprintMetric]?.label ?? state.footprintMetric}` : '';
   if (shapes) el.append(h('span', { class: 'li faint' }, shapes));
 }

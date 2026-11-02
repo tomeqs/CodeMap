@@ -277,6 +277,7 @@ input[type='range'] { width: 120px; accent-color: var(--accent); }
 .chip { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: rgba(110, 168, 255, 0.14); color: #b9d2ff; border: 1px solid rgba(110, 168, 255, 0.25); }
 .chip.warn { background: rgba(255, 183, 77, 0.12); color: #ffd08a; border-color: rgba(255, 183, 77, 0.3); }
 .chip.danger { background: rgba(255, 107, 107, 0.12); color: #ffb0b0; border-color: rgba(255, 107, 107, 0.3); }
+.chip.note { background: rgba(100, 181, 246, 0.12); color: #a8d4fa; border-color: rgba(100, 181, 246, 0.3); }
 .chip.ok { background: rgba(53, 201, 165, 0.12); color: #9ff0da; border-color: rgba(53, 201, 165, 0.3); }
 .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
 .metric { background: rgba(255, 255, 255, 0.04); border: 1px solid var(--panel-border); border-radius: 8px; padding: 6px 8px; }
@@ -341,6 +342,7 @@ a:hover { text-decoration: underline; }
 
 .issue { padding: 6px 8px; border-radius: 8px; cursor: pointer; margin: 4px 0; border-left: 2px solid var(--warn); background: rgba(255, 183, 77, 0.06); }
 .issue.error { border-left-color: var(--danger); background: rgba(255, 107, 107, 0.07); }
+.issue.info { border-left-color: #64b5f6; background: rgba(100, 181, 246, 0.06); }
 .issue:hover { background: rgba(110, 168, 255, 0.12); }
 .issue-head { display: flex; align-items: center; gap: 6px; }
 .issue .chip { margin: 0; }
@@ -624,3 +626,57 @@ button:disabled { opacity: 0.4; cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation-duration: 3s; }
 }
+
+/* ---------------------------------------------------------------- AR glasses (side-by-side stereo) */
+/* One container per eye, each half the screen: labels and the HUD are drawn once per eye. */
+.eye-labels, .ar-eye { position: absolute; top: 0; bottom: 0; width: 50%; overflow: hidden; pointer-events: none; }
+.eye-labels.eye-left, .ar-eye.eye-left { left: 0; }
+.eye-labels.eye-right, .ar-eye.eye-right { left: 50%; }
+
+body.ar-active { cursor: none; background: #000; }
+body.ar-active #topbar, body.ar-active #breadcrumb, body.ar-active #left, body.ar-active #left-toggle,
+body.ar-active #right, body.ar-active #legend, body.ar-active #hud, body.ar-active #tooltip,
+body.ar-active .toast, body.ar-active #projects, body.ar-active #welcome { display: none !important; }
+body.ar-active .stage-canvas { cursor: none; }
+
+#ar-hud { position: absolute; inset: 0; pointer-events: none; z-index: 20; display: none; }
+body.ar-active #ar-hud { display: block; }
+/* Shifted per eye to the map's depth; half SBS also squeezed (see GlassesSession.placeHud). */
+.ar-eye-inner { position: absolute; inset: 0; transform-origin: 0 0; }
+.ar-reticle {
+  position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+  border: 2px solid rgba(160, 200, 255, 0.75); border-radius: 50%; box-shadow: 0 0 8px rgba(120, 170, 255, 0.6);
+  transition: transform 0.15s, border-color 0.15s;
+}
+.ar-reticle.on { transform: scale(1.35); border-color: #fff; }
+.ar-card {
+  position: absolute; left: 50%; bottom: 14%; transform: translateX(-50%); min-width: 260px; max-width: 46%;
+  padding: 10px 14px; border-radius: 10px; color: #e8eeff; font-size: 15px; text-align: center;
+  background: rgba(10, 16, 32, 0.55); border: 1px solid rgba(140, 170, 255, 0.35);
+}
+.ar-card:empty { display: none; }
+.ar-card .k { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #9fb3d8; }
+.ar-card .n { font-size: 20px; font-weight: 700; margin: 2px 0 4px; }
+.ar-card .m { font-size: 13px; color: #b9c8f0; font-variant-numeric: tabular-nums; }
+.ar-top { position: absolute; left: 50%; top: 9%; transform: translateX(-50%); font-size: 13px; color: #9fb3d8; white-space: nowrap; }
+.ar-hint {
+  position: absolute; left: 50%; top: 18%; transform: translateX(-50%); max-width: 70%; text-align: center;
+  font-size: 14px; color: #ffd08a; transition: opacity 0.6s;
+}
+.ar-hint.fade { opacity: 0; }
+.ar-message { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); max-width: 70%; text-align: center; font-size: 18px; color: #ffd08a; }
+.ar-message:empty { display: none; }
+
+/* The start panel (on the computer's screen). */
+#ar-panel { position: absolute; inset: 0; display: grid; place-items: center; z-index: 40; background: rgba(4, 6, 12, 0.7); }
+#ar-panel .ar-dialog {
+  width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 20px 22px;
+  border-radius: 14px; background: var(--panel, #0d1424); border: 1px solid rgba(140, 170, 255, 0.25); color: #e8eeff;
+}
+#ar-panel h2 { margin: 0 0 6px; font-size: 18px; }
+#ar-panel ol { padding-left: 20px; line-height: 1.55; font-size: 13px; color: #c7d3f2; }
+#ar-panel .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 6px 0; font-size: 13px; }
+#ar-panel .row input[type='number'] { width: 90px; }
+#ar-panel .row select { min-width: 220px; }
+#ar-panel .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+#ar-panel .note { font-size: 12px; color: #9fb3d8; margin-top: 8px; }

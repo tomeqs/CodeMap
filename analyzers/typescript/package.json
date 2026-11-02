@@ -1,0 +1,15 @@
+{
+  "name": "codemap-typescript",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CodeMap language plugin: TypeScript and JavaScript (files, declarations, imports, calls) through the TypeScript compiler API.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node --test test/analyze.test.mjs test/frameworks.test.mjs test/cli.test.mjs"
+  },
+  "dependencies": {
+    "typescript": "5.9.3"
+  }
+}

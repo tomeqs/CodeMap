@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/copy-to-cli.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "bench": "node bench/run.mjs",
+    "test:smoke": "node bench/smoke.mjs"
   },
   "dependencies": {
     "d3-force-3d": "3.0.6",
@@ -15,6 +17,7 @@
     "three": "0.180.0"
   },
   "devDependencies": {
+    "playwright": "1.56.1",
     "vite": "7.3.7",
     "vite-plugin-singlefile": "2.3.0"
   }

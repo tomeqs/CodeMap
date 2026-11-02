@@ -17,7 +17,45 @@ export const KIND_COLORS = {
   property: '#81c784',
   field: '#4dd0e1',
   event: '#e57373',
+  // other languages (TypeScript: files, and the declarations in them)
+  module: '#7fa7e8',
+  function: '#ffd180',
+  typeAlias: '#a5d66f',
+  variable: '#80cbc4',
 };
+
+/** Colour of a node kind; kinds a language adds that the palette does not know get a stable colour of their own. */
+export function kindColor(kind) {
+  return KIND_COLORS[kind] ?? hashedColor(kind);
+}
+
+/**
+ * Shape of a node kind in the galaxy (and its legend glyph). Kinds without one are spheres.
+ */
+export const KIND_SHAPES = {
+  project: 'orb',
+  package: 'ring',
+  assembly: 'ring',
+  namespace: 'orb',
+  class: 'sphere',
+  interface: 'octa',
+  struct: 'box',
+  record: 'dodeca',
+  recordStruct: 'dodeca',
+  enum: 'tetra',
+  delegate: 'cone',
+  method: 'sphere',
+  constructor: 'octa',
+  property: 'box',
+  field: 'tetra',
+  event: 'cone',
+  module: 'sphere',
+  function: 'sphere',
+  typeAlias: 'tetra',
+  variable: 'box',
+};
+
+export const SHAPE_GLYPHS = { sphere: '●', orb: '●', octa: '◆', box: '■', dodeca: '⬟', tetra: '▲', cone: '▼', ring: '○' };
 
 export const EDGE_KINDS = {
   calls: { color: '#ffb74d', label: 'calls', on: true, hint: 'method → method' },
@@ -35,7 +73,8 @@ export const EDGE_KINDS = {
   returns: { color: '#b2e07a', label: 'returns', on: false, hint: 'return type' },
   accepts: { color: '#e0e57a', label: 'accepts', on: false, hint: 'parameter type' },
   catches: { color: '#ffab91', label: 'catches', on: false, hint: 'catch (T)' },
-  decoratedWith: { color: '#bcaaa4', label: 'decorated with', on: false, hint: '[Attribute]' },
+  decoratedWith: { color: '#bcaaa4', label: 'decorated with', on: false, hint: '[Attribute] / @Decorator' },
+  imports: { color: '#90caf9', label: 'imports', on: true, hint: 'a file imports another file' },
   projectReference: { color: '#cfd8dc', label: 'project reference', on: true, hint: '<ProjectReference>' },
   packageReference: { color: '#a1887f', label: 'package reference', on: false, hint: '<PackageReference>' },
   changesWith: { color: '#ffd166', label: 'changes with (git)', on: false, hint: 'modified in the same commits – not a code dependency' },
@@ -59,6 +98,15 @@ export const TAG_COLORS = {
   entrypoint: '#ffffff',
   attribute: '#bcaaa4',
   hub: '#26c6da',
+  route: '#ffab40',
+  module: '#a1887f',
+  component: '#42a5f5',
+  directive: '#7986cb',
+  pipe: '#d4e157',
+  guard: '#ff8a65',
+  interceptor: '#ba68c8',
+  entity: '#ffca28',
+  barrel: '#90a4ae',
 };
 
 const tmp = new Color();
@@ -88,6 +136,13 @@ export function turbo(t, target = new Color()) {
 
 export function turboCss(t) {
   return '#' + turbo(t, tmp).getHexString();
+}
+
+/** A stable, pleasant colour for a name nobody gave one. */
+export function hashedColor(name) {
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
+  return '#' + new Color().setHSL(((hash >>> 0) % 360) / 360, 0.55, 0.62).getHexString();
 }
 
 export function edgeColor(kind) {

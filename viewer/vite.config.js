@@ -9,6 +9,8 @@ export default defineConfig({
   server: {
     proxy: { '/api': 'http://127.0.0.1:5180' },
   },
+  // The layout worker is inlined too (started from a blob: URL), so the single file stays self-contained.
+  worker: { format: 'iife' },
   build: {
     target: 'es2020',
     chunkSizeWarningLimit: 2000,

@@ -1,8 +1,9 @@
-# CodeMap JSON: specyfikacja formatu (wersja 1.0)
+# CodeMap JSON: specyfikacja formatu (wersja 1.1)
 
 Plik `*.codemap.json` opisuje kod jako **graf skierowany**:
 
 * **węzły** (`nodes`) to elementy kodu: projekty, paczki, namespace’y, typy i ich składowe;
+  inne języki niż C# mają swoje odpowiedniki (w TypeScripcie: paczki, foldery, pliki i deklaracje), patrz [Poziomy i języki](#poziomy-i-języki);
 * **drzewo zawierania** budują pola `parent` (projekt → namespace → typ → typ zagnieżdżony / składowa);
 * **krawędzie** (`edges`) to wszystkie pozostałe relacje, każda z rodzajem (`kind`) i wagą (`weight`).
 
@@ -15,10 +16,10 @@ JSON Schema: [`codemap.schema.json`](codemap.schema.json).
 | Pole | Typ | Opis |
 |---|---|---|
 | `format` | `"codemap"` | znacznik formatu |
-| `version` | `"1.0"` | wersja formatu; nowe pola mogą się pojawiać bez zmiany wersji głównej |
+| `version` | `"1.1"` | wersja formatu; nowe pola mogą się pojawiać bez zmiany wersji głównej (1.1 dodała `level`, `language`, `source.languages`, nowe rodzaje węzłów i `imports`) |
 | `generator` | `{ name, version }` | narzędzie, które wygenerowało plik |
 | `generatedAt` | ISO 8601 | czas analizy |
-| `source` | obiekt | `path` (analizowany plik/katalog), `root` (katalog bazowy dla ścieżek plików), `kind` (`solution`/`project`/`directory`/`file`), `name`, opcjonalnie `git` (`branch`, `commit`, `commitsAnalyzed`, `since`) |
+| `source` | obiekt | `path` (analizowany plik/katalog), `root` (katalog bazowy dla ścieżek plików), `kind` (`solution`/`project`/`directory`/`file`), `name`, `languages` (języki w mapie, patrz niżej), opcjonalnie `git` (`branch`, `commit`, `commitsAnalyzed`, `since`) |
 | `stats` | `{ string: int }` | liczniki: `projects`, `namespaces`, `types`, `members`, `edges`, `lines`, `files`, `cycles`, `edges.<kind>`… |
 | `nodes` | `Node[]` | węzły |
 | `edges` | `Edge[]` | krawędzie |
@@ -30,10 +31,12 @@ JSON Schema: [`codemap.schema.json`](codemap.schema.json).
 |---|---|---|
 | `id` | ✔ | stabilny identyfikator (patrz niżej) |
 | `kind` | ✔ | rodzaj węzła |
+| `level` | | poziom mapy: `project`, `namespace`, `type`, `member`; bez niego poziom wynika z `kind` (tak jest w C#), języki, w których ten sam rodzaj leży na innym poziomie, podają go zawsze |
 | `name` | ✔ | krótka nazwa (`Order`, `Repository<T>`, `AddLine`, `this[]`) |
 | `fullName` | | pełna nazwa (`Shop.Domain.Orders.Order`) |
 | `parent` | | id węzła nadrzędnego |
 | `project` | | id projektu, w którym zadeklarowano element |
+| `language` | | tylko projekty i paczki: id języka z `source.languages` (np. `csharp`) |
 | `namespace` | | namespace (tekst) |
 | `accessibility` | | `public`, `internal`, `protected`, `private`, `protected internal`, `private protected` |
 | `modifiers` | | np. `static`, `abstract`, `sealed`, `partial`, `async`, `virtual`, `override`, `readonly`, `const`, `extension`, `required`, `init` |
@@ -55,6 +58,28 @@ JSON Schema: [`codemap.schema.json`](codemap.schema.json).
 | namespace | `namespace` (osobny węzeł dla każdej pary projekt + namespace) |
 | typ | `class`, `interface`, `struct`, `record`, `recordStruct`, `enum`, `delegate` |
 | składowa | `method` (także operatory, destruktory, top-level statements), `constructor`, `property` (także indeksery i właściwości pozycyjne rekordów), `field`, `event` |
+
+Inne języki mogą używać też `module` (plik), `function`, `typeAlias`, `variable` i własnych rodzajów
+(camelCase); węzeł rodzaju spoza tabeli powinien mieć `level`.
+
+### Poziomy i języki
+
+Mapa ma zawsze cztery poziomy: `project` → `namespace` → `type` → `member`. Każdy język mówi, czym one u niego są:
+`source.languages` to lista `{ id, name, levels, external }`, gdzie `levels` podaje dla każdego poziomu nazwę w liczbie
+pojedynczej i mnogiej, a `external` nazywa kod spoza analizy. Viewer bierze stąd napisy (przyciski poziomów, licznik w rogu).
+
+| Język | `project` | `namespace` | `type` | `member` | `external` |
+|---|---|---|---|---|---|
+| C# (`csharp`) | Project / Projects | Namespace / Namespaces | Type / Types | Member / Members | BCL / NuGet |
+| TypeScript (`typescript`) | Package / Packages | Folder / Folders | File / Files | Declaration / Declarations | npm packages |
+
+W TypeScripcie jednostką mapy jest plik (`module`, `level: "type"`), a klasy, interfejsy, funkcje, aliasy typów
+i stałe są jego składowymi (`level: "member"`); metody klasy mają ją za `parent` i też są składowymi. Metryki pliku
+liczą się z najgłębszych składowych (metod, funkcji), a klasa dostaje swoje. Paczki i foldery to zwykłe węzły
+`project` i `namespace` (folder jest jeden na ścieżkę, jak namespace w C#).
+
+Mapa kilku języków (np. folder z solucją C# i aplikacją TypeScript) ma wszystkie w `source.languages`, a projekty i paczki
+każdego mają swój `language`.
 
 ### Identyfikatory
 
@@ -132,6 +157,10 @@ Krawędzie są zapisywane na najdokładniejszym możliwym poziomie: `calls` łą
 | `extends` | metoda/typ → typ | `this T` w metodach rozszerzających, bloki `extension(T)` z C# 14 |
 | `decoratedWith` | element → klasa atrybutu | `[Attr]` |
 | `changesWith` | typ → typ | historia gita: pliki obu typów zmieniały się w tych samych commitach (patrz `analysis.changeCoupling`) |
+| `imports` | plik → plik | języki z modułami (TypeScript): `import` innego pliku |
+
+W innych językach dziedziczenie klas to też `inherits` (np. `class A extends B` w TypeScripcie); `extends` zostaje
+dla metod rozszerzających C#. Języki mogą dodawać własne rodzaje krawędzi (camelCase).
 
 `changesWith` (i `contains`) **nie są zależnościami w kodzie**: nie wchodzą do metryk coupling, cykli ani warstw.
 Waga to liczba wspólnych commitów.
@@ -190,7 +219,8 @@ Dla każdej pary jest też krawędź `changesWith`.
 
 ### `di`
 
-Pojawia się, gdy w kodzie są rejestracje `Microsoft.Extensions.DependencyInjection`.
+Pojawia się, gdy w kodzie są rejestracje kontenera DI: `Microsoft.Extensions.DependencyInjection` w C#,
+NestJS albo Angular w TypeScripcie (pole `framework`; bez niego to kontener .NET). Każdy kontener ma swoje reguły.
 
 `registrations`: każde wywołanie rejestrujące.
 
@@ -198,8 +228,10 @@ Pojawia się, gdy w kodzie są rejestracje `Microsoft.Extensions.DependencyInjec
 |---|---|
 | `service` | id typu usługi; dla typów frameworka pełna nazwa i `external: true` |
 | `implementation` | id implementacji (brak dla fabryk, których nie da się prześledzić) |
-| `lifetime` | `singleton`, `scoped`, `transient` |
-| `kind` | `type` (`AddScoped<I, T>()`, `typeof`), `instance` (`AddSingleton(obj)`), `factory` (lambda), `forward` (`sp => sp.GetRequiredService<T>()`), `hosted` (`AddHostedService`), `dbcontext` (`AddDbContext`, `Add…DbContext` z Aspire), `httpclient` (typowany `AddHttpClient<T>`) |
+| `lifetime` | `singleton`, `scoped`, `transient` (NestJS: `Scope.DEFAULT` / `REQUEST` / `TRANSIENT`; Angular: `providedIn: 'root'` i `NgModule` → singleton, providery komponentu → scoped, komponenty → transient) |
+| `effective` | czas życia, który kontener w końcu nadaje, gdy różni się od zadeklarowanego (NestJS: zasięg żądania przechodzi na zależnych) |
+| `kind` | `type` (`AddScoped<I, T>()`, `typeof`, `useClass`), `instance` (`AddSingleton(obj)`, `useValue`), `factory` (lambda, `useFactory`), `forward` (`sp => sp.GetRequiredService<T>()`, `useExisting`), `hosted` (`AddHostedService`), `dbcontext` (`AddDbContext`, `Add…DbContext` z Aspire), `httpclient` (typowany `AddHttpClient<T>`), `controller` (kontrolery NestJS), `component` (komponenty, dyrektywy i pipe’y Angulara) |
+| `framework` | `nest`, `angular`… (brak: .NET) |
 | `key` | klucz dla `AddKeyed*` |
 | `registeredIn`, `location` | metoda i miejsce w kodzie, które rejestruje usługę |
 
@@ -217,6 +249,10 @@ oraz typów aktywowanych przez framework (kontrolery i huby jako `transient`, mi
 | `optional` | parametr z wartością domyślną |
 | `implementations` | co kontener faktycznie wstrzyknie (pusta lista: nic nie jest zarejestrowane) |
 | `lifetime` | czas życia wstrzykiwanej usługi |
+| `framework` | kontener (brak: .NET); w surowym grafie wtyczki może go pominąć, wtedy decyduje rejestracja konsumenta |
+
+W TypeScripcie zależności to parametry konstruktora (typ albo token z `@Inject(TOKEN)`, `@InjectRepository(E)` → `Repository<E>`,
+`@Optional`), właściwości z `@Inject` i wywołania `inject(X)` w Angularze.
 
 `issues`: problemy, błędy najpierw.
 
@@ -225,8 +261,11 @@ oraz typów aktywowanych przez framework (kontrolery i huby jako `transient`, mi
 | `captive` | `error` | singleton zależy od usługi scoped: jedna instancja jest współdzielona przez wszystkie żądania i żyje dłużej niż jej scope |
 | `captive-transient` | `warning` | singleton trzyma usługę transient, która przez to też staje się singletonem |
 | `unregistered` | `warning` | konstruktor potrzebuje usługi z analizowanego kodu, której nikt nie rejestruje |
+| `interface-injection` | `warning` | NestJS: parametr typu interfejsu bez tokenu; interfejsów nie ma w czasie działania, potrzebny `@Inject(TOKEN)` |
+| `scope-bubbling` | `info` | NestJS: usługa zależy od usługi o zasięgu żądania, więc sama też go dostaje (nowa instancja na każde żądanie); to zamierzone, ale kosztuje |
+| `unreachable` | `error` | Angular: usługa z `providedIn: 'root'` potrzebuje usługi, którą dostarczają tylko komponenty (`NullInjectorError`) |
 
-Każdy problem ma też `consumer`, `service` i czytelny `message`.
+Każdy problem ma też `consumer`, `service` i czytelny `message`. Kolejność: błędy, ostrzeżenia, uwagi.
 
 ## Przykładowe zapytania
 

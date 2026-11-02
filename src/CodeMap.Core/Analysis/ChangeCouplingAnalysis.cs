@@ -85,8 +85,8 @@ public static class ChangeCouplingAnalysis
         var owners = new Dictionary<string, (string Id, double Loc)>(comparer);
         foreach (var node in graph.Nodes)
         {
-            if (!NodeKinds.IsType(node.Kind) || node.External || node.Location == null) continue;
-            if (node.Parent != null && byId.TryGetValue(node.Parent, out var parent) && NodeKinds.IsType(parent.Kind)) continue; // nested
+            if (!NodeLevels.IsType(node) || node.External || node.Location == null) continue;
+            if (node.Parent != null && byId.TryGetValue(node.Parent, out var parent) && NodeLevels.IsType(parent)) continue; // nested
 
             var locations = new[] { node.Location }.Concat(node.ExtraLocations ?? new List<SourceLocation>());
             foreach (var location in locations)

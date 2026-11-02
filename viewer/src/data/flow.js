@@ -17,6 +17,21 @@ function isPublicInstance(m) {
   return m.kind === 'method' && m.accessibility === 'public' && !m.modifiers?.includes('static');
 }
 
+/** Members a flow can run through (and dispatch to through implements / overrides). */
+const CALLABLE = new Set(['method', 'constructor', 'function']);
+/** Members that can start a flow. */
+const ENTRY_KINDS = new Set(['method', 'function']);
+
+/** How a call to a member reads on a sequence diagram: `place()`, or a route as it is (`GET /orders/:id`). */
+export function callLabel(node) {
+  return node.tags?.includes('route') ? node.name : `${node.name}()`;
+}
+
+/** Who a member belongs to on a sequence diagram: its class (C# type, TypeScript class), else its file. */
+function ownerOf(node) {
+  return node?.ownerNode ?? node?.typeNode ?? null;
+}
+
 /** Indexes the model once: calls in source order, implementations of abstract members, DI wiring. */
 export function flowIndex(model) {
   if (model._flowIndex) return model._flowIndex;
@@ -26,7 +41,7 @@ export function flowIndex(model) {
     if (e.kind === 'calls' || e.kind === 'instantiates') {
       if (!calls.has(e.source)) calls.set(e.source, []);
       calls.get(e.source).push(e);
-    } else if ((e.kind === 'implements' || e.kind === 'overrides') && e.source.startsWith('M:')) {
+    } else if ((e.kind === 'implements' || e.kind === 'overrides') && CALLABLE.has(model.get(e.source)?.kind)) {
       if (!implementors.has(e.target)) implementors.set(e.target, []);
       implementors.get(e.target).push(e.source);
     }
@@ -46,7 +61,7 @@ export function flowIndex(model) {
 }
 
 function isAbstractMember(node) {
-  return node.typeNode?.kind === 'interface' || !!node.modifiers?.includes('abstract');
+  return ownerOf(node)?.kind === 'interface' || !!node.modifiers?.includes('abstract');
 }
 
 /**
@@ -65,10 +80,10 @@ export function buildCallFlow(model, rootIds, { maxDepth = 8, maxNodes = 600, sh
   const implementationsOf = (target, caller) => {
     const all = (index.implementors.get(target.id) ?? []).filter((id) => visible(model.get(id)));
     if (!all.length || !isAbstractMember(target)) return null;
-    const wired = caller?.typeNode && index.injected.get(caller.typeNode.id + '\u0000' + target.typeNode?.id);
+    const wired = ownerOf(caller) && index.injected.get(ownerOf(caller).id + '\u0000' + ownerOf(target)?.id);
     if (wired) {
       const allowed = new Set(wired.implementations);
-      const narrowed = all.filter((id) => allowed.has(model.get(id)?.typeNode?.id));
+      const narrowed = all.filter((id) => allowed.has(ownerOf(model.get(id))?.id));
       // IEnumerable<T>: the caller gets every implementation and typically calls each one.
       if (narrowed.length) return { ids: narrowed, narrowed: true, many: wired.many, total: all.length };
     }
@@ -121,7 +136,7 @@ export function buildCallFlow(model, rootIds, { maxDepth = 8, maxNodes = 600, sh
 
   const tree = roots.map((root) => expand(root.id, 0, new Set()));
   const graph = flowGraph(tree);
-  const types = new Set([...graph.nodes.values()].map((n) => n.typeNode?.id).filter(Boolean));
+  const types = new Set([...graph.nodes.values()].map((n) => n.typeNode?.id).filter(Boolean)); // units: types, or files
   return {
     roots,
     tree,
@@ -135,16 +150,30 @@ function expandRoots(model, rootIds) {
   for (const id of rootIds) {
     const node = model.get(id);
     if (!node) continue;
-    if (node.level === 'member') result.push(node);
+    // A member that holds members (a TypeScript class) starts its flows like a type.
+    if (node.level === 'member' && !model.childrenOf(node.id).some((c) => c.level === 'member')) result.push(node);
     else result.push(...entryMethodsOf(model, node));
   }
 
   return result;
 }
 
-/** The methods of a type that start a flow: actions of a controller, ExecuteAsync of a hosted service... */
+/**
+ * The methods of a type that start a flow: members marked as routes or entry points (Express and Nest
+ * handlers), else by role: actions of a controller, ExecuteAsync of a hosted service...
+ */
 export function entryMethodsOf(model, type) {
-  const members = model.childrenOf(type.id).filter((m) => m.kind === 'method');
+  const members = [];
+  const pending = [...model.childrenOf(type.id)];
+  while (pending.length) {
+    const member = pending.shift();
+    if (member.level !== 'member') continue;
+    if (ENTRY_KINDS.has(member.kind)) members.push(member);
+    pending.push(...model.childrenOf(member.id));
+  }
+
+  const marked = members.filter((m) => m.tags.includes('route') || m.tags.includes('entrypoint'));
+  if (marked.length) return marked;
   for (const entry of ROLE_ENTRIES) {
     if (!type.tags.includes(entry.role)) continue;
     const methods = members.filter(entry.methods);
@@ -193,12 +222,19 @@ export function findEntryPoints(model, { limit = 40 } = {}) {
   const index = flowIndex(model);
   const result = [];
   for (const type of model.nodes) {
-    if (type.level !== 'type' || type.external || type.isTest) continue;
+    // Types, and classes that are members of a file (TypeScript).
+    if (!(type.level === 'type' || (type.level === 'member' && type.ownerNode === type)) || type.external || type.isTest) continue;
     const entry = ROLE_ENTRIES.find((e) => type.tags.includes(e.role));
     if (!entry) continue;
     const methods = entryMethodsOf(model, type).filter((m) => index.calls.has(m.id));
     if (!methods.length) continue;
     result.push({ node: type, role: entry.role, title: entry.title, methods });
+  }
+
+  // A file whose entry methods are all a class' (a NestJS controller and its file): the class is enough.
+  const ofClasses = new Set(result.filter((r) => r.node.level === 'member').flatMap((r) => r.methods.map((m) => m.id)));
+  for (let i = result.length - 1; i >= 0; i--) {
+    if (result[i].node.level === 'type' && result[i].methods.every((m) => ofClasses.has(m.id))) result.splice(i, 1);
   }
 
   for (const r of result) r.reach = buildCallFlow(model, [r.node.id], { maxDepth: 12, maxNodes: 400 }).nodes.size;
@@ -218,7 +254,7 @@ export function sequenceOf(root) {
   const participants = [];
   const indexOf = new Map();
   const participant = (node) => {
-    const type = node.typeNode ?? node;
+    const type = ownerOf(node) ?? node;
     if (!indexOf.has(type.id)) {
       indexOf.set(type.id, participants.length);
       participants.push({ id: type.id, node: type, name: type.name });
@@ -231,7 +267,7 @@ export function sequenceOf(root) {
   const called = new Set();
   const collect = (t) => {
     if (t.kind === 'create') return;
-    called.add((t.node.typeNode ?? t.node).id);
+    called.add((ownerOf(t.node) ?? t.node).id);
     t.children.forEach(collect);
     t.dispatch?.targets.forEach(collect);
   };
@@ -247,17 +283,17 @@ export function sequenceOf(root) {
 
       if (child.dispatch) {
         const targets = child.dispatch.targets;
-        const via = child.node.typeNode?.name ?? '';
+        const via = ownerOf(child.node)?.name ?? '';
         if (targets.length === 1) {
-          message(targets[0], from, `${child.node.name}()`, via);
+          message(targets[0], from, callLabel(child.node), via);
         } else if (child.dispatch.many) {
           steps.push({ type: 'loop', label: `each ${via}` });
-          for (const target of targets) message(target, from, `${child.node.name}()`, via);
+          for (const target of targets) message(target, from, callLabel(child.node), via);
           steps.push({ type: 'end' });
         } else {
           targets.forEach((target, i) => {
-            steps.push({ type: i === 0 ? 'alt' : 'else', label: target.node.typeNode?.name ?? target.node.name });
-            message(target, from, `${child.node.name}()`, via);
+            steps.push({ type: i === 0 ? 'alt' : 'else', label: ownerOf(target.node)?.name ?? target.node.name });
+            message(target, from, callLabel(child.node), via);
           });
           steps.push({ type: 'end' });
         }
@@ -265,7 +301,7 @@ export function sequenceOf(root) {
         continue;
       }
 
-      message(child, from, `${child.node.name}()`);
+      message(child, from, callLabel(child.node));
     }
   };
 
@@ -284,7 +320,7 @@ export function sequenceOf(root) {
   };
 
   const start = participant(root.node);
-  steps.push({ type: 'start', at: start, label: `${root.node.name}()`, id: root.id });
+  steps.push({ type: 'start', at: start, label: callLabel(root.node), id: root.id });
   walk(root, start);
   return { participants, steps };
 }

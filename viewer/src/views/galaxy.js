@@ -6,26 +6,36 @@ import {
   ConeGeometry,
   DirectionalLight,
   DodecahedronGeometry,
+  BufferGeometry,
   Group,
   IcosahedronGeometry,
-  InstancedMesh,
-  Matrix4,
+  InstancedBufferAttribute,
+  Mesh,
   OctahedronGeometry,
   PointLight,
   Sprite,
-  SpriteMaterial,
   TetrahedronGeometry,
   TorusGeometry,
   Vector3,
 } from 'three';
-import { forceCenter, forceLink, forceManyBody, forceSimulation, forceX, forceY, forceZ } from 'd3-force-3d';
-import { EDGE_KINDS } from '../data/palette.js';
-import { createLines, FlowParticles, glowMaterial } from '../scene/materials.js';
-import { dotTexture } from '../scene/stage.js';
+import { SpriteNodeMaterial } from 'three/webgpu';
+import { EDGE_KINDS, KIND_SHAPES } from '../data/palette.js';
+import { unitMaterial } from '../scene/materials.js';
+import { LinkMesh } from '../scene/link-mesh.js';
+import { GpuParticles, particlesPerLink } from '../scene/particles.js';
+import { Coronas } from '../scene/coronas.js';
+import { uploadAll, uploadRange } from '../scene/uploads.js';
+import { PositionStore } from '../gpu/position-store.js';
+import { dotTexture, ringTexture } from '../scene/textures.js';
+import { perf } from '../perf/stats.js';
+import { disposeObject } from '../scene/disposer.js';
+import { createSpec } from '../layout/spec.js';
+import { startLayout } from '../layout/engine.js';
 
+/** Shapes by kind; `detail` (0–3) is how round the spheres are (fewer triangles for big graphs). */
 const GEOMETRIES = {
-  sphere: () => new IcosahedronGeometry(1, 3),
-  orb: () => new IcosahedronGeometry(1, 2),
+  sphere: (detail) => new IcosahedronGeometry(1, detail),
+  orb: (detail) => new IcosahedronGeometry(1, Math.max(0, detail - 1)),
   octa: () => new OctahedronGeometry(1.15, 0),
   box: () => new BoxGeometry(1.5, 1.5, 1.5),
   dodeca: () => new DodecahedronGeometry(1.1, 0),
@@ -34,24 +44,6 @@ const GEOMETRIES = {
   ring: () => new TorusGeometry(1, 0.28, 10, 32),
 };
 
-const SHAPE_OF = {
-  project: 'orb',
-  package: 'ring',
-  assembly: 'ring',
-  namespace: 'orb',
-  class: 'sphere',
-  interface: 'octa',
-  struct: 'box',
-  record: 'dodeca',
-  recordStruct: 'dodeca',
-  enum: 'tetra',
-  delegate: 'cone',
-  method: 'sphere',
-  constructor: 'octa',
-  property: 'box',
-  field: 'tetra',
-  event: 'cone',
-};
 
 const RADIUS = {
   project: [9, 26],
@@ -61,12 +53,12 @@ const RADIUS = {
 };
 
 /** Edge colours for problems: dependencies against the layering, DI lifetime errors / warnings. */
-export const VIOLATION_COLORS = { error: '#ff4545', warning: '#ffb02e', true: '#ff4545' };
+export const VIOLATION_COLORS = { error: '#ff4545', warning: '#ffb02e', info: '#64b5f6', true: '#ff4545' };
 
-const matrix = new Matrix4();
 const color = new Color();
 const tmp = new Vector3();
 const tmp2 = new Vector3();
+const tmp3 = new Vector3();
 
 /** 3D force-directed "galaxy": projects form solar systems, namespaces clusters, types stars. */
 export class GalaxyView {
@@ -81,13 +73,21 @@ export class GalaxyView {
     this.links = [];
     this.highlight = null;
     this.hovered = null;
-    this.options = { flowAll: false, labels: true, autoRotate: false };
-    this.geometries = Object.fromEntries(Object.entries(GEOMETRIES).map(([k, f]) => [k, f()]));
-    this.material = glowMaterial(0.36);
-    this.lines = createLines(1);
-    this.particles = new FlowParticles(8000, 2.6);
-    this.halo = new Sprite(new SpriteMaterial({ map: dotTexture(), color: 0xffffff, transparent: true, opacity: 0.4, blending: AdditiveBlending, depthWrite: false }));
+    this.options = { flowAll: false, labels: true, autoRotate: false, particles: 1 };
+    this.detail = -1;
+    // Everything reads unit positions from the store on the GPU: nodes, links and particles.
+    this.store = new PositionStore();
+    this.material = unitMaterial(this.store, 0.36);
+    this.linkMesh = new LinkMesh(this.store);
+    this.lines = this.linkMesh.mesh;
+    this.particles = new GpuParticles(this.store, { max: 60000, size: 9 });
+    this.coronas = new Coronas(this.store);
+    this.halo = new Sprite(new SpriteNodeMaterial({ map: dotTexture(), color: 0xffffff, transparent: true, opacity: 0.4, blending: AdditiveBlending, depthWrite: false }));
     this.halo.visible = false;
+    // The shock wave around a unit when it is selected.
+    this.ring = new Sprite(new SpriteNodeMaterial({ map: ringTexture(), color: 0xffffff, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
+    this.ring.visible = false;
+    this.wave = null;
 
     this.lightGroup = new Group();
     this.lightGroup.add(new AmbientLight(0x8899cc, 0.55));
@@ -98,7 +98,7 @@ export class GalaxyView {
     rim.position.set(-400, -200, -300);
     this.lightGroup.add(rim);
 
-    this.group.add(this.lines, this.particles.points, this.halo, this.lightGroup);
+    this.group.add(this.lines, this.coronas.sprite, this.particles.points, this.halo, this.ring, this.lightGroup);
     this.userMoved = false;
     /** Optional (node) => label text; the call-flow view labels methods with their type. */
     this.labelText = null;
@@ -109,29 +109,36 @@ export class GalaxyView {
   activate() {
     this.stage.scene.add(this.group);
     this.stage.setAtmosphere({ background: '#03050b', fog: 0, stars: true });
-    this.stage.setBloom(0.78, 0.5, 0.2);
+    this.stage.setBloom(1.1, 0.6, 0.14);
     this.stage.controls.autoRotate = this.options.autoRotate;
     this.stage.controls.autoRotateSpeed = 0.35;
     this.stage.controls.maxPolarAngle = Math.PI;
     this.stage.controls.minDistance = 5;
+    this.stage.invalidate();
   }
 
   deactivate() {
     this.stage.scene.remove(this.group);
     this.stage.controls.autoRotate = false;
     this.labels.clear();
+    this.stage.invalidate();
   }
 
   setOptions(options) {
+    const flowChanged = 'flowAll' in options && options.flowAll !== this.options.flowAll;
     Object.assign(this.options, options);
     this.stage.controls.autoRotate = this.options.autoRotate;
+    if (flowChanged && this.links?.length) this.recolorLines(); // the dashes follow
     this.refreshParticles();
+    this.stage.invalidate();
   }
 
   // ------------------------------------------------------------------ build
 
   build(units, links, state, ghosts = []) {
+    this.savePositions();
     this.state = state;
+    this.hovered = null; // a unit of the old build
     const model = this.model;
     const all = [...units.map((n) => ({ node: n, ghost: false })), ...ghosts.map((n) => ({ node: n, ghost: true }))];
     const byId = new Map();
@@ -150,7 +157,8 @@ export class GalaxyView {
         // Start new nodes at the position of their nearest laid-out ancestor: drilling down "explodes" clusters.
         let anchor = null;
         for (let a = node.parent ? model.get(node.parent) : null; a && !anchor; a = a.parent ? model.get(a.parent) : null) anchor = this.positions.get(a.id);
-        const spread = anchor ? 12 : 220;
+        // A new graph starts as a tight ball and bursts out (the store's unfolding shows it).
+        const spread = anchor ? 12 : this.stage.motion === 'off' ? 220 : 40;
         unit.x = (anchor?.x ?? 0) + (Math.random() - 0.5) * spread;
         unit.y = (anchor?.y ?? 0) + (Math.random() - 0.5) * spread;
         unit.z = (anchor?.z ?? 0) + (Math.random() - 0.5) * spread;
@@ -159,23 +167,50 @@ export class GalaxyView {
       byId.set(node.id, unit);
       return unit;
     });
+    this.units.forEach((u, i) => (u.index = i)); // place in the position store and in the layout
+    this.store.ensure(this.units.length);
     this.byId = byId;
 
     this.links = links
       .filter((l) => byId.has(l.source) && byId.has(l.target))
       .map((l) => ({ ...l, s: byId.get(l.source), t: byId.get(l.target) }));
+    this.indexUnitLinks();
 
     // Dense graphs glow into one blob: tone bloom down as the node count grows.
     const density = Math.log10(Math.max(100, this.units.length) / 100);
-    this.stage.setBloom(Math.max(0.45, 0.78 - density * 0.2), 0.5, 0.2 + density * 0.06);
+    this.stage.setBloom(Math.max(0.6, 1.1 - density * 0.25), 0.6, 0.14 + density * 0.06);
 
     this.buildMeshes();
     this.buildLines();
     this.recolor();
+    // Everything new unfolds from where it starts (units that stay glide to their new place).
+    if (this.stage.motion !== 'off') this.store.beginIntro();
+    else this.store.endIntro();
     this.startSimulation(state, cached / Math.max(1, this.units.length));
     this.labelOrder = [...this.units].sort((a, b) => labelRank(b) - labelRank(a));
     this.setHighlight(null);
     if (cached < this.units.length * 0.5) this.fit(false);
+  }
+
+  /** Every unit knows the indices of its links (hover updates only those). */
+  indexUnitLinks() {
+    for (const u of this.units) u.linkIndices = [];
+    this.links.forEach((l, i) => {
+      l.s.linkIndices.push(i);
+      l.t.linkIndices.push(i);
+    });
+  }
+
+  /** Keeps where every unit is, for the next build (unchanged units stay put, new ones grow out of their parent). */
+  savePositions() {
+    for (const u of this.units) {
+      const p = this.positions.get(u.id);
+      if (p) {
+        p.x = u.x;
+        p.y = u.y;
+        p.z = u.z;
+      } else this.positions.set(u.id, { x: u.x, y: u.y, z: u.z });
+    }
   }
 
   /** Node size: the size metric within the node's level range. */
@@ -189,253 +224,452 @@ export class GalaxyView {
   buildMeshes() {
     for (const mesh of this.meshes) {
       this.group.remove(mesh);
-      mesh.dispose();
+      mesh.geometry.dispose();
     }
 
     this.meshes = [];
     const groups = new Map();
     for (const unit of this.units) {
-      const shape = SHAPE_OF[unit.node.kind] ?? 'sphere';
+      const shape = KIND_SHAPES[unit.node.kind] ?? 'sphere';
       if (!groups.has(shape)) groups.set(shape, []);
       groups.get(shape).push(unit);
     }
 
+    // Level of detail: a sphere is 1280 triangles at full detail; tens of thousands of them are too many,
+    // more so without a GPU (software rendering).
+    const n = this.units.length;
+    const detail = Math.max(0, (n < 2500 ? 3 : n < 12000 ? 2 : 1) - (this.stage.software ? 1 : 0));
+    if (detail !== this.detail) {
+      for (const geometry of Object.values(this.geometries ?? {})) geometry.dispose();
+      this.geometries = Object.fromEntries(Object.entries(GEOMETRIES).map(([k, f]) => [k, f(detail)]));
+      this.detail = detail;
+    }
+
+    // One instanced mesh per shape: the shape's vertices plus, per instance, the unit's store index,
+    // colour and size.
     for (const [shape, list] of groups) {
-      const mesh = new InstancedMesh(this.geometries[shape], this.material, list.length);
+      const base = this.geometries[shape];
+      const geometry = new BufferGeometry();
+      geometry.setIndex(base.index);
+      geometry.setAttribute('position', base.attributes.position);
+      geometry.setAttribute('normal', base.attributes.normal);
+      const unitIndex = new InstancedBufferAttribute(new Float32Array(list.length), 1);
+      geometry.setAttribute('aUnit', unitIndex);
+      geometry.setAttribute('aColor', new InstancedBufferAttribute(new Float32Array(list.length * 3), 3));
+      geometry.setAttribute('aScale', new InstancedBufferAttribute(new Float32Array(list.length), 1));
+      const mesh = new Mesh(geometry, this.material);
+      mesh.count = list.length;
       mesh.userData.units = list;
       list.forEach((unit, i) => {
         unit.mesh = mesh;
-        unit.slot = i; // d3-force owns `index` on simulation nodes
+        unit.slot = i; // its instance in the mesh (`index` is its place in the store and the layout)
+        unitIndex.array[i] = unit.index;
       });
       mesh.frustumCulled = false;
       this.meshes.push(mesh);
       this.group.add(mesh);
     }
 
+    this.coronas.setCount(this.units.length);
     this.updateMatrices();
   }
 
   buildLines() {
-    this.group.remove(this.lines);
-    this.lines.geometry.dispose();
-    this.lines = createLines(Math.max(1, this.links.length));
-    this.lines.geometry.setDrawRange(0, this.links.length * 2);
-    this.group.add(this.lines);
+    const links = this.linkMesh;
+    links.setCount(this.links.length);
+    this.links.forEach((l, i) => links.setEnds(i, l.s.index, l.t.index));
+    links.flush();
   }
 
   startSimulation(state, cachedRatio) {
-    this.simulation?.stop();
+    this.stopLayout();
+    const spec = this.layoutSpec(state, cachedRatio);
+    this.layoutStart = performance.now();
+    const stage = this.stage;
+    this.layout = startLayout(spec, { renderer: stage.renderer, store: this.store, backend: stage.backend, software: stage.software });
+    this.settled = false;
+    this.pendingFocus = null;
+    // A fresh layout in the worker: show it once its first (pre-warmed) frame is back, not the starting cloud –
+    // unless it unfolds (then the starting ball is where the show begins).
+    this.setLayoutVisible(this.layout.kind !== 'worker' || cachedRatio >= 0.5 || this.store.introRunning);
+    this.applyLayout();
+  }
+
+  setLayoutVisible(visible) {
+    for (const mesh of this.meshes) mesh.visible = visible;
+    this.linkMesh.mesh.visible = visible;
+    this.layoutHidden = !visible;
+  }
+
+  /** The force layout of the galaxy: projects are "solar systems" on a sphere, groups (namespaces, types) clump. */
+  layoutSpec(state, cachedRatio) {
     const units = this.units;
+    const n = units.length;
     const level = state.level;
+    const projectIds = [...new Set(units.map((u) => u.node.projectNode?.id).filter(Boolean))];
+    const anchors = new Map();
+    const radius = level === 'project' ? 0 : 50 + 22 * Math.sqrt(n / Math.max(1, projectIds.length)) * Math.cbrt(projectIds.length);
+    projectIds.forEach((id, i) => anchors.set(id, fibonacciSphere(i, projectIds.length, projectIds.length > 1 ? radius : 0)));
+    const anchor = level === 'project' ? 0 : 0.035;
+    const spec = createSpec(n, this.links.length, {
+      alpha: cachedRatio > 0.8 ? 0.35 : 1,
+      alphaDecay: n > 3000 ? 0.035 : 0.022,
+      velocityDecay: 0.35,
+      theta: 0.9,
+      distanceMax: 700,
+      anchorStrength: [anchor, anchor, anchor],
+      clusterStrength: 0.22,
+      center: true,
+    });
+    this.fillSpec(spec, state, (u) => anchors.get(u.node.projectNode?.id));
+    spec.charge.forEach((_, i) => (spec.charge[i] = -14 - units[i].r * units[i].r * 2.2));
+    this.fillLinks(spec, (l) => l.s.r + l.t.r + 14 + (l.s.node.projectNode !== l.t.node.projectNode ? 26 : 0), 0.55);
+    return spec;
+  }
 
-    const degree = new Map();
-    for (const l of this.links) {
-      degree.set(l.s, (degree.get(l.s) ?? 0) + 1);
-      degree.set(l.t, (degree.get(l.t) ?? 0) + 1);
-    }
-
-    const simLinks = this.links.map((l) => ({ source: l.s, target: l.t, weight: l.weight }));
-    const groupOf = (u) => {
-      const n = u.node;
+  /** Positions, sizes, anchors and groups (namespace of a type, type of a member…) of the units. */
+  fillSpec(spec, state, anchorOf) {
+    const level = state.level;
+    const groupOf = (n) => {
       if (level === 'member') return n.typeNode?.id ?? n.parent;
       if (level === 'type') return n.namespaceNode?.id ?? n.parent;
       if (level === 'namespace') return n.projectNode?.id;
       return null;
     };
+    const groups = new Map();
+    this.units.forEach((u, i) => {
+      u.index = i;
+      spec.position[i * 3] = u.x;
+      spec.position[i * 3 + 1] = u.y;
+      spec.position[i * 3 + 2] = u.z;
+      spec.radius[i] = u.r;
+      const a = anchorOf(u);
+      if (a) {
+        spec.anchor[i * 3] = a.x ?? 0;
+        spec.anchor[i * 3 + 1] = a.y ?? 0;
+        spec.anchor[i * 3 + 2] = a.z ?? 0;
+      }
 
-    // Projects become "solar systems" spread on a sphere.
-    const projectIds = [...new Set(units.map((u) => u.node.projectNode?.id).filter(Boolean))];
-    const anchors = new Map();
-    const radius = level === 'project' ? 0 : 50 + 22 * Math.sqrt(units.length / Math.max(1, projectIds.length)) * Math.cbrt(projectIds.length);
-    projectIds.forEach((id, i) => anchors.set(id, fibonacciSphere(i, projectIds.length, projectIds.length > 1 ? radius : 0)));
-    const anchorOf = (u) => anchors.get(u.node.projectNode?.id) ?? { x: 0, y: 0, z: 0 };
-    const anchorStrength = level === 'project' ? 0 : 0.035;
+      const g = groupOf(u.node);
+      if (g) {
+        if (!groups.has(g)) groups.set(g, groups.size);
+        spec.group[i] = groups.get(g);
+      }
+    });
+    spec.groupCount = groups.size;
+  }
 
-    const sim = forceSimulation(units, 3)
-      .force(
-        'link',
-        forceLink(simLinks)
-          .distance((l) => l.source.r + l.target.r + 14 + (l.source.node.projectNode !== l.target.node.projectNode ? 26 : 0))
-          .strength((l) => 0.55 / Math.min(degree.get(l.source) ?? 1, degree.get(l.target) ?? 1)),
-      )
-      .force('charge', forceManyBody().strength((u) => -14 - u.r * u.r * 2.2).theta(0.9).distanceMax(700))
-      .force('x', forceX((u) => anchorOf(u).x).strength(anchorStrength))
-      .force('y', forceY((u) => anchorOf(u).y).strength(anchorStrength))
-      .force('z', forceZ((u) => anchorOf(u).z).strength(anchorStrength))
-      .force('cluster', clusterForce(groupOf, 0.22))
-      .force('center', forceCenter(0, 0, 0))
-      .alpha(cachedRatio > 0.8 ? 0.35 : 1)
-      .alphaDecay(units.length > 3000 ? 0.035 : 0.022)
-      .velocityDecay(0.35)
-      .stop();
+  /** Links pull their ends to `distance`, hubs more gently (strength / smaller degree). */
+  fillLinks(spec, distance, strength) {
+    const degree = new Int32Array(this.units.length);
+    for (const l of this.links) {
+      degree[l.s.index]++;
+      degree[l.t.index]++;
+    }
 
-    this.simulation = sim;
-    this.settled = false;
-    this.pendingFocus = null;
+    this.links.forEach((l, k) => {
+      spec.linkSource[k] = l.s.index;
+      spec.linkTarget[k] = l.t.index;
+      spec.linkDistance[k] = distance(l);
+      spec.linkStrength[k] = strength / Math.min(degree[l.s.index], degree[l.t.index]);
+    });
+  }
 
-    // Pre-warm: lay out most of the structure before the first frame, then animate the rest.
-    const start = performance.now();
-    while (performance.now() - start < 120 && sim.alpha() > 0.2) sim.tick();
-    for (const u of units) this.positions.set(u.id, { x: u.x, y: u.y, z: u.z });
-    this.updateMatrices();
-    this.updateLinePositions();
+  /**
+   * Takes the newest positions of the layout: to the units (labels, picking, camera) and, unless the layout
+   * writes the store on the GPU itself, to the GPU in one upload.
+   */
+  applyLayout() {
+    const p = this.layout.positions;
+    const units = this.units;
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      u.x = p[i * 3];
+      u.y = p[i * 3 + 1];
+      u.z = p[i * 3 + 2];
+    }
+
+    if (!this.layout.writesStore) {
+      this.store.setAll(p, units.length);
+      this.store.upload();
+    }
+
+    this.stage.invalidate();
+  }
+
+  stopLayout() {
+    this.layout?.stop();
+    this.layout?.dispose?.();
+    this.layout = null;
   }
 
   // ------------------------------------------------------------------ frame
 
+  /** Advances the layout and the animations; returns true while the layout moves, 'ambient' for decoration only. */
   update(dt) {
-    const sim = this.simulation;
-    if (sim && sim.alpha() > sim.alphaMin()) {
-      const start = performance.now();
-      do sim.tick();
-      while (performance.now() - start < 9 && sim.alpha() > sim.alphaMin());
-      for (const u of this.units) this.positions.set(u.id, { x: u.x, y: u.y, z: u.z });
-      this.updateMatrices();
-      this.updateLinePositions();
-      if (sim.alpha() <= sim.alphaMin() && !this.settled) {
+    let busy = false;
+    const layout = this.layout;
+    if (layout && !this.settled) {
+      busy = true;
+      if (layout.step(9)) {
+        this.applyLayout();
+        if (this.layoutHidden) this.setLayoutVisible(true);
+      }
+      if (layout.settled) {
         this.settled = true;
+        perf.set('settle', performance.now() - this.layoutStart);
+        this.savePositions();
         if (this.pendingFocus) this.focus(this.pendingFocus);
         else if (!this.userMoved) this.fit(true);
       }
     }
 
-    if (this.halo.visible && this.highlight?.primary) {
-      const u = this.byId.get(this.highlight.primary);
-      if (u) {
-        this.halo.position.set(u.x, u.y, u.z);
-        const pulse = 1 + 0.12 * Math.sin(performance.now() / 260);
-        this.halo.scale.setScalar(u.r * 3.6 * pulse);
-      }
+    // The unfolding of a new layout runs on the GPU clock of the store; labels wait for its end.
+    if (this.store.tickIntro()) busy = true;
+    if (this.wave) busy = this.advanceWave() || busy;
+
+    const halo = this.halo.visible && this.highlight?.primary ? this.byId.get(this.highlight.primary) : null;
+    if (halo) {
+      this.halo.position.set(halo.x, halo.y, halo.z);
+      const pulse = 1 + 0.12 * Math.sin(performance.now() / 260);
+      this.halo.scale.setScalar(halo.r * 3.6 * pulse);
     }
 
-    this.particles.update(dt, tmp);
-    if (this.options.labels) this.renderLabels();
+    if (this.options.labels && !this.store.introRunning) this.renderLabels();
     else this.labels.clear();
+    return busy || (halo || this.particles.count || this.linkMesh.flowing ? 'ambient' : false);
   }
 
+  /** Positions (to the store) and sizes of every unit, e.g. after an animation step. */
   updateMatrices() {
     for (const u of this.units) {
-      const s = u.r * (u.grow ?? 1) * (u === this.hovered ? 1.35 : 1);
-      matrix.makeScale(s, s, s);
-      matrix.setPosition(u.x, u.y, u.z);
-      u.mesh.setMatrixAt(u.slot, matrix);
+      this.store.set(u.index, u.x, u.y, u.z);
+      this.setScale(u);
     }
 
-    for (const mesh of this.meshes) {
-      mesh.instanceMatrix.needsUpdate = true;
-      mesh.computeBoundingSphere();
-    }
+    this.store.upload();
+    for (const mesh of this.meshes) uploadAll(mesh.geometry.attributes.aScale);
+
+    this.coronas.flushRadii();
+
+    this.stage.invalidate();
   }
 
-  updateLinePositions() {
-    const pos = this.lines.geometry.attributes.position.array;
-    let i = 0;
-    for (const l of this.links) {
-      pos[i++] = l.s.x;
-      pos[i++] = l.s.y;
-      pos[i++] = l.s.z;
-      pos[i++] = l.t.x;
-      pos[i++] = l.t.y;
-      pos[i++] = l.t.z;
-    }
-
-    this.lines.geometry.attributes.position.needsUpdate = true;
+  setScale(u) {
+    const scale = u.r * (u.grow ?? 1) * (u === this.hovered ? 1.35 : 1);
+    u.mesh.geometry.attributes.aScale.array[u.slot] = scale;
+    this.coronas.setRadius(u.index, scale);
   }
 
   // ------------------------------------------------------------------ colours & highlight
 
   recolor() {
-    const mode = this.state?.colorMode ?? 'project';
-    const h = this.highlight;
-    for (const u of this.units) {
-      this.model.colorOf(u.node, mode, color);
-      let factor = u.ghost ? 0.45 : 1;
-      if (h) {
-        if (h.primary === u.id) factor = 1.25;
-        else if (h.nodes.has(u.id)) factor = h.secondary?.has(u.id) ? 1.15 : 1;
-        else factor = 0.1;
-      } else if (this.hovered === u) factor = 1.3;
-      color.multiplyScalar(factor);
-      u.mesh.setColorAt(u.slot, color);
-    }
+    for (const u of this.units) this.setUnitColor(u);
+    for (const mesh of this.meshes) uploadAll(mesh.geometry.attributes.aColor);
 
-    for (const mesh of this.meshes) if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    this.coronas.flushColors();
     this.recolorLines();
   }
 
+  setUnitColor(u) {
+    const h = this.highlight;
+    this.model.colorOf(u.node, this.state?.colorMode ?? 'project', color);
+    let factor = u.ghost ? 0.45 : 1;
+    if (h) {
+      if (h.primary === u.id) factor = 1.25;
+      else if (h.nodes.has(u.id)) factor = h.secondary?.has(u.id) ? 1.15 : 1;
+      else factor = 0.1;
+    } else if (this.hovered === u) factor = 1.3;
+    color.multiplyScalar(factor);
+    color.toArray(u.mesh.geometry.attributes.aColor.array, u.slot * 3);
+    this.coronas.setColor(u.index, color);
+  }
+
   recolorLines() {
-    const col = this.lines.geometry.attributes.color.array;
+    this.links.forEach((l, index) => this.setLinkColor(l, index));
+    this.linkMesh.flush();
+    this.stage.invalidate();
+  }
+
+  /** A link's colour, how bright it is at its source and target, and its width. */
+  setLinkColor(l, index) {
     const h = this.highlight;
     const hovered = this.hovered;
-    const base = this.links.length > 4000 ? 0.09 : this.links.length > 1500 ? 0.14 : this.links.length > 500 ? 0.22 : 0.32;
-    let i = 0;
-    this.links.forEach((l, index) => {
-      color.set(l.violation ? VIOLATION_COLORS[l.violation] ?? VIOLATION_COLORS.error : EDGE_KINDS[l.kind]?.color ?? '#9fb3c8');
-      let a;
-      let b;
-      if (h) {
-        const on = h.links.has(index);
-        a = on ? 1.0 : l.violation ? 0.12 : 0.025;
-        b = on ? 0.35 : l.violation ? 0.05 : 0.01;
-      } else if (l.violation) {
-        // Problems stay visible at rest: they are what these views are about.
-        a = 1.0;
-        b = 0.45;
-      } else if (hovered && (l.s === hovered || l.t === hovered)) {
-        a = 1;
-        b = 0.35;
-      } else {
-        const w = Math.min(1, 0.6 + Math.log2(l.weight) * 0.12);
-        a = base * w;
-        b = base * 0.25 * w;
-      }
+    const count = this.links.length;
+    const base = count > 4000 ? 0.09 : count > 1500 ? 0.14 : count > 500 ? 0.22 : 0.32;
+    const c = linkColor(l);
+    let a;
+    let b;
+    if (h) {
+      const on = h.links.has(index);
+      a = on ? 1.0 : l.violation ? 0.12 : 0.025;
+      b = on ? 0.35 : l.violation ? 0.05 : 0.01;
+    } else if (l.violation) {
+      // Problems stay visible at rest: they are what these views are about.
+      a = 1.0;
+      b = 0.45;
+    } else if (hovered && (l.s === hovered || l.t === hovered)) {
+      a = 1;
+      b = 0.35;
+    } else {
+      const w = Math.min(1, 0.6 + Math.log2(l.weight) * 0.12);
+      a = base * w;
+      b = base * 0.25 * w;
+    }
 
-      col[i++] = color.r * a;
-      col[i++] = color.g * a;
-      col[i++] = color.b * a;
-      col[i++] = color.r * b;
-      col[i++] = color.g * b;
-      col[i++] = color.b * b;
-    });
-    this.lines.geometry.attributes.color.needsUpdate = true;
+    // Ribbons with soft edges: highlighted and heavier links are wider, the rest stays a faint thread.
+    const on = (h && h.links.has(index)) || (!h && hovered && (l.s === hovered || l.t === hovered));
+    const width = (on ? 1.9 : l.violation ? 1.6 : 1.1) * Math.min(1.6, 1 + Math.log2(l.weight) * 0.1);
+    const gain = on ? 1 : 0.75;
+    // Dashes run along what is in focus (and every link with "flow on all links"), towards the dependency.
+    const flow = on ? 1 : !h && l.violation ? 0.8 : !h && this.options.flowAll ? 0.6 : 0;
+    this.linkMesh.setStyle(index, c, a * gain, b * gain, width, flow);
   }
 
   /** highlight: null | { primary, nodes:Set<id>, links:Set<index>, secondary?:Set<id> } */
   setHighlight(highlight) {
+    const previous = this.highlight?.primary;
     this.highlight = highlight;
     this.halo.visible = !!highlight?.primary && this.byId?.has(highlight.primary);
     if (this.halo.visible) this.halo.material.color.copy(this.model.colorOf(this.model.get(highlight.primary), this.state.colorMode, new Color()));
+    if (highlight?.primary !== previous || !highlight) this.startWave(highlight);
     this.recolor();
     this.refreshParticles();
   }
 
+  /**
+   * A wave of light from a newly selected unit: out along the highlighted links, hop after hop (each unit
+   * flares as it arrives), with a shock ring around the unit itself.
+   */
+  startWave(highlight) {
+    const primary = highlight?.primary && this.byId?.get(highlight.primary);
+    this.linkMesh.clearWaves();
+    if (!primary || this.stage.motion === 'off') {
+      this.wave = null;
+      this.ring.visible = false;
+      this.linkMesh.waveFront.value = this.coronas.waveFront.value = -100;
+      this.coronas.setHops(null);
+      return;
+    }
+
+    // Hops from the selection over the highlighted links.
+    const hops = new Map([[primary, 0]]);
+    const queue = [primary];
+    for (let k = 0; k < queue.length; k++) {
+      const u = queue[k];
+      for (const i of u.linkIndices ?? []) {
+        if (!highlight.links.has(i)) continue;
+        const l = this.links[i];
+        const other = l.s === u ? l.t : l.s;
+        if (!hops.has(other)) {
+          hops.set(other, hops.get(u) + 1);
+          queue.push(other);
+        }
+      }
+    }
+
+    let max = 0;
+    for (const i of highlight.links) {
+      const l = this.links[i];
+      if (!l || !hops.has(l.s) || !hops.has(l.t)) continue;
+      this.linkMesh.setWave(i, hops.get(l.s), hops.get(l.t));
+      max = Math.max(max, hops.get(l.s), hops.get(l.t));
+    }
+
+    this.coronas.setHops(new Map([...hops].map(([u, hop]) => [u.index, hop])));
+    this.wave = { start: performance.now(), max, unit: primary };
+    this.ring.material.color.copy(this.model.colorOf(primary.node, this.state.colorMode, new Color()));
+    this.ring.visible = true;
+    this.advanceWave();
+  }
+
+  /** Moves the wave and the shock ring on; false once both are over. */
+  advanceWave() {
+    const wave = this.wave;
+    const t = (performance.now() - wave.start) / 1000;
+    const front = t * WAVE_SPEED - 0.3;
+    const ring = Math.min(1, t / RING_SECONDS);
+    const u = wave.unit;
+    this.ring.position.set(u.x, u.y, u.z);
+    this.ring.scale.setScalar(u.r * (2 + 16 * (1 - (1 - ring) ** 2)));
+    this.ring.material.opacity = 0.9 * (1 - ring);
+    if (front > wave.max + 1.5 && ring >= 1) {
+      this.wave = null;
+      this.ring.visible = false;
+      this.linkMesh.waveFront.value = this.coronas.waveFront.value = -100;
+      return false;
+    }
+
+    this.linkMesh.waveFront.value = this.coronas.waveFront.value = front;
+    return true;
+  }
+
   setHovered(id) {
-    const unit = id ? this.byId.get(id) : null;
+    const unit = id ? this.byId?.get(id) ?? null : null;
     if (unit === this.hovered) return;
+    const previous = this.hovered;
     this.hovered = unit;
-    this.updateMatrices();
-    this.recolor();
+    // Only the two units (and, without a selection, their links) change: upload just those.
+    const restyled = [];
+    for (const u of [previous, unit]) {
+      if (!u || !u.mesh) continue;
+      this.setScale(u);
+      this.setUnitColor(u);
+      const { aScale, aColor } = u.mesh.geometry.attributes;
+      uploadRange(aScale, u.slot, 1);
+      uploadRange(aColor, u.slot * 3, 3);
+      this.coronas.flushColors([u.index]);
+      this.coronas.flushRadii([u.index]);
+      if (this.highlight) continue;
+      for (const i of u.linkIndices ?? []) {
+        this.setLinkColor(this.links[i], i);
+        restyled.push(i);
+      }
+    }
+
+    if (restyled.length) this.linkMesh.flushStyle(restyled);
     if (!this.highlight) this.refreshParticles();
+    this.stage.invalidate();
   }
 
   refreshParticles() {
     const h = this.highlight;
     let selected;
+    let calm = []; // the quiet flow of a living map at rest
     if (h) selected = this.links.filter((_, i) => h.links.has(i));
     else if (this.hovered) selected = this.links.filter((l) => l.s === this.hovered || l.t === this.hovered);
     else if (this.options.flowAll) selected = this.links;
-    else selected = this.links.filter((l) => l.violation);
-    selected = selected.slice(0, 2500);
+    else {
+      selected = this.links.filter((l) => l.violation);
+      if (this.stage.motion === 'living') calm = this.strongestLinks().filter((l) => !l.violation);
+    }
 
-    this.particles.setPaths(
-      selected.map((l) => ({
-        count: Math.min(4, 1 + Math.floor(Math.log2(l.weight))),
-        speed: 0.28 + Math.random() * 0.12,
-        phase: Math.random(),
-        color: new Color(l.violation ? VIOLATION_COLORS[l.violation] ?? VIOLATION_COLORS.error : EDGE_KINDS[l.kind]?.color ?? '#ffffff').multiplyScalar(1.6),
-        at: (t, out) => out.set(l.s.x + (l.t.x - l.s.x) * t, l.s.y + (l.t.y - l.s.y) * t, l.s.z + (l.t.z - l.s.z) * t),
-      })),
-    );
+    // The GPU animates them all; only the budget for very large selections is limited.
+    selected = selected.slice(0, 20000);
+    const density = this.options.particles;
+    const paths = density > 0 ? selected.map((l) => ({
+      source: l.s.index,
+      target: l.t.index,
+      count: particlesPerLink(Math.min(4, 1 + Math.floor(Math.log2(l.weight))), density),
+      speed: 0.28 + Math.random() * 0.12,
+      color: linkColor(l).clone().multiplyScalar(1.8),
+    })) : [];
+    if (density > 0) {
+      for (const l of calm) {
+        paths.push({ source: l.s.index, target: l.t.index, count: particlesPerLink(1, density), speed: 0.12 + Math.random() * 0.08, color: linkColor(l).clone().multiplyScalar(1.5) });
+      }
+    }
+
+    this.particles.setPaths(paths);
+    this.stage.invalidate();
+  }
+
+  /** The heaviest links (about the top 12%, at most 1500), for the quiet flow at rest; kept per build. */
+  strongestLinks() {
+    if (this.strongest?.links === this.links) return this.strongest.list;
+    const list = [...this.links].sort((a, b) => b.weight - a.weight).slice(0, Math.min(1500, Math.ceil(this.links.length * 0.12)));
+    this.strongest = { links: this.links, list };
+    return list;
   }
 
   // ------------------------------------------------------------------ labels
@@ -450,16 +684,36 @@ export class GalaxyView {
       items.push({ text: this.labelText?.(u.node) ?? u.node.name, position: tmp2.clone(), cls, offsetY: 4 + (u.r * 300) / Math.max(distance, 1), opacity, force });
     };
 
+    // Label budgets go to units on screen: zoomed into a big graph, the nearby names still show.
+    const { width, height } = this.stage;
+    const onScreen = (u) => {
+      const p = this.stage.project(tmp2.set(u.x, u.y, u.z), tmp3);
+      return p && p.x > -40 && p.y > -20 && p.x < width + 40 && p.y < height + 20;
+    };
+
     if (h?.primary && this.byId.has(h.primary)) push(this.byId.get(h.primary), 'l-selected', true);
     if (this.hovered) push(this.hovered, 'l-selected', true);
-    if (h) for (const id of h.nodes) if (id !== h.primary && this.byId.has(id)) push(this.byId.get(id), '');
+    if (h) {
+      let shown = 0;
+      for (const id of h.nodes) {
+        if (shown >= 60) break;
+        const u = id !== h.primary && this.byId.get(id);
+        if (u && onScreen(u)) {
+          push(u, '');
+          shown++;
+        }
+      }
+    }
 
     const budget = h ? 25 : 70;
     let n = 0;
+    let scanned = 0;
     for (const u of this.labelOrder) {
-      if (n++ > budget) break;
+      if (n >= budget || scanned++ > 5000) break;
       if (h && !h.nodes.has(u.id)) continue;
+      if (!onScreen(u)) continue;
       push(u, u.node.level === 'project' ? 'l-project' : u.node.level === 'namespace' ? 'l-namespace' : '');
+      n++;
     }
 
     items.unshift(...this.extraLabels());
@@ -473,14 +727,64 @@ export class GalaxyView {
 
   // ------------------------------------------------------------------ interaction
 
-  pick(event) {
-    const hits = this.stage.pick(event, this.meshes);
-    for (const hit of hits) {
-      const unit = hit.object.userData.units?.[hit.instanceId];
-      if (unit) return unit.id;
+  /**
+   * The unit under the pointer: the nearest one whose projected sphere contains it (at least a few pixels
+   * wide, so tiny far-away units can still be clicked). Positions come from the units, not the GPU.
+   */
+  /**
+   * AR reticle: the unit closest in angle to a ray (the middle of the view), within its own apparent size
+   * (at least MIN_PICK_ANGLE). Positions on the CPU, one pass: fine for a click or a few times a second.
+   */
+  pickAlong({ origin, direction }) {
+    let best = null;
+    let bestScore = Infinity;
+    const minAngle = (MIN_PICK_ANGLE * Math.PI) / 180;
+    for (const u of this.units) {
+      const dx = u.x - origin.x;
+      const dy = u.y - origin.y;
+      const dz = u.z - origin.z;
+      const along = dx * direction.x + dy * direction.y + dz * direction.z;
+      if (along <= 0) continue;
+      const distance = Math.hypot(dx, dy, dz);
+      const angle = Math.acos(Math.min(1, along / distance));
+      const reach = Math.max(minAngle, Math.atan(u.r / distance));
+      const score = angle / reach;
+      if (score <= 1 && score < bestScore) {
+        best = u;
+        bestScore = score;
+      }
     }
 
-    return null;
+    return best?.id ?? null;
+  }
+
+  pick(event) {
+    const canvas = this.stage.canvas;
+    const rect = canvas.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    const camera = this.stage.camera;
+    camera.updateMatrixWorld();
+    const m = camera.projectionMatrix.clone().multiply(camera.matrixWorldInverse).elements;
+    const pixelScale = rect.height / 2 / Math.tan((camera.fov * Math.PI) / 360);
+    let best = null;
+    let bestDepth = Infinity;
+    for (const u of this.units) {
+      if (!u.mesh?.visible) continue;
+      const w = m[3] * u.x + m[7] * u.y + m[11] * u.z + m[15];
+      if (w <= camera.near) continue;
+      const sx = ((m[0] * u.x + m[4] * u.y + m[8] * u.z + m[12]) / w * 0.5 + 0.5) * rect.width;
+      const sy = (-(m[1] * u.x + m[5] * u.y + m[9] * u.z + m[13]) / w * 0.5 + 0.5) * rect.height;
+      const radius = Math.max(4, (u.r * (u.grow ?? 1) * (u === this.hovered ? 1.35 : 1) * 1.1 * pixelScale) / w);
+      const dx = sx - px;
+      const dy = sy - py;
+      if (dx * dx + dy * dy <= radius * radius && w < bestDepth) {
+        best = u;
+        bestDepth = w;
+      }
+    }
+
+    return best?.id ?? null;
   }
 
   positionOf(id) {
@@ -507,24 +811,42 @@ export class GalaxyView {
     this.fitSphere(center, radius, animate, 0.95);
   }
 
-  /** Moves the camera so that a sphere fills the view (looking from `fitDirection`). */
+  /**
+   * Moves the camera so that a sphere fills the view (looking from `fitDirection`). AR glasses: the map is
+   * set at the chosen size and distance in the room instead (see Stage.arFit).
+   */
   fitSphere(center, radius, animate, tightness) {
     // Fit the narrower of the two fields of view (portrait phones are narrow, not short).
     const vFov = (this.stage.camera.fov * Math.PI) / 180;
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * this.stage.camera.aspect);
-    const distance = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * tightness;
+    const distance = this.stage.stereo ? this.stage.arFit(radius) : (radius / Math.sin(Math.min(vFov, hFov) / 2)) * tightness;
     const dir = (this.fitDirection ?? new Vector3(0.35, 0.45, 1)).clone().normalize();
     const position = center.clone().add(dir.multiplyScalar(distance));
     if (animate) this.stage.flyTo(center, position, 1100);
-    else {
-      this.stage.controls.target.copy(center);
-      this.stage.camera.position.copy(position);
-    }
+    else this.stage.jumpTo(center, position);
   }
 
   dispose() {
-    this.simulation?.stop();
+    this.stopLayout();
+    this.stage.scene.remove(this.group);
+    disposeObject(this.group);
+    for (const geometry of Object.values(this.geometries ?? {})) geometry.dispose();
+    this.store.dispose();
+    this.units = [];
+    this.links = [];
   }
+}
+
+/** The AR reticle reaches units within this angle (degrees) of the middle of the view, or their size. */
+const MIN_PICK_ANGLE = 1.5;
+
+/** The selection wave: hops per second, and how long the shock ring takes to spread and fade. */
+const WAVE_SPEED = 1.6;
+const RING_SECONDS = 1.1;
+
+/** A link's base colour (its kind, or red / amber for a problem), computed once. */
+export function linkColor(l) {
+  return (l.color ??= new Color(l.violation ? VIOLATION_COLORS[l.violation] ?? VIOLATION_COLORS.error : EDGE_KINDS[l.kind]?.color ?? '#9fb3c8'));
 }
 
 function labelRank(u) {
@@ -538,35 +860,4 @@ function fibonacciSphere(i, n, radius) {
   const r = Math.sqrt(1 - y * y);
   const theta = Math.PI * (3 - Math.sqrt(5)) * i;
   return { x: Math.cos(theta) * r * radius, y: y * radius * 0.7, z: Math.sin(theta) * r * radius };
-}
-
-/** Pulls nodes toward the centroid of their group (namespace, type...). */
-export function clusterForce(groupOf, strength) {
-  let nodes = [];
-  const force = (alpha) => {
-    const centroids = new Map();
-    for (const n of nodes) {
-      const g = groupOf(n);
-      if (!g) continue;
-      let c = centroids.get(g);
-      if (!c) centroids.set(g, (c = { x: 0, y: 0, z: 0, w: 0 }));
-      const w = n.r;
-      c.x += n.x * w;
-      c.y += n.y * w;
-      c.z += n.z * w;
-      c.w += w;
-    }
-
-    const k = strength * alpha;
-    for (const n of nodes) {
-      const c = centroids.get(groupOf(n));
-      if (!c || c.w === 0) continue;
-      n.vx += (c.x / c.w - n.x) * k;
-      n.vy += (c.y / c.w - n.y) * k;
-      n.vz += (c.z / c.w - n.z) * k;
-    }
-  };
-
-  force.initialize = (n) => (nodes = n);
-  return force;
 }

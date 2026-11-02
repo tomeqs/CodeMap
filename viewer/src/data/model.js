@@ -1,10 +1,14 @@
 import { Color } from 'three';
-import { EDGE_KINDS, KIND_COLORS, TAG_COLORS, projectColor, turbo, vary } from './palette.js';
+import { EDGE_KINDS, TAG_COLORS, kindColor, projectColor, turbo, vary } from './palette.js';
 import { LIFETIME_COLORS } from './di.js';
+import { levelLabels } from './labels.js';
 
 export const LEVELS = ['project', 'namespace', 'type', 'member'];
+/** Class-like kinds: they own members (and are what a member's name is qualified with). */
 export const TYPE_KINDS = new Set(['class', 'interface', 'struct', 'record', 'recordStruct', 'enum', 'delegate']);
 export const MEMBER_KINDS = new Set(['method', 'constructor', 'property', 'field', 'event']);
+/** Kinds that sit at the member level unless a node says otherwise (as in the analyzer's NodeLevels). */
+const MEMBER_LEVEL_KINDS = new Set([...MEMBER_KINDS, 'function', 'variable']);
 
 /** Metrics the user can colour / size / extrude by. `scale` decides normalisation. */
 export const METRICS = {
@@ -26,7 +30,9 @@ export const METRICS = {
   distance: { label: 'Distance from main sequence', scale: 'linear' },
 };
 
+/** The node's own level when the file gives one (other languages), else the level of its kind. */
 export function levelOf(node) {
+  if (LEVELS.includes(node.level)) return node.level;
   switch (node.kind) {
     case 'project':
     case 'package':
@@ -35,9 +41,7 @@ export function levelOf(node) {
     case 'namespace':
       return 'namespace';
     default:
-      if (TYPE_KINDS.has(node.kind)) return 'type';
-      if (MEMBER_KINDS.has(node.kind)) return 'member';
-      return 'type';
+      return MEMBER_LEVEL_KINDS.has(node.kind) ? 'member' : 'type';
   }
 }
 
@@ -54,13 +58,14 @@ export class CodeModel {
     this.byId = new Map();
     this.children = new Map();
 
-    for (const node of this.nodes) {
+    this.nodes.forEach((node, i) => {
       node.level = levelOf(node);
       node.levelIndex = LEVELS.indexOf(node.level);
       node.metrics ??= {};
       node.tags ??= [];
+      node.idx = i; // dense number: typed-array bookkeeping instead of string keys on big graphs
       this.byId.set(node.id, node);
-    }
+    });
 
     for (const node of this.nodes) {
       if (node.parent && !this.byId.has(node.parent)) node.parent = undefined;
@@ -70,17 +75,76 @@ export class CodeModel {
       }
     }
 
-    // ancestor-or-self at each level: the deepest node on the parent chain whose level <= target.
+    // Derived from the parent chain, each node from its (already resolved) parent:
+    // anc[level] = the deepest node on the chain whose level <= that level (else the root).
+    const count = this.nodes.length;
+    const rootOf = new Array(count);
+    const projectOf = new Array(count);
+    const state = new Uint8Array(count); // 0 = not yet, 1 = resolving, 2 = done
+    const resolve = (node) => {
+      const i = node.idx;
+      if (state[i] === 2) return;
+      state[i] = 1;
+      let parent = node.parent ? this.byId.get(node.parent) : null;
+      if (parent && state[parent.idx] === 1) parent = null; // a loop in the parent links: stop here
+      const li = node.levelIndex;
+      const isProject = node.kind === 'project';
+      if (parent) {
+        resolve(parent);
+        const pa = parent.anc;
+        node.anc = [li <= 0 ? node : pa[0], li <= 1 ? node : pa[1], li <= 2 ? node : pa[2], li <= 3 ? node : pa[3]];
+        rootOf[i] = rootOf[parent.idx];
+        projectOf[i] = isProject ? node : projectOf[parent.idx];
+        node.namespaceNode = node.kind === 'namespace' ? node : parent.namespaceNode;
+        node.typeNode = li === 2 ? node : parent.typeNode;
+        node.ownerNode = TYPE_KINDS.has(node.kind) ? node : parent.ownerNode;
+      } else {
+        node.anc = [node, node, node, node];
+        rootOf[i] = node;
+        projectOf[i] = isProject ? node : null;
+        node.namespaceNode = node.kind === 'namespace' ? node : null;
+        node.typeNode = li === 2 ? node : null;
+        node.ownerNode = TYPE_KINDS.has(node.kind) ? node : null;
+      }
+
+      state[i] = 2;
+    };
+
+    for (const node of this.nodes) resolve(node);
     for (const node of this.nodes) {
-      const chain = [];
-      for (let n = node; n; n = n.parent ? this.byId.get(n.parent) : null) chain.push(n);
-      node.anc = LEVELS.map((_, li) => chain.find((n) => n.levelIndex <= li) ?? chain[chain.length - 1]);
-      node.projectNode = chain.find((n) => n.kind === 'project') ?? (node.project ? this.byId.get(node.project) : null) ?? chain[chain.length - 1];
-      node.namespaceNode = chain.find((n) => n.kind === 'namespace') ?? null;
-      node.typeNode = chain.find((n) => TYPE_KINDS.has(n.kind)) ?? null;
+      node.projectNode = projectOf[node.idx] ?? (node.project ? this.byId.get(node.project) : null) ?? rootOf[node.idx];
       node.isTest = !!(node.projectNode?.tags?.includes('test-project') || node.tags.includes('test'));
-      node.searchText = `${node.name} ${node.fullName ?? ''} ${node.location?.file ?? ''}`.toLowerCase();
     }
+
+    // Depth-first entry/exit numbers: "is a inside b" is two comparisons.
+    this.enter = new Int32Array(count);
+    this.exit = new Int32Array(count);
+    let clock = 0;
+    const stack = [];
+    for (const top of this.nodes) {
+      if (top.parent) continue;
+      stack.push({ node: top, kids: this.children.get(top.id) ?? [], next: 0 });
+      this.enter[top.idx] = clock++;
+      while (stack.length) {
+        const frame = stack[stack.length - 1];
+        if (frame.next < frame.kids.length) {
+          const kid = frame.kids[frame.next++];
+          this.enter[kid.idx] = clock++;
+          stack.push({ node: kid, kids: this.children.get(kid.id) ?? [], next: 0 });
+        } else {
+          this.exit[frame.node.idx] = clock++;
+          stack.pop();
+        }
+      }
+    }
+
+    // Edge endpoints as node numbers (-1: not in the graph), resolved once.
+    this.edgeSource = new Int32Array(this.edges.length);
+    this.edgeTarget = new Int32Array(this.edges.length);
+    this.edges.forEach((e, k) => {
+      this.edgeSource[k] = this.byId.get(e.source)?.idx ?? -1;
+      this.edgeTarget[k] = this.byId.get(e.target)?.idx ?? -1;
+    });
 
     this.projects = this.nodes.filter((n) => n.kind === 'project');
     this.projects.forEach((p, i) => (p.baseColor = projectColor(i)));
@@ -102,6 +166,16 @@ export class CodeModel {
     for (const node of this.nodes) {
       if (node.baseColor) continue;
       node.baseColor = (node.namespaceNode ?? node.projectNode)?.baseColor ?? externalColor;
+    }
+
+    this.labels = levelLabels(doc);
+    const di = doc.analysis?.di;
+    if (di) {
+      // Every list may be left out by a language that has nothing to say.
+      di.registrations ??= [];
+      di.dependencies ??= [];
+      di.issues ??= [];
+      for (const d of di.dependencies) d.implementations ??= [];
     }
 
     this.edgeKindCounts = {};
@@ -132,9 +206,11 @@ export class CodeModel {
     return node.anc[LEVELS.indexOf(level)];
   }
 
+  /** True when `node` is `ancestorId` or inside it. */
   isDescendant(node, ancestorId) {
-    for (let n = node; n; n = n.parent ? this.byId.get(n.parent) : null) if (n.id === ancestorId) return true;
-    return false;
+    const a = this.byId.get(ancestorId);
+    if (!a || !node) return false;
+    return this.enter[a.idx] <= this.enter[node.idx] && this.exit[node.idx] <= this.exit[a.idx];
   }
 
   /** Normalised [0..1] value of a metric for a node, relative to its level's maximum. */
@@ -175,7 +251,7 @@ export class CodeModel {
       case 'project':
         return target.copy(node.baseColor);
       case 'kind':
-        return target.set(KIND_COLORS[node.kind] ?? '#9e9e9e');
+        return target.set(kindColor(node.kind));
       case 'role': {
         const tag = node.tags.find((t) => TAG_COLORS[t]);
         return tag ? target.set(TAG_COLORS[tag]) : target.set('#3a4560');
@@ -205,7 +281,7 @@ export class CodeModel {
     const scope = state.scope ? this.byId.get(state.scope) : null;
     for (const node of this.nodes) {
       if (!this.isUnitCandidate(node, state)) continue;
-      if (scope && !this.isDescendant(node, scope.id)) continue;
+      if (scope && !(this.enter[scope.idx] <= this.enter[node.idx] && this.exit[node.idx] <= this.exit[scope.idx])) continue;
       result.push(node);
     }
 
@@ -230,24 +306,24 @@ export class CodeModel {
   aggregate(units, state, { ghosts = false } = {}) {
     const level = state.level;
     const li = LEVELS.indexOf(level);
-    const unitSet = new Set(units.map((u) => u.id));
+    const isUnit = new Uint8Array(this.nodes.length);
+    for (const u of units) isUnit[u.idx] = 1;
     const ghostSet = new Map();
     const links = new Map();
+    const kinds = state.edgeKinds;
+    const ghostState = ghosts ? { ...state, scope: null } : null;
+    const n = this.nodes.length;
 
-    const resolve = (node) => {
-      if (!node) return null;
-      const unit = node.anc[li];
-      if (unitSet.has(unit.id)) return unit;
-      return null;
-    };
-
-    for (const e of this.edges) {
-      if (!state.edgeKinds.has(e.kind)) continue;
-      const s = this.byId.get(e.source);
-      const t = this.byId.get(e.target);
-      if (!s || !t) continue;
-      let su = resolve(s);
-      let tu = resolve(t);
+    for (let k = 0; k < this.edges.length; k++) {
+      const e = this.edges[k];
+      if (!kinds.has(e.kind)) continue;
+      const si = this.edgeSource[k];
+      const ti = this.edgeTarget[k];
+      if (si < 0 || ti < 0) continue;
+      const s = this.nodes[si];
+      const t = this.nodes[ti];
+      let su = isUnit[s.anc[li].idx] ? s.anc[li] : null;
+      let tu = isUnit[t.anc[li].idx] ? t.anc[li] : null;
       if (!su && !tu) continue;
       if (!su || !tu) {
         if (!ghosts) continue;
@@ -255,14 +331,14 @@ export class CodeModel {
         const outside = su ? t : s;
         const ghost = outside.anc[li];
         if (!ghost || ghost.levelIndex !== li && !ghost.external) continue;
-        if (!this.isUnitCandidate(ghost, { ...state, scope: null })) continue;
+        if (!this.isUnitCandidate(ghost, ghostState)) continue;
         ghostSet.set(ghost.id, ghost);
         if (!su) su = ghost;
         else tu = ghost;
       }
 
       if (su === tu) continue;
-      addLink(links, su.id, tu.id, e);
+      addLink(links, su.idx * n + tu.idx, su.id, tu.id, e);
     }
 
     return { links: finishLinks(links, state), ghosts: [...ghostSet.values()] };
@@ -273,35 +349,64 @@ export class CodeModel {
    * each endpoint goes to its deepest ancestor-or-self that is a unit.
    */
   aggregateMixed(unitIds, state) {
-    const resolved = new Map();
-    const resolve = (node) => {
-      let unit = resolved.get(node.id);
-      if (unit !== undefined) return unit;
-      unit = null;
-      for (let n = node; n; n = n.parent ? this.byId.get(n.parent) : null) {
-        if (unitIds.has(n.id)) {
-          unit = n;
-          break;
-        }
-      }
+    const n = this.nodes.length;
+    const isUnit = new Uint8Array(n);
+    for (const id of unitIds) {
+      const node = this.byId.get(id);
+      if (node) isUnit[node.idx] = 1;
+    }
 
-      resolved.set(node.id, unit);
+    // resolved[idx]: 0 = not yet, -1 = no unit above, else unit idx + 1
+    const resolved = new Int32Array(n);
+    const resolve = (node) => {
+      const memo = resolved[node.idx];
+      if (memo) return memo > 0 ? this.nodes[memo - 1] : null;
+      let unit = null;
+      if (isUnit[node.idx]) unit = node;
+      else if (node.parent) unit = resolve(this.byId.get(node.parent));
+      resolved[node.idx] = unit ? unit.idx + 1 : -1;
       return unit;
     };
 
     const links = new Map();
-    for (const e of this.edges) {
-      if (!state.edgeKinds.has(e.kind)) continue;
-      const s = this.byId.get(e.source);
-      const t = this.byId.get(e.target);
-      if (!s || !t) continue;
+    const kinds = state.edgeKinds;
+    for (let k = 0; k < this.edges.length; k++) {
+      const e = this.edges[k];
+      if (!kinds.has(e.kind)) continue;
+      const si = this.edgeSource[k];
+      const ti = this.edgeTarget[k];
+      if (si < 0 || ti < 0) continue;
+      const s = this.nodes[si];
+      const t = this.nodes[ti];
       const su = resolve(s);
       const tu = resolve(t);
       if (!su || !tu || su === tu) continue;
-      addLink(links, su.id, tu.id, e);
+      addLink(links, su.idx * n + tu.idx, su.id, tu.id, e);
     }
 
     return finishLinks(links, state);
+  }
+
+  /** Edges by the type their ends belong to (type number -> edge numbers), built on first use. */
+  edgesByType() {
+    if (this._edgesByType) return this._edgesByType;
+    const map = new Map();
+    const add = (type, k) => {
+      if (!type) return;
+      let list = map.get(type.idx);
+      if (!list) map.set(type.idx, (list = []));
+      if (list[list.length - 1] !== k) list.push(k);
+    };
+    for (let k = 0; k < this.edges.length; k++) {
+      const si = this.edgeSource[k];
+      const ti = this.edgeTarget[k];
+      if (si < 0 || ti < 0) continue;
+      add(this.nodes[si].typeNode, k);
+      add(this.nodes[ti].typeNode, k);
+    }
+
+    this._edgesByType = map;
+    return map;
   }
 
   /** Raw relationships of a node grouped by direction and kind, resolved to units of the given level (or raw nodes). */
@@ -309,7 +414,9 @@ export class CodeModel {
     const node = this.byId.get(id);
     if (!node) return { outgoing: {}, incoming: {} };
     const li = LEVELS.indexOf(level ?? node.level);
-    const inside = (n) => this.isDescendant(n, id);
+    const from = this.enter[node.idx];
+    const to = this.exit[node.idx];
+    const inside = (n) => from <= this.enter[n.idx] && this.exit[n.idx] <= to;
     const outgoing = {};
     const incoming = {};
     const add = (bucket, kind, other, weight) => {
@@ -320,10 +427,13 @@ export class CodeModel {
       bucket[kind].set(unit.id, entry);
     };
 
-    for (const e of this.edges) {
-      const s = this.byId.get(e.source);
-      const t = this.byId.get(e.target);
-      if (!s || !t) continue;
+    for (let k = 0; k < this.edges.length; k++) {
+      const e = this.edges[k];
+      const si = this.edgeSource[k];
+      const ti = this.edgeTarget[k];
+      if (si < 0 || ti < 0) continue;
+      const s = this.nodes[si];
+      const t = this.nodes[ti];
       const sIn = inside(s);
       const tIn = inside(t);
       if (sIn && !tIn) add(outgoing, e.kind, t, e.weight ?? 1);
@@ -344,7 +454,7 @@ export class CodeModel {
       if (name === q) score = 100;
       else if (name.startsWith(q)) score = 80;
       else if (name.includes(q)) score = 60;
-      else if (node.searchText.includes(q)) score = 30;
+      else if ((node.searchText ??= `${node.name} ${node.fullName ?? ''} ${node.location?.file ?? ''}`.toLowerCase()).includes(q)) score = 30;
       else if (fuzzy(name, q)) score = 15;
       if (score < 0) continue;
       score += node.level === 'type' ? 8 : node.level === 'member' ? 0 : 5;
@@ -358,8 +468,7 @@ export class CodeModel {
   }
 }
 
-function addLink(links, source, target, edge) {
-  const key = source + '\u0000' + target;
+function addLink(links, key, source, target, edge) {
   let link = links.get(key);
   if (!link) {
     link = { source, target, weight: 0, kinds: {} };
@@ -385,7 +494,7 @@ function finishLinks(links, state) {
   return result;
 }
 
-const PRIORITY = { inherits: 9, implements: 8, injects: 7, calls: 6, instantiates: 5, subscribes: 5, holds: 4, throws: 4, extends: 3, projectReference: 9 };
+const PRIORITY = { inherits: 9, implements: 8, injects: 7, calls: 6, instantiates: 5, subscribes: 5, holds: 4, throws: 4, extends: 3, imports: 2, projectReference: 9 };
 function priority(kind) {
   return PRIORITY[kind] ?? 0;
 }
@@ -396,8 +505,134 @@ function fuzzy(text, query) {
   return i === query.length && query.length > 2;
 }
 
-/** Fields the model adds to the graph's nodes at runtime (ancestors, colours…): not part of the file format. */
-const RUNTIME_NODE_KEYS = new Set(['level', 'levelIndex', 'anc', 'projectNode', 'namespaceNode', 'typeNode', 'isTest', 'searchText', 'baseColor']);
+/**
+ * aggregateMixed() for the semantic zoom without going over every edge each time clusters open or close.
+ * Built once from the links between the laid-out types (aggregated with minWeight 1): those links are summed
+ * per pair of namespaces; a closed namespace (or project) then takes its pairs whole, only links of open
+ * namespaces are regrouped one by one, and only the edges of open types (members on screen) are resolved
+ * from the raw graph. Same result as aggregateMixed().
+ */
+export class MixedLinks {
+  constructor(model, typeLinks) {
+    this.model = model;
+    const n = model.nodes.length;
+    this.typeLinks = typeLinks.map((l) => ({ s: model.get(l.source), t: model.get(l.target), weight: l.weight, kinds: l.kinds }));
+    const groups = new Map();
+    this.byNamespace = new Map(); // namespace number -> links touching it
+    this.loose = []; // links with an end outside any namespace: always one by one
+    this.typeLinks.forEach((l) => {
+      const ns = l.s?.namespaceNode;
+      const nt = l.t?.namespaceNode;
+      if (!ns || !nt) {
+        this.loose.push(l);
+        return;
+      }
+
+      for (const space of ns === nt ? [ns] : [ns, nt]) {
+        let list = this.byNamespace.get(space.idx);
+        if (!list) this.byNamespace.set(space.idx, (list = []));
+        list.push(l);
+      }
+
+      const key = ns.idx * n + nt.idx;
+      let group = groups.get(key);
+      if (!group) groups.set(key, (group = { s: ns, t: nt, weight: 0, kinds: {} }));
+      group.weight += l.weight;
+      for (const kind in l.kinds) group.kinds[kind] = (group.kinds[kind] ?? 0) + l.kinds[kind];
+    });
+    this.groups = [...groups.values()];
+    // Edges between projects or namespaces themselves (project references…) are not in the type links.
+    this.upper = [];
+    for (let k = 0; k < model.edges.length; k++) {
+      const si = model.edgeSource[k];
+      const ti = model.edgeTarget[k];
+      if (si >= 0 && ti >= 0 && (model.nodes[si].levelIndex < 2 || model.nodes[ti].levelIndex < 2)) this.upper.push(k);
+    }
+  }
+
+  /** Links between the given units (ids); `openTypes`: types whose members are among them. */
+  links(unitIds, openTypes, state) {
+    const model = this.model;
+    const n = model.nodes.length;
+    const isUnit = new Uint8Array(n);
+    for (const id of unitIds) {
+      const node = model.get(id);
+      if (node) isUnit[node.idx] = 1;
+    }
+
+    const resolved = new Int32Array(n);
+    const resolve = (node) => {
+      const memo = resolved[node.idx];
+      if (memo) return memo > 0 ? model.nodes[memo - 1] : null;
+      let unit = null;
+      if (isUnit[node.idx]) unit = node;
+      else if (node.parent) unit = resolve(model.get(node.parent));
+      resolved[node.idx] = unit ? unit.idx + 1 : -1;
+      return unit;
+    };
+
+    const links = new Map();
+    const merge = (su, tu, weight, kinds) => {
+      const key = su.idx * n + tu.idx;
+      let link = links.get(key);
+      if (!link) links.set(key, (link = { source: su.id, target: tu.id, weight: 0, kinds: {} }));
+      link.weight += weight;
+      for (const kind in kinds) link.kinds[kind] = (link.kinds[kind] ?? 0) + kinds[kind];
+    };
+
+    // A namespace is closed when it or its project is a unit; open ones show their types.
+    const open = (ns) => !resolve(ns);
+    for (const g of this.groups) {
+      if (open(g.s) || open(g.t)) continue;
+      const su = resolve(g.s);
+      const tu = resolve(g.t);
+      if (su !== tu) merge(su, tu, g.weight, g.kinds);
+    }
+
+    const single = new Set(this.loose);
+    for (const [idx, list] of this.byNamespace) if (open(model.nodes[idx])) for (const l of list) single.add(l);
+    for (const l of single) {
+      if (!l.s || !l.t || openTypes.has(l.s.id) || openTypes.has(l.t.id)) continue;
+      const su = resolve(l.s);
+      const tu = resolve(l.t);
+      if (su && tu && su !== tu) merge(su, tu, l.weight, l.kinds);
+    }
+
+    // Edges resolved from the graph: those above the type level, and those of open types (members are units).
+    const byType = model.edgesByType();
+    const seen = new Set();
+    const kinds = state.edgeKinds;
+    for (const k of this.upper) {
+      seen.add(k);
+      const e = model.edges[k];
+      if (!kinds.has(e.kind)) continue;
+      const su = resolve(model.nodes[model.edgeSource[k]]);
+      const tu = resolve(model.nodes[model.edgeTarget[k]]);
+      if (su && tu && su !== tu) addLink(links, su.idx * n + tu.idx, su.id, tu.id, e);
+    }
+
+    for (const id of openTypes) {
+      const type = model.get(id);
+      for (const k of (type && byType.get(type.idx)) ?? []) {
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const e = model.edges[k];
+        if (!kinds.has(e.kind)) continue;
+        const su = resolve(model.nodes[model.edgeSource[k]]);
+        const tu = resolve(model.nodes[model.edgeTarget[k]]);
+        if (su && tu && su !== tu) addLink(links, su.idx * n + tu.idx, su.id, tu.id, e);
+      }
+    }
+
+    return finishLinks(links, state);
+  }
+}
+
+/**
+ * Fields the model adds to the graph's nodes at runtime (ancestors, colours…): not part of the file format.
+ * `level` is, and stays: other languages' nodes need it.
+ */
+const RUNTIME_NODE_KEYS = new Set(['levelIndex', 'idx', 'anc', 'projectNode', 'namespaceNode', 'typeNode', 'ownerNode', 'isTest', 'searchText', 'baseColor']);
 
 /** The loaded graph as CodeMap JSON again (the nodes hold circular runtime references). */
 export function serializeDoc(doc) {
@@ -410,6 +645,8 @@ export function serializeDoc(doc) {
 export function defaultEdgeKinds(model) {
   const kinds = new Set();
   for (const [kind, info] of Object.entries(EDGE_KINDS)) if (info.on) kinds.add(kind);
+  // Kinds another language brings that the palette does not know: shown until switched off.
+  for (const kind of Object.keys(model.edgeKindCounts)) if (!EDGE_KINDS[kind]) kinds.add(kind);
   // Tiny graphs read better with every relation; huge ones need the noise removed.
   if (model.edges.length < 150) for (const kind of Object.keys(model.edgeKindCounts)) kinds.add(kind);
   return kinds;

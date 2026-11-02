@@ -51,6 +51,27 @@ class Range {
   }
 }
 
+/** The glob subset CodeMap passes to findFiles: `**`, `*` and `{a,b}`. */
+function globToRegExp(glob) {
+  let source = '';
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (glob.startsWith('**/', i)) {
+      source += '(?:.*/)?';
+      i += 2;
+    } else if (glob.startsWith('/**', i) && i + 3 === glob.length) {
+      source += '(?:/.*)?';
+      i += 2;
+    } else if (c === '*') source += '[^/]*';
+    else if (c === '{') source += '(?:';
+    else if (c === '}') source += ')';
+    else if (c === ',') source += '|';
+    else source += c.replace(/[.+^$()|[\]\\?]/g, '\\$&');
+  }
+
+  return new RegExp(`^${source}$`);
+}
+
 function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
   const log = { panels: [], posted: [], opened: [], errors: [], infos: [], warnings: [], clipboard: [], saved: [], external: [], executed: [], commands: new Map(), quickPicks: [] };
   const saveEmitter = new Emitter();
@@ -127,7 +148,12 @@ function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
     workspace: {
       workspaceFolders: workspaceRoot ? [{ uri: Uri.file(workspaceRoot), name: path.basename(workspaceRoot) }] : undefined,
       getConfiguration: () => ({ get: (key, fallback) => (key in settings ? settings[key] : fallback) }),
-      findFiles: async (pattern) => files.filter((f) => pattern.includes(path.extname(f).slice(1))).map(Uri.file),
+      findFiles: async (pattern, exclude) => {
+        const relative = (f) => path.relative(workspaceRoot ?? '', f).split(path.sep).join('/');
+        const include = globToRegExp(pattern);
+        const skip = exclude ? globToRegExp(exclude) : null;
+        return files.filter((f) => include.test(relative(f)) && !skip?.test(relative(f))).map(Uri.file);
+      },
       asRelativePath: (p) => path.relative(workspaceRoot ?? '', p),
       openTextDocument: async (uri) => ({ uri }),
       fs: { writeFile: async (uri, content) => void log.saved.push({ file: uri.fsPath, content: content.toString() }) },

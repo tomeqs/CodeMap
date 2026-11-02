@@ -1,5 +1,6 @@
 import { Vector3 } from 'three';
 import { GalaxyView } from './galaxy.js';
+import { MixedLinks } from '../data/model.js';
 
 /** On-screen radius (px) above which a cluster opens, and the (smaller) one below which it closes again. */
 const OPEN = { project: 150, namespace: 105, type: 95 };
@@ -29,28 +30,43 @@ export class ZoomView extends GalaxyView {
 
   /** units / links: every visible type of the solution and the links between them (the base layout). */
   build(units, links, state) {
+    this.savePositions(); // the base layout if it is on screen, not the opened clusters
+    this.units = [];
     this.semantic = false;
     this.open = new Set();
+    // Links between whatever is open are regrouped from the type links (made once, on the first change).
+    const typeLinks = (state.minWeight ?? 1) <= 1 ? links : null;
+    this.mixedLinks = null;
+    this.makeMixedLinks = () => new MixedLinks(this.model, typeLinks ?? this.model.aggregate(units, { ...state, minWeight: 1 }).links);
     super.build(units, links, state, []);
   }
 
+  savePositions() {
+    if (!this.semantic) super.savePositions();
+  }
+
   update(dt) {
-    super.update(dt);
+    const result = super.update(dt);
     if (!this.semantic) {
       if (this.settled) this.enterSemantic();
-      return;
+      return result || this.semantic; // one more frame to show the opened clusters
     }
 
+    let busy = !!this.animation;
     if (this.animation) this.animate();
     const now = performance.now();
     const camera = this.stage.camera;
     const moved = camera.position.distanceToSquared(lastCamera) > 1e-4 || this.stage.controls.target.distanceToSquared(lastTarget) > 1e-4;
-    if (moved && now - (this.lastEvaluation ?? 0) > 110) {
-      lastCamera.copy(camera.position);
-      lastTarget.copy(this.stage.controls.target);
-      this.lastEvaluation = now;
-      this.evaluate();
+    if (moved) {
+      if (now - (this.lastEvaluation ?? 0) > 110) {
+        lastCamera.copy(camera.position);
+        lastTarget.copy(this.stage.controls.target);
+        this.lastEvaluation = now;
+        this.evaluate();
+      } else busy = true; // evaluate again once the camera has come to rest
     }
+
+    return busy || !!this.animation || result;
   }
 
   /** Members sit on a small sphere around their type: keep them smaller than in the members level. */
@@ -261,10 +277,16 @@ export class ZoomView extends GalaxyView {
       unit.grow0 = unit.grow;
       return unit;
     });
+    // Their places in the position store, which every shader (units, links, particles) reads by index.
+    this.units.forEach((u, i) => (u.index = i));
+    this.store.ensure(this.units.length);
     this.byId = new Map(this.units.map((u) => [u.id, u]));
-    this.links = model
-      .aggregateMixed(new Set(this.units.map((u) => u.id)), state)
+    this.mixedLinks ??= this.makeMixedLinks();
+    const openTypes = new Set([...this.open].filter((id) => model.get(id)?.level === 'type'));
+    this.links = this.mixedLinks
+      .links(new Set(this.units.map((u) => u.id)), openTypes, state)
       .map((l) => ({ ...l, s: this.byId.get(l.source), t: this.byId.get(l.target) }));
+    this.indexUnitLinks();
 
     this.hovered = null;
     this.buildMeshes();
@@ -275,6 +297,7 @@ export class ZoomView extends GalaxyView {
     this.animate();
     this.refreshParticles();
     this.onUnitsChanged?.();
+    this.stage.invalidate();
   }
 
   animate() {
@@ -288,7 +311,6 @@ export class ZoomView extends GalaxyView {
     }
 
     this.updateMatrices();
-    this.updateLinePositions();
     if (t >= 1) this.animation = null;
   }
 

@@ -21,6 +21,12 @@ public static class NodeKinds
     public const string Field = "field";
     public const string Event = "event";
 
+    // Other languages (their level is given by the node, see NodeLevels)
+    public const string Module = "module";
+    public const string Function = "function";
+    public const string TypeAlias = "typeAlias";
+    public const string Variable = "variable";
+
     public static readonly IReadOnlySet<string> Types = new HashSet<string>
     {
         Class, Interface, Struct, Record, RecordStruct, Enum, Delegate,
@@ -63,6 +69,9 @@ public static class EdgeKinds
     public const string Extends = "extends";
     public const string DecoratedWith = "decoratedWith";
 
+    /// <summary>A file imports another file (languages with modules, e.g. TypeScript).</summary>
+    public const string Imports = "imports";
+
     /// <summary>Implicit edge derived from <see cref="GraphNode.Parent"/>; only emitted by exporters.</summary>
     public const string Contains = "contains";
 
@@ -72,7 +81,7 @@ public static class EdgeKinds
     public static readonly IReadOnlyList<string> All = new[]
     {
         ProjectReference, PackageReference, Inherits, Implements, Overrides, Calls, Instantiates,
-        Accesses, Subscribes, Throws, Catches, Uses, Holds, Returns, Accepts, Injects, Extends, DecoratedWith, ChangesWith,
+        Accesses, Subscribes, Throws, Catches, Uses, Holds, Returns, Accepts, Injects, Extends, DecoratedWith, Imports, ChangesWith,
     };
 
     /// <summary>Edge kinds that represent a compile-time dependency of the source on the target.</summary>

@@ -4,10 +4,10 @@ const SETTINGS_KEY = 'codemap.settings';
 const DEFAULT_SETTINGS = { tests: true, external: false, git: true, typesOnly: false, watch: false };
 
 const OPTION_LABELS = [
-  ['tests', 'Include test projects', 'Analyze *.Tests projects too'],
+  ['tests', 'Include tests', 'Analyze test projects and test files too'],
   ['git', 'Git history', 'Commits and churn per file: needed for hotspots'],
-  ['external', 'Framework & NuGet types', 'Show the BCL / package types your code depends on'],
-  ['typesOnly', 'Types only', 'Skip methods and fields: smaller and faster for very large solutions'],
+  ['external', 'Framework & package types', 'Show the framework / NuGet types your C# code depends on'],
+  ['typesOnly', 'Types only', 'Skip methods and fields: smaller and faster for very large codebases'],
   ['watch', 'Live updates', 'Re-analyze and refresh the map whenever you save a file'],
 ];
 
@@ -36,6 +36,15 @@ function ago(date) {
 }
 
 const ICONS = { solution: '◆', project: '●', folder: '▸', place: '⌂' };
+const SHORT_NAMES = { csharp: 'C#', typescript: 'TS' };
+
+/** Files the languages take as input (from the server), as one test; C#'s when the server does not say. */
+function inputTest(languages) {
+  const patterns = (languages ?? []).flatMap((l) => l.inputs ?? []);
+  if (!patterns.length) return /\.(sln|slnx|slnf|csproj|cs)$/i;
+  const escape = (p) => p.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/\\\\]*');
+  return new RegExp(`(^|[/\\\\])(${patterns.map(escape).join('|')})$`, 'i');
+}
 
 /**
  * Start screen of the local app: browse the disk, clone a repository, reopen recent projects,
@@ -86,7 +95,7 @@ export class ProjectsScreen {
       type: 'text',
       spellcheck: 'false',
       autocomplete: 'off',
-      placeholder: 'Path to a .sln, .slnx, .csproj or a folder',
+      placeholder: 'Path to a solution, project, package.json or a folder',
       onKeydown: (e) => {
         if (e.key === 'Enter') this.analyzeOrOpen(this.pathInput.value);
       },
@@ -151,11 +160,29 @@ export class ProjectsScreen {
     clear(this.headEl).append(...[
       h('div', { class: 'logo big' }),
       h('div', { class: 'p-title' },
-        h('h1', {}, 'Open a C# codebase'),
-        h('p', { class: 'muted' }, 'Pick a solution, project or folder on this computer, or clone a repository. Nothing needs to be built first.'),
+        h('h1', {}, 'Open a codebase'),
+        h('p', { class: 'muted' }, `Pick a solution, package or folder on this computer (${this.languageNames()}), or clone a repository. Nothing needs to be built first.`),
+        ...this.unavailable().map((l) => h('p', { class: 'small faint' }, `${l.name}: ${l.problem}`)),
       ),
       this.app.model && h('button', { class: 'p-close', onClick: () => this.close(), title: 'Back to the map (Esc)' }, '← Back to map'),
     ].filter(Boolean));
+  }
+
+  /** "C#, TypeScript": what the server can analyze. */
+  languageNames() {
+    const languages = this.client.config.languages ?? [];
+    return languages.length ? languages.map((l) => l.name).join(', ') : 'C#';
+  }
+
+  /** Languages the server knows but cannot run here (Node.js missing…). */
+  unavailable() {
+    return (this.client.config.languages ?? []).filter((l) => l.problem);
+  }
+
+  /** Short tags for the languages of a folder or map: C#, TS. */
+  languageTags(ids) {
+    const names = new Map((this.client.config.languages ?? []).map((l) => [l.id, l.name]));
+    return (ids ?? []).map((id) => h('span', { class: 'p-tag' }, SHORT_NAMES[id] ?? names.get(id) ?? id));
   }
 
   // ------------------------------------------------------------------ folder browser
@@ -195,7 +222,7 @@ export class ProjectsScreen {
       },
         h('span', { class: 'p-icon' }, ICONS[entry.kind] ?? '•'),
         h('span', { class: 'p-name' }, entry.name),
-        entry.kind === 'folder' && entry.hasCode ? h('span', { class: 'p-tag' }, 'C#') : null,
+        ...(entry.kind === 'folder' && entry.hasCode ? this.languageTags(entry.languages ?? ['csharp']) : []),
         isCode || entry.hasCode
           ? h('button', { class: 'small', onClick: (e) => (e.stopPropagation(), this.analyze(entry.path)) }, 'Analyze')
           : null,
@@ -211,14 +238,14 @@ export class ProjectsScreen {
   }
 
   analyzeOrOpen(path) {
-    if (/\.(sln|slnx|slnf|csproj|cs)$/i.test(path.trim())) this.analyze(path);
+    if (inputTest(this.client.config.languages).test(path.trim())) this.analyze(path);
     else this.navigate(path);
   }
 
   // ------------------------------------------------------------------ actions
 
   async analyze(path, settings = this.settings, { background = false } = {}) {
-    if (!path?.trim()) return this.app.toast('Choose a solution, project or folder first.');
+    if (!path?.trim()) return this.app.toast('Choose a solution, project, package or folder first.');
     try {
       await this.client.post('/api/analyze', { path, settings, background });
     } catch (error) {
@@ -311,6 +338,7 @@ export class ProjectsScreen {
           h('div', { class: 'r-top' },
             h('span', { class: 'r-icon' }, ICONS[entry.kind === 'solution' ? 'solution' : entry.kind === 'project' ? 'project' : 'folder']),
             h('button', { class: 'r-name', title: 'Open the saved map', onClick: () => this.openRecent(entry) }, entry.name),
+            ...this.languageTags(entry.languages),
             h('span', { class: 'r-when' }, ago(entry.analyzedAt)),
           ),
           h('code', { class: 'r-path', title: entry.origin ?? entry.path }, h('span', { dir: 'ltr' }, entry.origin ?? entry.path)),

@@ -1,0 +1,6 @@
+{
+  "name": "shop-ts",
+  "private": true,
+  "description": "CodeMap sample: the shop in TypeScript, a NestJS API, an Express gateway and an Angular web app on a shared domain library.",
+  "workspaces": ["libs/*", "apps/*"]
+}

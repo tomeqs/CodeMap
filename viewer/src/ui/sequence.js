@@ -1,4 +1,4 @@
-import { sequenceOf, toMermaid } from '../data/flow.js';
+import { callLabel, sequenceOf, toMermaid } from '../data/flow.js';
 import { clear, h, shortName } from './dom.js';
 import { host } from '../data/host.js';
 
@@ -47,12 +47,12 @@ export class SequencePanel {
     const root = this.flow.tree[this.rootIndex];
     if (!root) return this.hide();
     const mermaid = toMermaid(root);
-    const name = `${root.node.typeNode?.name ?? ''}.${root.node.name}`.replace(/^\./, '');
+    const name = shortName(root.node);
     const fileBase = name.replace(/[^\w.-]+/g, '_');
 
     const picker = this.flow.tree.length > 1
       ? h('select', { onChange: (e) => ((this.rootIndex = Number(e.target.value)), this.render()), title: 'Entry method' },
-        this.flow.tree.map((t, i) => h('option', { value: i, selected: i === this.rootIndex }, `${t.node.name}()`)))
+        this.flow.tree.map((t, i) => h('option', { value: i, selected: i === this.rootIndex }, callLabel(t.node))))
       : null;
 
     const svg = this.renderSvg(root);
@@ -60,7 +60,7 @@ export class SequencePanel {
     clear(this.el).append(
       h('div', { class: 'seq-head' },
         h('b', {}, 'Sequence'),
-        h('span', { class: 'muted' }, name + '()'),
+        h('span', { class: 'muted' }, root.node.tags?.includes('route') ? name : name + '()'),
         picker,
         h('span', { class: 'spacer' }),
         h('button', { class: 'small', title: 'Mermaid sequenceDiagram: paste into GitHub, GitLab, Notion, docs…', onClick: (e) => copy(e.currentTarget, mermaid) }, 'Copy Mermaid'),

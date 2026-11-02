@@ -12,7 +12,7 @@ public static class GraphView
     public static void CollapseMembers(CodeGraph graph)
     {
         var edges = TypeLevelEdges(graph);
-        graph.Nodes.RemoveAll(n => NodeKinds.IsMember(n.Kind));
+        graph.Nodes.RemoveAll(NodeLevels.IsMember);
         var ids = graph.Nodes.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
         graph.Analysis.UnusedCandidates.RemoveAll(id => !ids.Contains(id));
         graph.Edges = edges.OrderBy(e => e.Source, StringComparer.Ordinal).ThenBy(e => e.Kind, StringComparer.Ordinal).ThenBy(e => e.Target, StringComparer.Ordinal).ToList();
@@ -32,7 +32,7 @@ public static class GraphView
         string? Lift(string id)
         {
             var node = byId.GetValueOrDefault(id);
-            while (node != null && NodeKinds.IsMember(node.Kind)) node = node.Parent != null ? byId.GetValueOrDefault(node.Parent) : null;
+            while (node != null && NodeLevels.IsMember(node)) node = node.Parent != null ? byId.GetValueOrDefault(node.Parent) : null;
             return node?.Id;
         }
 

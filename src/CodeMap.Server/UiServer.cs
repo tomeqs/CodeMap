@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using CodeMap.Export;
+using CodeMap.Languages;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -129,6 +130,13 @@ public sealed class UiServer : IAsyncDisposable
             home,
             watching = jobs.WatchedPath,
             current = jobs.Current?.Describe(),
+            languages = LanguageRegistry.Default.Languages.Select(l => new
+            {
+                id = l.Info.Id,
+                name = l.Info.Name,
+                inputs = l.Info.InputPatterns,
+                problem = l.Unavailable,
+            }),
         });
 
         app.MapGet("/api/browse", (string? path) =>
@@ -156,7 +164,7 @@ public sealed class UiServer : IAsyncDisposable
 
         app.MapPost("/api/analyze", (AnalyzeRequest request) =>
         {
-            if (string.IsNullOrWhiteSpace(request.Path)) return Results.BadRequest(new { error = "Choose a solution, project or folder first." });
+            if (string.IsNullOrWhiteSpace(request.Path)) return Results.BadRequest(new { error = "Choose a solution, project, package or folder first." });
             try
             {
                 var path = Path.GetFullPath(Environment.ExpandEnvironmentVariables(request.Path.Trim().Trim('"')));

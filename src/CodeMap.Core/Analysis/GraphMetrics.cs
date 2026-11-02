@@ -1,3 +1,4 @@
+using CodeMap.Languages;
 using CodeMap.Model;
 
 namespace CodeMap.Analysis;
@@ -10,16 +11,17 @@ internal static class GraphMetrics
 {
     private static readonly HashSet<string> StructuralEdges = new() { EdgeKinds.ProjectReference, EdgeKinds.PackageReference };
 
-    public static void Compute(CodeGraph graph)
+    /// <param name="unusedPolicy">Which nodes may be reported as unused (the policy of their language; null = none).</param>
+    public static void Compute(CodeGraph graph, Func<GraphNode, UnusedPolicy?> unusedPolicy)
     {
         var byId = graph.Nodes.ToDictionary(n => n.Id, StringComparer.Ordinal);
         var children = graph.Nodes.Where(n => n.Parent != null).ToLookup(n => n.Parent!, StringComparer.Ordinal);
 
         string? TypeOf(string id)
         {
-            if (!byId.TryGetValue(id, out var node) || node.External && !NodeKinds.IsType(node.Kind)) return null;
-            if (NodeKinds.IsType(node.Kind)) return node.Id;
-            return NodeKinds.IsMember(node.Kind) && node.Parent != null ? TypeOf(node.Parent) : null;
+            if (!byId.TryGetValue(id, out var node) || node.External && !NodeLevels.IsType(node)) return null;
+            if (NodeLevels.IsType(node)) return node.Id;
+            return NodeLevels.IsMember(node) && node.Parent != null ? TypeOf(node.Parent) : null;
         }
 
         string? NamespaceOf(string id)
@@ -41,7 +43,7 @@ internal static class GraphMetrics
             Add(callees, edge.Source, edge.Target);
         }
 
-        foreach (var node in graph.Nodes.Where(n => NodeKinds.IsMember(n.Kind)))
+        foreach (var node in graph.Nodes.Where(NodeLevels.IsMember))
         {
             if (callers.TryGetValue(node.Id, out var inbound)) node.SetMetric("fanIn", inbound.Count);
             if (callees.TryGetValue(node.Id, out var outbound)) node.SetMetric("fanOut", outbound.Count);
@@ -60,26 +62,37 @@ internal static class GraphMetrics
             if (byId[source].External || byId[target].External) continue;
             Add(typeDeps, source, target);
             Add(typeDependents, target, source);
-            if (edge.Kind == EdgeKinds.Inherits && NodeKinds.IsType(byId[edge.Source].Kind))
+            if (edge.Kind == EdgeKinds.Inherits && NodeLevels.IsType(byId[edge.Source]))
             {
                 subclasses[target] = subclasses.GetValueOrDefault(target) + 1;
             }
         }
 
-        var types = graph.Nodes.Where(n => NodeKinds.IsType(n.Kind) && !n.External).ToList();
+        // Members can hold members (a TypeScript class in its file): sizes come from the innermost ones.
+        List<GraphNode> LeafMembers(GraphNode owner)
+        {
+            var leaves = new List<GraphNode>();
+            var pending = new Stack<GraphNode>(children[owner.Id].Where(NodeLevels.IsMember));
+            while (pending.Count > 0)
+            {
+                var member = pending.Pop();
+                var inner = children[member.Id].Where(NodeLevels.IsMember).ToList();
+                if (inner.Count == 0) leaves.Add(member);
+                foreach (var child in inner) pending.Push(child);
+            }
+
+            return leaves;
+        }
+
+        foreach (var owner in graph.Nodes.Where(n => NodeLevels.IsMember(n) && !n.External && children[n.Id].Any(NodeLevels.IsMember)))
+        {
+            SetSizes(owner, LeafMembers(owner));
+        }
+
+        var types = graph.Nodes.Where(n => NodeLevels.IsType(n) && !n.External).ToList();
         foreach (var type in types)
         {
-            var members = children[type.Id].Where(c => NodeKinds.IsMember(c.Kind)).ToList();
-            type.SetMetric("members", members.Count);
-            SetIfPositive(type, "methods", members.Count(m => m.Kind == NodeKinds.Method));
-            SetIfPositive(type, "constructors", members.Count(m => m.Kind == NodeKinds.Constructor));
-            SetIfPositive(type, "properties", members.Count(m => m.Kind == NodeKinds.Property));
-            SetIfPositive(type, "fields", members.Count(m => m.Kind == NodeKinds.Field));
-            SetIfPositive(type, "events", members.Count(m => m.Kind == NodeKinds.Event));
-
-            var behavioural = members.Where(m => m.Kind is NodeKinds.Method or NodeKinds.Constructor or NodeKinds.Property or NodeKinds.Event).ToList();
-            type.SetMetric("complexity", behavioural.Sum(m => m.Metric("complexity")));
-            if (behavioural.Count > 0) type.SetMetric("maxComplexity", behavioural.Max(m => m.Metric("complexity")));
+            SetSizes(type, LeafMembers(type));
 
             var ce = typeDeps.TryGetValue(type.Id, out var deps) ? deps.Count : 0;
             var ca = typeDependents.TryGetValue(type.Id, out var dependents) ? dependents.Count : 0;
@@ -93,8 +106,16 @@ internal static class GraphMetrics
         var nsDeps = Roll(typeDeps, NamespaceOf);
         var projectDeps = Roll(typeDeps, id => byId[id].Project);
 
-        AggregateContainers(graph.Nodes.Where(n => n.Kind == NodeKinds.Namespace), types, t => NamespaceOf(t.Id), nsDeps);
-        AggregateContainers(graph.Nodes.Where(n => n.Kind == NodeKinds.Project), types, t => t.Project, projectDeps);
+        // Abstract: interfaces and abstract classes, or a unit (a file) that only declares those and type aliases.
+        bool IsAbstract(GraphNode type)
+        {
+            if (type.Kind == NodeKinds.Interface || type.Modifiers?.Contains("abstract") == true) return true;
+            var members = children[type.Id].Where(NodeLevels.IsMember).ToList();
+            return members.Count > 0 && members.All(m => m.Kind is NodeKinds.Interface or NodeKinds.TypeAlias || m.Modifiers?.Contains("abstract") == true);
+        }
+
+        AggregateContainers(graph.Nodes.Where(n => n.Kind == NodeKinds.Namespace), types, t => NamespaceOf(t.Id), nsDeps, IsAbstract);
+        AggregateContainers(graph.Nodes.Where(n => n.Kind == NodeKinds.Project), types, t => t.Project, projectDeps, IsAbstract);
 
         // ---------------------------------------------------------- cycles
         foreach (var cycle in CycleDetector.FindCycles(typeDeps))
@@ -118,7 +139,7 @@ internal static class GraphMetrics
         graph.Analysis.Cycles.Sort((a, b) => b.Nodes.Count.CompareTo(a.Nodes.Count));
 
         // ---------------------------------------------------------- dead code candidates
-        DetectUnused(graph, byId, children);
+        DetectUnused(graph, byId, children, unusedPolicy);
 
         // ---------------------------------------------------------- rankings
         graph.Analysis.MostComplex = types
@@ -138,7 +159,7 @@ internal static class GraphMetrics
     /// <summary>Combines git churn with complexity: complex code that changes often is where bugs live.</summary>
     public static void ComputeHotspots(CodeGraph graph)
     {
-        var types = graph.Nodes.Where(n => NodeKinds.IsType(n.Kind) && !n.External && n.Metric("commits") > 0).ToList();
+        var types = graph.Nodes.Where(n => NodeLevels.IsType(n) && !n.External && n.Metric("commits") > 0).ToList();
         if (types.Count == 0) return;
         var maxComplexity = Math.Max(1, types.Max(t => t.Metric("complexity")));
         var maxCommits = Math.Max(1, types.Max(t => t.Metric("commits")));
@@ -154,7 +175,7 @@ internal static class GraphMetrics
     }
 
     private static void AggregateContainers(IEnumerable<GraphNode> containers, List<GraphNode> types, Func<GraphNode, string?> containerOf,
-        Dictionary<string, HashSet<string>> deps)
+        Dictionary<string, HashSet<string>> deps, Func<GraphNode, bool> isAbstract)
     {
         var typesByContainer = types.Where(t => containerOf(t) != null).ToLookup(t => containerOf(t)!, StringComparer.Ordinal);
         var dependents = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
@@ -173,7 +194,7 @@ internal static class GraphMetrics
             container.SetMetric("loc", topLevel.Sum(t => t.Metric("loc")));
             container.SetMetric("complexity", own.Sum(t => t.Metric("complexity")));
 
-            var abstractCount = own.Count(t => t.Kind == NodeKinds.Interface || t.Modifiers?.Contains("abstract") == true);
+            var abstractCount = own.Count(isAbstract);
             var abstractness = own.Count == 0 ? 0 : (double)abstractCount / own.Count;
             var ce = deps.TryGetValue(container.Id, out var d) ? d.Count : 0;
             var ca = dependents.TryGetValue(container.Id, out var a) ? a.Count : 0;
@@ -186,8 +207,18 @@ internal static class GraphMetrics
         }
     }
 
-    private static void DetectUnused(CodeGraph graph, Dictionary<string, GraphNode> byId, ILookup<string, GraphNode> children)
+    private static void DetectUnused(CodeGraph graph, Dictionary<string, GraphNode> byId, ILookup<string, GraphNode> children,
+        Func<GraphNode, UnusedPolicy?> policyOf)
     {
+        // The type-level node a node belongs to (itself for types; members are inside one).
+        string? OwnerType(string id)
+        {
+            var node = byId.GetValueOrDefault(id);
+            if (node == null || !NodeLevels.IsMember(node)) return id;
+            while (node != null && NodeLevels.IsMember(node)) node = node.Parent != null ? byId.GetValueOrDefault(node.Parent) : null;
+            return node?.Id;
+        }
+
         var referenced = new HashSet<string>(StringComparer.Ordinal);
         var referencedTypes = new HashSet<string>(StringComparer.Ordinal);
         foreach (var edge in graph.Edges)
@@ -197,8 +228,8 @@ internal static class GraphMetrics
             referenced.Add(edge.Target);
 
             // A type counts as used when anything outside of it points at it or at one of its members.
-            var targetType = byId.TryGetValue(edge.Target, out var target) && NodeKinds.IsMember(target.Kind) ? target.Parent : edge.Target;
-            var sourceType = byId.TryGetValue(edge.Source, out var source) && NodeKinds.IsMember(source.Kind) ? source.Parent : edge.Source;
+            var targetType = OwnerType(edge.Target);
+            var sourceType = OwnerType(edge.Source);
             if (targetType != null && targetType != sourceType) referencedTypes.Add(targetType);
         }
 
@@ -207,22 +238,24 @@ internal static class GraphMetrics
         foreach (var node in graph.Nodes)
         {
             if (node.External || node.Project == null || projectIsTest.Contains(node.Project)) continue;
-            if (node.Attributes != null || node.HasTag(Tags.EntryPoint) || node.HasTag(Tags.Test)) continue;
-            if (node.Accessibility is not ("private" or "internal" or "private protected")) continue;
+            var policy = policyOf(node);
+            if (policy is not { Enabled: true }) continue;
+            if (policy.SkipAttributed && node.Attributes != null || policy.SkipTags.Any(node.HasTag)) continue;
 
             var parent = node.Parent != null ? byId.GetValueOrDefault(node.Parent) : null;
             bool isCandidate;
-            if (NodeKinds.IsMember(node.Kind))
+            if (NodeLevels.IsMember(node))
             {
-                if (node.Kind == NodeKinds.Constructor || node.Modifiers?.Contains("override") == true) continue;
-                if (node.Name.StartsWith("operator", StringComparison.Ordinal) || node.Name.Contains(" operator ")) continue;
-                if (parent?.HasTag(Tags.Test) == true || parent?.Kind == NodeKinds.Interface) continue;
-                if (node.Name is "Dispose" or "DisposeAsync" or "ToString" or "Equals" or "GetHashCode" or "Main") continue;
+                if (policy.MemberAccessibility != null && !policy.MemberAccessibility.Contains(node.Accessibility ?? "")) continue;
+                if (policy.SkipMemberKinds.Contains(node.Kind) || node.Modifiers?.Any(policy.SkipModifiers.Contains) == true) continue;
+                if (policy.SkipNames.Contains(node.Name) || policy.SkipNamePattern?.IsMatch(node.Name) == true) continue;
+                if (parent != null && (policy.SkipParentKinds.Contains(parent.Kind) || policy.SkipParentTags.Any(parent.HasTag))) continue;
                 isCandidate = !referenced.Contains(node.Id);
             }
-            else if (NodeKinds.IsType(node.Kind))
+            else if (NodeLevels.IsType(node))
             {
-                if (node.HasTag(Tags.Controller) || node.HasTag(Tags.HostedService) || node.HasTag(Tags.Middleware) || node.HasTag(Tags.Generated)) continue;
+                if (policy.TypeAccessibility != null && !policy.TypeAccessibility.Contains(node.Accessibility ?? "")) continue;
+                if (policy.SkipTypeTags.Any(node.HasTag)) continue;
                 isCandidate = !referencedTypes.Contains(node.Id) && !children[node.Id].Any(c => referencedTypes.Contains(c.Id));
             }
             else
@@ -259,6 +292,21 @@ internal static class GraphMetrics
     {
         if (!map.TryGetValue(key, out var set)) map[key] = set = new HashSet<string>(StringComparer.Ordinal);
         set.Add(value);
+    }
+
+    /// <summary>Members by kind and their complexity, from the members a type (or a member holding members) contains.</summary>
+    private static void SetSizes(GraphNode node, List<GraphNode> members)
+    {
+        node.SetMetric("members", members.Count);
+        SetIfPositive(node, "methods", members.Count(m => m.Kind is NodeKinds.Method or NodeKinds.Function));
+        SetIfPositive(node, "constructors", members.Count(m => m.Kind == NodeKinds.Constructor));
+        SetIfPositive(node, "properties", members.Count(m => m.Kind == NodeKinds.Property));
+        SetIfPositive(node, "fields", members.Count(m => m.Kind == NodeKinds.Field));
+        SetIfPositive(node, "events", members.Count(m => m.Kind == NodeKinds.Event));
+
+        var behavioural = members.Where(m => m.Kind is NodeKinds.Method or NodeKinds.Function or NodeKinds.Constructor or NodeKinds.Property or NodeKinds.Event).ToList();
+        node.SetMetric("complexity", behavioural.Sum(m => m.Metric("complexity")));
+        if (behavioural.Count > 0) node.SetMetric("maxComplexity", behavioural.Max(m => m.Metric("complexity")));
     }
 
     private static void SetIfPositive(GraphNode node, string metric, double value)

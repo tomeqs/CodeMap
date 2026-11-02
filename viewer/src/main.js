@@ -2,7 +2,7 @@ import './styles.css';
 import { Stage } from './scene/stage.js';
 import { LabelLayer } from './scene/labels.js';
 import { CodeModel, LEVELS, defaultEdgeKinds } from './data/model.js';
-import { KIND_COLORS } from './data/palette.js';
+import { kindColor } from './data/palette.js';
 import { GalaxyView } from './views/galaxy.js';
 import { CityView } from './views/city.js';
 import { LayeredView } from './views/layered.js';
@@ -17,8 +17,22 @@ import { ServerClient } from './data/server.js';
 import { ProjectsScreen } from './ui/projects.js';
 import { SequencePanel } from './ui/sequence.js';
 import { host } from './data/host.js';
+import { perf } from './perf/stats.js';
+import { GraphIndex } from './data/graph-index.js';
+import { checkWorker } from './layout/worker-layout.js';
+import { layoutKind } from './layout/engine.js';
+import { GlassesSession } from './xr/glasses.js';
 
-const MAX_GALAXY_UNITS = 7000;
+const params = new URLSearchParams(location.search);
+/**
+ * Above this many units the layout is too slow to be pleasant: more when it runs on the GPU or in a worker
+ * (the map stays responsive while it settles). `?maxUnits=` overrides it for benchmarks.
+ */
+const maxUnits = () => {
+  const stage = window.codemap?.stage ?? {};
+  const kind = layoutKind(Infinity, stage);
+  return Number(params.get('maxUnits')) || { gpu: 100000, worker: 15000 }[kind] || 7000;
+};
 const NEXT_LEVEL = { project: 'namespace', namespace: 'type', type: 'member' };
 /** Views that show one level of detail at a time (the level buttons apply). */
 const LEVEL_VIEWS = new Set(['galaxy', 'layers']);
@@ -36,6 +50,10 @@ class App {
     this.selection = null;
     this.pathPending = false;
     this.statusLine = '';
+    this.perf = perf;
+    /** AR glasses (side-by-side stereo); only in a browser, not in the editor's webview. */
+    this.ar = new GlassesSession(this);
+    this.hostIsEditor = !!host;
     this.stage.onFrame((dt) => this.view?.update(dt));
     this.stage.controls.addEventListener('start', () => {
       if (this.view) this.view.userMoved = true;
@@ -51,13 +69,10 @@ class App {
    */
   load(doc, { preserve = false } = {}) {
     if (preserve && this.model && this.state) return this.reload(doc);
-    const model = new CodeModel(doc);
+    const model = perf.time('model', () => new CodeModel(doc));
     this.view?.deactivate();
-    this.galaxy?.dispose();
-    this.layers?.dispose();
-    this.diView?.dispose();
-    this.flowView?.dispose();
-    this.zoomView?.dispose();
+    // A new graph gets new views: free the GPU memory of the old ones.
+    for (const view of [this.galaxy, this.city, this.layers, this.diView, this.flowView, this.zoomView]) view?.dispose();
     this.sequence.hide();
     this.model = model;
     this.entryPoints = null;
@@ -70,12 +85,12 @@ class App {
     this.flowView.radiusScale = 2.4;
     this.zoomView = new ZoomView(this.stage, model, this.labels);
     this.zoomView.onUnitsChanged = () => this.onZoomUnits();
-    document.querySelector('#view-toggle [data-view="di"]').disabled = !model.doc.analysis?.di;
+    this.applyModelWords(model);
 
     const typeCount = model.nodes.filter((n) => n.level === 'type' && !n.external).length;
     this.state = {
       view: 'galaxy',
-      level: typeCount <= MAX_GALAXY_UNITS ? 'type' : 'namespace',
+      level: typeCount <= maxUnits() ? 'type' : 'namespace',
       scope: null,
       colorMode: 'project',
       sizeMetric: 'loc',
@@ -88,6 +103,7 @@ class App {
       minWeight: 1,
       labels: true,
       flowAll: false,
+      particles: 1,
       autoRotate: false,
       allArcs: false,
       flowRoots: [],
@@ -102,7 +118,29 @@ class App {
     this.details.hide();
     this.activateView();
     this.sidebar.render();
-    this.rebuild();
+    perf.time('rebuild', () => this.rebuild());
+    // ?ar=full|half: straight into AR glasses mode (bookmarks, tests).
+    const ar = params.get('ar');
+    if (!this.arRequested && (ar === 'full' || ar === 'half')) {
+      this.arRequested = true;
+      this.ar.start({ fullscreen: false, sbs: ar });
+    }
+  }
+
+  /** The level buttons in the language's words (Types / Files…), and the DI view only when there is DI data. */
+  applyModelWords(model) {
+    for (const level of LEVELS) {
+      const button = document.querySelector(`#level-toggle [data-level="${level}"]`);
+      if (button) button.textContent = model.labels[level][1];
+    }
+
+    document.querySelector('#view-toggle [data-view="di"]').disabled = !model.doc.analysis?.di;
+  }
+
+  /** "types", "files"… for counts. */
+  levelWord(level, count = 2) {
+    const words = this.model.labels[level];
+    return (words ? words[count === 1 ? 0 : 1] : level + 's').toLowerCase();
   }
 
   reload(doc) {
@@ -116,7 +154,13 @@ class App {
     this.model = model;
     this.entryPoints = null;
     for (const view of [this.galaxy, this.city, this.layers, this.diView, this.flowView, this.zoomView]) view.model = model;
+    this.applyModelWords(model);
     const s = this.state;
+    if (s.view === 'di' && !model.doc.analysis?.di) {
+      s.view = 'galaxy';
+      this.activateView();
+    }
+
     if (s.scope && !model.get(s.scope)) s.scope = null;
     s.flowRoots = s.flowRoots.filter((id) => model.get(id));
     for (const id of [...s.hiddenProjects]) if (!model.get(id)) s.hiddenProjects.delete(id);
@@ -133,14 +177,14 @@ class App {
     if (this.selection) this.details.show(model.get(this.selection.nodeId), this.selection.unitId ? model.get(this.selection.unitId)?.level : undefined);
 
     const changes = [added && `+${added}`, removed && `−${removed}`].filter(Boolean).join(' / ');
-    const plural = added + removed === 1 ? 'type' : 'types';
+    const plural = this.levelWord('type', added + removed);
     this.toast(changes ? `Map updated: ${changes} ${plural}` : 'Map updated', 'info');
   }
 
   // ------------------------------------------------------------------ VS Code extension
 
   /** Inside the VS Code webview: the extension analyzes the workspace and drives the map. */
-  enableHost(host) {
+  async enableHost(host) {
     this.host = host;
     const reanalyze = document.getElementById('btn-reanalyze');
     reanalyze.classList.remove('hidden');
@@ -170,7 +214,9 @@ class App {
           break;
       }
     });
-    host.post('ready');
+    // Tell the extension how the map runs (it logs it), once the layout worker has started or failed.
+    await checkWorker();
+    host.post('ready', { renderer: this.stage.backend ?? 'webgl', adapter: this.stage.adapter, layout: layoutKind(Infinity, this.stage) });
   }
 
   // ------------------------------------------------------------------ local app (codemap ui)
@@ -251,10 +297,16 @@ class App {
     this.sidebar.renderFilters();
   }
 
+  /** Living / calm / off (remembered by the stage); views pick their decoration by it. */
+  setMotion(motion) {
+    this.stage.setMotion(motion);
+    this.applyOptions();
+  }
+
   applyOptions() {
     const s = this.state;
-    for (const view of [this.galaxy, this.layers, this.diView, this.flowView, this.zoomView]) view.setOptions({ flowAll: s.flowAll, labels: s.labels, autoRotate: s.autoRotate });
-    this.city.setOptions({ allArcs: s.allArcs, labels: s.labels });
+    for (const view of [this.galaxy, this.layers, this.diView, this.flowView, this.zoomView]) view.setOptions({ flowAll: s.flowAll, labels: s.labels, autoRotate: s.autoRotate, particles: s.particles });
+    this.city.setOptions({ allArcs: s.allArcs, labels: s.labels, particles: s.particles });
   }
 
   setView(view) {
@@ -325,7 +377,7 @@ class App {
     if (semantic) {
       const typeState = { ...s, level: 'type', scope: null };
       const units = model.units(typeState);
-      if (units.length > MAX_GALAXY_UNITS) {
+      if (units.length > maxUnits()) {
         this.toast(`${fmt(units.length)} types is too many for semantic zoom – pick a level instead.`);
         s.semantic = false;
         this.activateView();
@@ -336,18 +388,18 @@ class App {
       this.zoomView.build(units, links, typeState);
     } else if (s.view === 'galaxy') {
       let units = model.units(s);
-      if (units.length > MAX_GALAXY_UNITS && s.level !== 'project') {
-        this.toast(`${fmt(units.length)} ${s.level}s is too many to lay out smoothly – drill into a project or namespace first.`);
+      if (units.length > maxUnits() && s.level !== 'project') {
+        this.toast(`${fmt(units.length)} ${this.levelWord(s.level)} is too many to lay out smoothly – drill into a ${this.levelWord('project', 1)} or ${this.levelWord('namespace', 1)} first.`);
         s.level = LEVELS[Math.max(0, LEVELS.indexOf(s.level) - 1)];
         return this.rebuild();
       }
 
-      const { links, ghosts } = model.aggregate(units, s, { ghosts: !!s.scope });
-      this.galaxy.build(units, links, s, ghosts);
+      const { links, ghosts } = perf.time('aggregate', () => model.aggregate(units, s, { ghosts: !!s.scope }));
+      perf.time('build', () => this.galaxy.build(units, links, s, ghosts));
     } else if (s.view === 'layers') {
       const units = model.units(s);
-      if (units.length > MAX_GALAXY_UNITS && s.level !== 'project') {
-        this.toast(`${fmt(units.length)} ${s.level}s is too many to lay out smoothly – drill into a project or namespace first.`);
+      if (units.length > maxUnits() && s.level !== 'project') {
+        this.toast(`${fmt(units.length)} ${this.levelWord(s.level)} is too many to lay out smoothly – drill into a ${this.levelWord('project', 1)} or ${this.levelWord('namespace', 1)} first.`);
         s.level = LEVELS[Math.max(0, LEVELS.indexOf(s.level) - 1)];
         return this.rebuild();
       }
@@ -367,6 +419,13 @@ class App {
       this.layers.build(units, links, s, { layerOf: result.layerOf, layers });
     } else if (s.view === 'di') {
       const graph = buildDiGraph(model, s);
+      if (!graph) {
+        this.toast('No dependency-injection registrations were found in this code.');
+        s.view = 'galaxy';
+        this.activateView();
+        return this.rebuild();
+      }
+
       this.diStats = graph.stats;
       this.diView.build(graph.units, graph.links, { ...s, level: 'type' }, graph.layering);
     } else if (s.view === 'flow') {
@@ -404,14 +463,7 @@ class App {
   }
 
   indexLinks() {
-    this.out = new Map();
-    this.in = new Map();
-    this.view.links.forEach((l, i) => {
-      if (!this.out.has(l.source)) this.out.set(l.source, []);
-      if (!this.in.has(l.target)) this.in.set(l.target, []);
-      this.out.get(l.source).push({ to: l.target, i });
-      this.in.get(l.target).push({ to: l.source, i });
-    });
+    this.graph = new GraphIndex(this.view.links);
   }
 
   // ------------------------------------------------------------------ selection & highlight
@@ -462,23 +514,14 @@ class App {
     let status = '';
 
     if (sel.mode === 'neighbors') {
-      for (const e of this.out.get(start) ?? []) (nodes.add(e.to), links.add(e.i));
-      for (const e of this.in.get(start) ?? []) (nodes.add(e.to), links.add(e.i));
-      status = `${(this.out.get(start) ?? []).length} outgoing · ${(this.in.get(start) ?? []).length} incoming links (enabled kinds)`;
+      const add = (id, i) => (nodes.add(id), links.add(i));
+      this.graph.forEach(start, 'out', add);
+      this.graph.forEach(start, 'in', add);
+      status = `${this.graph.degree(start, 'out')} outgoing · ${this.graph.degree(start, 'in')} incoming links (enabled kinds)`;
     } else if (sel.mode === 'dependencies' || sel.mode === 'dependents') {
-      const adjacency = sel.mode === 'dependencies' ? this.out : this.in;
-      const queue = [start];
-      while (queue.length) {
-        const id = queue.shift();
-        for (const e of adjacency.get(id) ?? []) {
-          links.add(e.i);
-          if (!nodes.has(e.to)) {
-            nodes.add(e.to);
-            queue.push(e.to);
-          }
-        }
-      }
-
+      const reached = this.graph.reach(start, sel.mode === 'dependencies' ? 'out' : 'in');
+      for (const id of reached.nodes) nodes.add(id);
+      for (const i of reached.links) links.add(i);
       const n = nodes.size - 1;
       status = sel.mode === 'dependencies' ? `Depends on ${n} unit(s) transitively` : `Impact: ${n} unit(s) depend on this transitively`;
     } else if (sel.mode === 'path' && sel.pathTo) {
@@ -499,27 +542,7 @@ class App {
   }
 
   findPath(from, to) {
-    const previous = new Map([[from, null]]);
-    const queue = [from];
-    while (queue.length) {
-      const id = queue.shift();
-      if (id === to) break;
-      for (const e of this.out.get(id) ?? []) {
-        if (previous.has(e.to)) continue;
-        previous.set(e.to, { from: id, link: e.i });
-        queue.push(e.to);
-      }
-    }
-
-    if (!previous.has(to)) return null;
-    const nodes = [];
-    const links = [];
-    for (let id = to; id !== null; id = previous.get(id)?.from ?? null) {
-      nodes.unshift(id);
-      if (previous.get(id)) links.push(previous.get(id).link);
-    }
-
-    return { nodes, links };
+    return this.graph.path(from, to);
   }
 
   startPath() {
@@ -818,7 +841,7 @@ class App {
     const links = this.view.links?.length ?? 0;
     const view = this.state.view;
     const semantic = this.view === this.zoomView;
-    const lines = [`${fmt(units)} ${view === 'city' ? 'buildings' : view === 'di' ? 'services' : semantic ? 'nodes' : this.state.level + 's'} · ${fmt(links)} links`];
+    const lines = [`${fmt(units)} ${view === 'city' ? 'buildings' : view === 'di' ? 'services' : semantic ? 'nodes' : this.levelWord(this.state.level, units)} · ${fmt(links)} links`];
     if (semantic) {
       const open = this.zoomView.semantic ? this.zoomView.open.size : 0;
       lines.unshift(open ? `Semantic zoom · ${open} cluster${open === 1 ? '' : 's'} open` : 'Semantic zoom: fly into a cluster to open it');
@@ -830,15 +853,16 @@ class App {
     }
 
     if (view === 'di' && this.diStats) {
-      const { errors, warnings } = this.diStats;
-      lines.unshift(errors || warnings ? `${errors} lifetime error(s) · ${warnings} warning(s)` : 'No DI problems found');
+      const { errors, warnings, notes } = this.diStats;
+      const problems = errors || warnings ? `${errors} lifetime error(s) · ${warnings} warning(s)` : 'No DI problems found';
+      lines.unshift(notes ? `${problems} · ${notes} note(s)` : problems);
     }
 
     if (view === 'flow' && this.flow) {
       const { methods, types, depth, truncated, maxDepth } = this.flow.stats;
       const roots = this.flow.roots;
-      const from = roots.length === 1 ? shortName(roots[0]) : `${roots[0]?.typeNode?.name ?? ''} (${roots.length} entry methods)`;
-      lines[lines.length - 1] = `${fmt(methods)} methods in ${fmt(types)} types · depth ${depth}${truncated ? ` (cut at ${maxDepth})` : ''}`;
+      const from = roots.length === 1 ? shortName(roots[0]) : `${(roots[0]?.ownerNode ?? roots[0]?.typeNode)?.name ?? ''} (${roots.length} entry methods)`;
+      lines[lines.length - 1] = `${fmt(methods)} methods in ${fmt(types)} ${this.levelWord('type', types)} · depth ${depth}${truncated ? ` (cut at ${maxDepth})` : ''}`;
       lines.unshift(`Call flow from ${from}`);
     }
 
@@ -847,9 +871,26 @@ class App {
     if (this.liveStatus) lines.unshift('⟳ ' + this.liveStatus);
     else if (this.watching) lines.push('● live: watching for changes');
     this.hud.replaceChildren(...lines.map((l) => h('div', {}, l)));
+    if (this.ar.active) this.ar.update();
+  }
+
+  /** The GPU went away (driver reset, GPU switched, too much memory): the map cannot draw any more. */
+  onDeviceLost(info) {
+    console.error('CodeMap: GPU device lost', info);
+    const card = h('div', { class: 'welcome-card' },
+      h('div', { class: 'logo big' }),
+      h('h1', {}, 'The graphics device was reset'),
+      h('p', {}, `The map stopped drawing (${info?.message ?? 'device lost'}). Reload to continue.`),
+      h('button', { class: 'primary', onClick: () => location.reload() }, 'Reload'),
+    );
+    const welcome = document.getElementById('welcome');
+    welcome.replaceChildren(card);
+    welcome.classList.remove('hidden');
+    host?.post('fatal', { message: 'The graphics device was reset; reopen the map.', webgl: false });
   }
 
   toast(message, kind = 'warn') {
+    if (this.ar.active) return this.ar.message(message);
     const el = h('div', { class: `toast ${kind}`, role: 'status' }, message);
     document.getElementById('app').append(el);
     setTimeout(() => el.remove(), 4500);
@@ -858,7 +899,7 @@ class App {
   // ------------------------------------------------------------------ DOM wiring
 
   bindUi() {
-    const canvas = this.stage.renderer.domElement;
+    const canvas = this.stage.canvas;
     let down = null;
     canvas.addEventListener('pointerdown', (e) => (down = { x: e.clientX, y: e.clientY }));
     canvas.addEventListener('pointerup', (e) => {
@@ -866,9 +907,11 @@ class App {
       this.handleClick(e);
     });
     canvas.addEventListener('dblclick', (e) => {
+      if (this.ar.active) return this.ar.drillAtReticle();
       const id = this.view?.pick(e);
       if (id) this.drill(id);
     });
+    document.getElementById('btn-ar').addEventListener('click', () => this.model && this.ar.openPanel());
 
     let scheduled = false;
     let last = null;
@@ -958,7 +1001,13 @@ class App {
 
   handleClick(e) {
     if (!this.view) return;
-    const id = this.view.pick(e);
+    // AR glasses: the mouse pointer is hidden; the reticle in the middle of the view picks.
+    if (this.ar.active) return this.ar.selectAtReticle();
+    this.handleClickOn(this.view.pick(e), e);
+  }
+
+  /** A click on the unit `id` (null: on nothing): select it, or (Shift / path pending) show the path to it. */
+  handleClickOn(id, e = {}) {
     if (!id) {
       if (!this.pathPending) this.select(null);
       return;
@@ -973,6 +1022,7 @@ class App {
   }
 
   updateHover(e) {
+    if (this.ar.active) return; // the reticle hovers
     if (!this.view || e.buttons) {
       this.tooltip.classList.add('hidden');
       return;
@@ -980,7 +1030,7 @@ class App {
 
     const id = this.view.pick(e);
     this.view.setHovered(id);
-    this.stage.renderer.domElement.style.cursor = id ? 'pointer' : '';
+    this.stage.canvas.style.cursor = id ? 'pointer' : '';
     if (!id) {
       this.tooltip.classList.add('hidden');
       return;
@@ -996,7 +1046,7 @@ class App {
     if (m.commits) parts.push(`${fmt(m.commits)} commits`);
     // DOM append() would print "null" for the missing rows.
     clear(this.tooltip).append(...[
-      h('div', { class: 't-kind', style: { color: KIND_COLORS[node.kind] } }, node.kind + (node.external ? ' · external' : '')),
+      h('div', { class: 't-kind', style: { color: kindColor(node.kind) } }, node.kind + (node.external ? ' · external' : '')),
       h('div', { class: 't-name' }, shortName(node)),
       node.fullName && node.fullName !== node.name ? h('div', { class: 't-full' }, node.fullName) : null,
       parts.length ? h('div', { class: 't-metrics' }, parts.join(' · ')) : null,
@@ -1022,7 +1072,7 @@ class App {
       results.forEach((node, i) =>
         list.append(
           h('div', { class: 'item' + (i === active ? ' active' : ''), onMousedown: (e) => (e.preventDefault(), choose(node)) },
-            h('span', { style: { width: '8px', height: '8px', borderRadius: '50%', flex: 'none', background: KIND_COLORS[node.kind] ?? '#888' } }),
+            h('span', { style: { width: '8px', height: '8px', borderRadius: '50%', flex: 'none', background: kindColor(node.kind) } }),
             h('div', { style: { minWidth: 0 } },
               h('div', { class: 'name' }, shortName(node), h('span', { class: 'faint small' }, '  ' + node.kind)),
               h('div', { class: 'full' }, node.fullName ?? node.location?.file ?? ''),
@@ -1069,11 +1119,14 @@ async function boot() {
   let app;
   try {
     app = new App();
+    await app.stage.ready;
   } catch (error) {
     return showStartupError(error);
   }
 
   window.codemap = app;
+  app.stage.onDeviceLost = (info) => app.onDeviceLost(info);
+  if (params.has('bench')) window.codemapLayout = await import('./layout/testing.js');
   if (host) return app.enableHost(host);
   const embedded = document.getElementById('codemap-data')?.textContent?.trim();
   const server = ServerClient.detect();
@@ -1099,11 +1152,12 @@ async function boot() {
       return;
     }
 
-    const url = new URLSearchParams(location.search).get('data');
+    const url = params.get('data');
     if (url) {
       const response = await fetch(url);
       if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-      return app.load(await response.json());
+      const text = await response.text();
+      return app.load(perf.time('parse', () => JSON.parse(text)));
     }
   } catch (error) {
     app.toast(`Could not load data: ${error.message}`);
@@ -1114,11 +1168,11 @@ async function boot() {
 
 boot();
 
-/** The map could not start (usually no WebGL 2): say why instead of leaving an empty page. */
+/** The map could not start (no WebGPU and no WebGL 2): say why instead of leaving an empty page. */
 function showStartupError(error) {
-  const webgl = /webgl/i.test(String(error?.message ?? error));
+  const webgl = /webgl|webgpu|gpu|context/i.test(String(error?.message ?? error));
   const message = webgl
-    ? 'The 3D map needs WebGL 2, which is not available here (graphics acceleration is turned off or the GPU is blocklisted).'
+    ? 'The 3D map needs WebGPU or WebGL 2, and neither is available here (graphics acceleration is turned off or the GPU is blocklisted).'
     : `CodeMap could not start: ${error?.message ?? error}`;
   console.error(error);
   host?.post('fatal', { message, webgl });

@@ -12,7 +12,8 @@ export const LIFETIME_COLORS = Object.fromEntries(LIFETIMES.map((l) => [l.id, l.
  * Builds the DI view: every type the container constructs (or that the framework activates, like
  * controllers), on the plane of its lifetime, linked to the implementations it receives. A healthy
  * dependency points down or sideways (to something living at least as long); captive dependencies
- * and missing registrations point up and are flagged.
+ * and missing registrations point up and are flagged; what the container's rules change on purpose
+ * (request scope spreading in NestJS) is noted.
  */
 export function buildDiGraph(model, state) {
   const di = model.doc.analysis?.di;
@@ -21,7 +22,8 @@ export function buildDiGraph(model, state) {
   const lifetimeOf = new Map();
   for (const r of di.registrations) {
     const id = r.implementation ?? (r.external ? null : r.service);
-    if (id && model.get(id) && !lifetimeOf.has(id)) lifetimeOf.set(id, r.lifetime);
+    // The lifetime the container ends up giving it (NestJS: request scope spreads to consumers).
+    if (id && model.get(id) && !lifetimeOf.has(id)) lifetimeOf.set(id, r.effective ?? r.lifetime);
   }
 
   for (const d of di.dependencies) {
@@ -41,9 +43,11 @@ export function buildDiGraph(model, state) {
       const issue = issues.get(`${d.consumer}|${d.service}`);
       const targetLifetime = lifetimeOf.get(target);
       let violation = null;
-      if (issue?.kind === 'unregistered') violation = 'warning';
+      if (issue?.kind === 'unregistered' || issue?.kind === 'interface-injection') violation = 'warning';
       else if (issue?.kind === 'captive' && targetLifetime === 'scoped') violation = 'error';
       else if (issue?.kind === 'captive-transient' && targetLifetime === 'transient') violation = 'warning';
+      else if (issue?.kind === 'unreachable') violation = 'error';
+      else if (issue?.kind === 'scope-bubbling') violation = 'info';
 
       const key = d.consumer + '\u0000' + target;
       const existing = links.get(key);
@@ -78,7 +82,8 @@ export function buildDiGraph(model, state) {
     stats: {
       services: units.length,
       errors: di.issues.filter((i) => i.severity === 'error').length,
-      warnings: di.issues.filter((i) => i.severity !== 'error').length,
+      warnings: di.issues.filter((i) => i.severity === 'warning').length,
+      notes: di.issues.filter((i) => i.severity === 'info').length,
     },
   };
 }

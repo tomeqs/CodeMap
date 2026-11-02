@@ -1,0 +1,13 @@
+{
+  "name": "@shop/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": { "start": "ng serve" },
+  "dependencies": {
+    "@angular/common": "^18.0.0",
+    "@angular/core": "^18.0.0",
+    "@angular/platform-browser": "^18.0.0",
+    "@shop/domain": "*",
+    "rxjs": "^7.8.0"
+  }
+}

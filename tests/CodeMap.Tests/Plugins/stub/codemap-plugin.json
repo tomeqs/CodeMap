@@ -1,0 +1,14 @@
+{
+  "protocol": 1,
+  "id": "stub",
+  "idPrefix": "stub:",
+  "name": "Stub",
+  "version": "1.0.0",
+  "command": ["node", "./stub.mjs"],
+  "runtime": { "name": "node", "minVersion": 18, "envVar": "CODEMAP_TEST_NODE", "help": "Install Node.js." },
+  "inputs": "a .stub file",
+  "markers": "stub.json or .stub files",
+  "detect": { "markers": ["stub.json"], "sources": [".stub"], "inputs": ["*.stub"], "ignoreDirs": ["skipped"] },
+  "display": { "levels": { "project": ["Box", "Boxes"], "namespace": ["Shelf", "Shelves"], "type": ["Item", "Items"], "member": ["Part", "Parts"] }, "external": "outside" },
+  "unused": { "memberAccessibility": ["private"] }
+}

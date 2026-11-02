@@ -484,3 +484,7 @@ $RECYCLE.BIN/
 # CodeMap local build outputs
 dist/
 nupkg/
+tests/CodeMap.Tests/Golden/*.actual.json
+
+# The TypeScript plugin's test fixtures are code, whatever their folders are called (express/, packages/…)
+!analyzers/typescript/test/fixtures/**

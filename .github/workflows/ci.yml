@@ -1,4 +1,4 @@
-# Tests on every push: the analyzer, and the VS Code extension (unit tests and a real VS Code under Xvfb).
+# Tests on every push: the analyzer, the viewer (smoke tests in headless Chromium) and the VS Code extension (unit tests and a real VS Code under Xvfb).
 name: CI
 
 on:
@@ -20,7 +20,70 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: analyzers/typescript/package-lock.json
+      - name: TypeScript plugin (the .NET tests run it)
+        run: npm ci --prefix analyzers/typescript
       - run: dotnet test -c Release
+        env:
+          CODEMAP_REQUIRE_NODE: '1'
+
+  # The TypeScript / JavaScript language plugin on the Node versions it supports.
+  typescript:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    defaults:
+      run:
+        working-directory: analyzers/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: analyzers/typescript/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  viewer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: viewer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: npm ci
+      - name: Chromium for the smoke tests
+        run: npx playwright install --with-deps chromium
+      - name: TypeScript plugin (the analyzer maps samples/shop-ts with it)
+        run: npm ci --prefix ../analyzers/typescript
+      - name: Sample graphs for the smoke tests (the analyzer on samples/Shop, samples/shop-ts and samples/ as a whole)
+        run: |
+          dotnet build ../src/CodeMap.Cli -c Release -v quiet
+          codemap() { dotnet ../src/CodeMap.Cli/bin/Release/net8.0/codemap.dll "$@" -f json --no-git -q; }
+          codemap ../samples/Shop/Shop.sln -o "$RUNNER_TEMP/shop"
+          mkdir -p public && cp "$RUNNER_TEMP/shop/Shop.codemap.json" public/sample.codemap.json
+          codemap ../samples/shop-ts -o "$RUNNER_TEMP/samples"
+          codemap ../samples -o "$RUNNER_TEMP/samples"
+          ls "$RUNNER_TEMP/samples"
+      - run: npm run build
+      - name: The viewer built into the CLI matches the sources
+        run: git diff --exit-code --stat -- ../src/CodeMap.Cli/Assets/viewer.html
+      - name: Smoke tests on WebGPU and WebGL 2 (headless Chromium without a GPU)
+        run: npm run test:smoke -- --renderers webgpu,webgl --samples "$RUNNER_TEMP/samples"
 
   vscode:
     runs-on: ubuntu-latest
