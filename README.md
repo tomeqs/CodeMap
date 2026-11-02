@@ -69,7 +69,7 @@ The map opens in an editor tab, and you go from the code to the map and back in 
 * after saving a `.cs`, `.ts` or `.js` file, a project or `package.json`, the map refreshes itself and keeps the camera and selection;
 * Mermaid and JSON are saved through VS Code's save dialog.
 
-Install it from the Extensions view (search for **CodeMap**: VS Code Marketplace; Cursor, VSCodium and others: Open VSX), or
+Install it from the Extensions view: search for **CodeMap 3D** (`tomeqs.codemap-3d`; VS Code Marketplace, and Open VSX for Cursor, VSCodium and others), or
 take `codemap-<version>.vsix` from [Releases](https://github.com/tomeqs/CodeMap/releases) and use
 *Extensions → … → Install from VSIX…* or `code --install-extension codemap-<version>.vsix`. The extension contains the
 analyzer (it needs the .NET SDK 8+, which you have for C# anyway). Without .NET, set `codemap.analyzerPath` to the standalone `codemap` executable.
