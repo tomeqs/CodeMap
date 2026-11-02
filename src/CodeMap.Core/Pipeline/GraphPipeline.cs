@@ -58,9 +58,10 @@ public static class GraphPipeline
             foreach (var node in fragment.Nodes.Where(n => n.Kind == NodeKinds.Project)) languageOfProject.TryAdd(node.Id, language.Info);
         }
 
-        GraphMetrics.Compute(graph, node => node.Project != null && languageOfProject.TryGetValue(node.Project, out var language) ? language.Unused : null);
+        LanguageInfo? LanguageOf(GraphNode node) => node.Project != null && languageOfProject.TryGetValue(node.Project, out var language) ? language : null;
+        GraphMetrics.Compute(graph, node => LanguageOf(node)?.Unused);
         Layering.Analyze(graph);
-        DependencyInjectionAnalysis.Compute(graph);
+        DependencyInjectionAnalysis.Compute(graph, node => LanguageOf(node)?.Id);
         if (options.Git) GitEnrichment.Apply(graph, options, log);
         graph.Stats = GraphStats.Compute(graph);
 

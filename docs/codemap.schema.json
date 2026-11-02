@@ -207,7 +207,9 @@
               "external": { "type": "boolean" },
               "implementation": { "type": "string" },
               "lifetime": { "$ref": "#/$defs/lifetime" },
-              "kind": { "enum": ["type", "instance", "factory", "forward", "hosted", "dbcontext", "httpclient"] },
+              "kind": { "enum": ["type", "instance", "factory", "forward", "hosted", "dbcontext", "httpclient", "controller", "component"] },
+              "effective": { "$ref": "#/$defs/lifetime" },
+              "framework": { "type": "string" },
               "key": { "type": "string" },
               "registeredIn": { "type": "string" },
               "location": { "$ref": "#/$defs/location" }
@@ -227,7 +229,8 @@
               "many": { "type": "boolean" },
               "optional": { "type": "boolean" },
               "implementations": { "type": "array", "items": { "type": "string" } },
-              "lifetime": { "$ref": "#/$defs/lifetime" }
+              "lifetime": { "$ref": "#/$defs/lifetime" },
+              "framework": { "type": "string" }
             }
           }
         },
@@ -237,8 +240,8 @@
             "type": "object",
             "required": ["kind", "severity", "consumer", "service", "message"],
             "properties": {
-              "kind": { "enum": ["captive", "captive-transient", "unregistered"] },
-              "severity": { "enum": ["error", "warning"] },
+              "kind": { "enum": ["captive", "captive-transient", "unregistered", "interface-injection", "scope-bubbling", "unreachable"] },
+              "severity": { "enum": ["error", "warning", "info"] },
               "consumer": { "type": "string" },
               "service": { "type": "string" },
               "message": { "type": "string" }

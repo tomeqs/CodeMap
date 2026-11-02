@@ -7,7 +7,7 @@
   "license": "MIT",
   "engines": { "node": ">=18" },
   "scripts": {
-    "test": "node --test test/analyze.test.mjs test/cli.test.mjs"
+    "test": "node --test test/analyze.test.mjs test/frameworks.test.mjs test/cli.test.mjs"
   },
   "dependencies": {
     "typescript": "5.9.3"

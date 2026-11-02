@@ -53,7 +53,7 @@ const RADIUS = {
 };
 
 /** Edge colours for problems: dependencies against the layering, DI lifetime errors / warnings. */
-export const VIOLATION_COLORS = { error: '#ff4545', warning: '#ffb02e', true: '#ff4545' };
+export const VIOLATION_COLORS = { error: '#ff4545', warning: '#ffb02e', info: '#64b5f6', true: '#ff4545' };
 
 const color = new Color();
 const tmp = new Vector3();

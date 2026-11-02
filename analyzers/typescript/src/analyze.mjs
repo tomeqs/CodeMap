@@ -7,6 +7,7 @@ import { folderId, moduleId, packageId, projectId } from './ids.mjs';
 import { declareModule } from './extract/declarations.mjs';
 import { collectReferences } from './extract/references.mjs';
 import { collectImports } from './extract/imports.mjs';
+import { applyFrameworks, finishDi } from './frameworks/index.mjs';
 
 const LEVEL_RANK = { project: 0, namespace: 1, type: 2, member: 3 };
 
@@ -92,13 +93,14 @@ export function analyze(ts, request, log = () => {}) {
 
   const sourceCache = new Map();
   const resolver = new Resolver(ts, packages);
+  const shared = { di: { registrations: [], dependencies: [] }, claimed: new Map(), nestScopes: new Map() };
   projects.forEach((project, i) => {
     if (!project.analyzedFiles.length) return;
     log(`[${i + 1}/${projects.length}] ${project.name}: ${project.analyzedFiles.length} file(s)`);
     const compilerOpts = compilerOptions(ts, project.dir, root);
     const host = createHost(ts, compilerOpts, sourceCache, resolver);
     const program = ts.createProgram({ rootNames: project.analyzedFiles, options: compilerOpts, host });
-    const ctx = { ts, program, checker: program.getTypeChecker(), graph, files, options: compilerOpts, resolver, stats, projectsByName, ensurePackage };
+    const ctx = { ts, program, checker: program.getTypeChecker(), graph, files, options: compilerOpts, resolver, stats, projectsByName, ensurePackage, ...shared };
     const declared = [];
     for (const file of project.analyzedFiles) {
       const sf = program.getSourceFile(file);
@@ -106,6 +108,7 @@ export function analyze(ts, request, log = () => {}) {
       if (sf && info) declared.push([sf, info, declareModule(ctx, sf, info)]);
     }
 
+    for (const [sf, info, owners] of declared) owners.push(...applyFrameworks(ctx, sf, info, owners));
     for (const [sf, info, owners] of declared) {
       collectReferences(ctx, sf, owners);
       collectImports(ctx, sf, info);
@@ -113,6 +116,7 @@ export function analyze(ts, request, log = () => {}) {
   });
 
   markEntryPoints(graph, projects, resolver, files);
+  const di = finishDi(shared);
 
   if (stats.unresolved) warnings.push(`${stats.unresolved} relative import(s) could not be resolved (paths only a bundler knows, or missing files).`);
   if (stats.generated) warnings.push(`${stats.generated} generated file(s) were skipped.`);
@@ -133,7 +137,7 @@ export function analyze(ts, request, log = () => {}) {
     },
     nodes,
     edges,
-    analysis: { warnings },
+    analysis: di ? { warnings, di } : { warnings },
   };
 }
 

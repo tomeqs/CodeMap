@@ -150,6 +150,18 @@ dołączana do wydań). Jednostką mapy jest **plik**: paczki (`package.json`) �
 także przez pliki-beczki `index.ts` i przez interfejsy), `new` i JSX, dziedziczenie i implementacje, typy w sygnaturach,
 dekoratory, paczki npm i zależności między paczkami monorepo (workspaces) – bez `npm install`.
 
+Frameworki rozpoznawane po importach:
+
+* **Express**: każde `app.get('/orders/:id', …)` / `router.post(…)` / `router.route(…).put(…)` to osobny węzeł trasy
+  (`GET /orders/:id`); kod handlerów inline należy do trasy, nazwane handlery i middleware są przez nią wywoływane.
+  Widok Flow startuje od tras.
+* **NestJS**: kontrolery (trasy z pełną ścieżką), providery, guardy, interceptory, moduły, resolvery GraphQL, gatewaye,
+  `@Cron`/`@MessagePattern`… jako punkty wejścia, a w widoku DI kontener Nesta: providery modułów (`useClass`, `useValue`,
+  `useFactory`, `useExisting`, tokeny), zasięgi `Scope.REQUEST`/`TRANSIENT`, `@Inject`, `@InjectRepository`, `@Optional`.
+  CodeMap pokazuje, gdzie zasięg żądania „rozlewa się” na zależne usługi (uwaga, nie błąd) i gdzie wstrzykiwany jest interfejs bez tokenu.
+* **Angular**: komponenty, dyrektywy, pipe’y, moduły i serwisy; `providedIn: 'root'`, providery modułów i komponentów,
+  `inject()`. Błąd, gdy serwis z roota potrzebuje czegoś, co dostarczają tylko komponenty.
+
 ```bash
 codemap path/to/app                 # folder z package.json / tsconfig.json
 codemap path/to/repo                # C# i TypeScript w jednym repo: jedna mapa z obu języków

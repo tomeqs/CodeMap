@@ -196,4 +196,29 @@ public class PluginTests
         Assert.Equal(new[] { "File", "Files" }, graph.Source.Languages![0].Levels.Type);
         Assert.Equal("src/orders/orders.service.ts", graph.Node(service).Location!.File);
     }
+
+    [NodeFact(typescript: true)]
+    public void Nest_and_angular_containers_get_their_own_rules()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        string Fixture(string name) => Path.Combine(GoldenTests.RepoRoot(), "analyzers", "typescript", "test", "fixtures", name);
+
+        var nest = CodeMapAnalyzer.Analyze(Fixture("nest"), registry, NoGit).Analysis.Di!;
+        const string o = "ts:shop-api:src/orders/";
+        Assert.Equal(
+            new[]
+            {
+                ("interface-injection", o + "orders.service.ts#OrdersService", o + "pricing.ts#Pricing"),
+                ("scope-bubbling", o + "orders.controller.ts#OrdersController", o + "orders.service.ts#OrdersService"),
+                ("scope-bubbling", o + "orders.service.ts#OrdersService", o + "request-context.ts#RequestContext"),
+            },
+            nest.Issues.Select(i => (i.Kind, i.Consumer, i.Service)));
+        Assert.Equal("scoped", nest.Registrations.Single(r => r.Service == o + "orders.controller.ts#OrdersController").Effective);
+        Assert.Equal(new[] { o + "orders.repository.ts#SqlOrdersRepository" },
+            nest.Dependencies.Single(d => d.Service == o + "orders.repository.ts#ORDERS_REPOSITORY").Implementations);
+
+        var angular = CodeMapAnalyzer.Analyze(Fixture("angular"), registry, NoGit).Analysis.Di!;
+        var issue = Assert.Single(angular.Issues);
+        Assert.Equal(("unreachable", "error", "ts:shop-web:src/app/orders.store.ts#OrdersStore"), (issue.Kind, issue.Severity, issue.Consumer));
+    }
 }

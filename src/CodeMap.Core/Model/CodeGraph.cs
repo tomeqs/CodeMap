@@ -264,8 +264,16 @@ public sealed class ServiceRegistration
     /// <summary>singleton | scoped | transient</summary>
     public string Lifetime { get; set; } = "";
 
-    /// <summary>type | instance | factory | forward | hosted | dbcontext | httpclient</summary>
+    /// <summary>The lifetime the framework ends up giving it, when that differs (NestJS: request scope spreads to consumers).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Effective { get; set; }
+
+    /// <summary>type | instance | factory | forward | hosted | dbcontext | httpclient | controller | component</summary>
     public string Kind { get; set; } = "type";
+
+    /// <summary>DI container: microsoft (when left out), nest, angular…; decides which rules apply.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Framework { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Key { get; set; }
@@ -302,14 +310,18 @@ public sealed class DiDependency
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Lifetime { get; set; }
+
+    /// <summary>DI container (left out for microsoft); for raw dependencies, the consumer's registration decides when missing.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Framework { get; set; }
 }
 
 public sealed class DiIssue
 {
-    /// <summary>captive | captive-transient | unregistered</summary>
+    /// <summary>captive | captive-transient | unregistered | scope-bubbling | interface-injection | unreachable</summary>
     public string Kind { get; set; } = "";
 
-    /// <summary>error | warning</summary>
+    /// <summary>error | warning | info</summary>
     public string Severity { get; set; } = "";
 
     public string Consumer { get; set; } = "";

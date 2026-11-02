@@ -44,6 +44,10 @@ export function collectReferences(ctx, sf, owners) {
       if (target) graph.addEdge(ownerId, target.id, kind, kind === 'calls' || kind === 'instantiates' ? lineOf(at) : 0);
     };
     const visit = (n) => {
+      // Code a framework gave to someone else (the handlers of an Express route belong to the route).
+      const claimedBy = ctx.claimed?.get(n);
+      if (claimedBy && claimedBy !== ownerId) return;
+
       if (ts.isCallExpression(n)) {
         const callee = n.expression;
         if (callee.kind === ts.SyntaxKind.SuperKeyword) {

@@ -219,7 +219,8 @@ Dla każdej pary jest też krawędź `changesWith`.
 
 ### `di`
 
-Pojawia się, gdy w kodzie są rejestracje `Microsoft.Extensions.DependencyInjection`.
+Pojawia się, gdy w kodzie są rejestracje kontenera DI: `Microsoft.Extensions.DependencyInjection` w C#,
+NestJS albo Angular w TypeScripcie (pole `framework`; bez niego to kontener .NET). Każdy kontener ma swoje reguły.
 
 `registrations`: każde wywołanie rejestrujące.
 
@@ -227,8 +228,10 @@ Pojawia się, gdy w kodzie są rejestracje `Microsoft.Extensions.DependencyInjec
 |---|---|
 | `service` | id typu usługi; dla typów frameworka pełna nazwa i `external: true` |
 | `implementation` | id implementacji (brak dla fabryk, których nie da się prześledzić) |
-| `lifetime` | `singleton`, `scoped`, `transient` |
-| `kind` | `type` (`AddScoped<I, T>()`, `typeof`), `instance` (`AddSingleton(obj)`), `factory` (lambda), `forward` (`sp => sp.GetRequiredService<T>()`), `hosted` (`AddHostedService`), `dbcontext` (`AddDbContext`, `Add…DbContext` z Aspire), `httpclient` (typowany `AddHttpClient<T>`) |
+| `lifetime` | `singleton`, `scoped`, `transient` (NestJS: `Scope.DEFAULT` / `REQUEST` / `TRANSIENT`; Angular: `providedIn: 'root'` i `NgModule` → singleton, providery komponentu → scoped, komponenty → transient) |
+| `effective` | czas życia, który kontener w końcu nadaje, gdy różni się od zadeklarowanego (NestJS: zasięg żądania przechodzi na zależnych) |
+| `kind` | `type` (`AddScoped<I, T>()`, `typeof`, `useClass`), `instance` (`AddSingleton(obj)`, `useValue`), `factory` (lambda, `useFactory`), `forward` (`sp => sp.GetRequiredService<T>()`, `useExisting`), `hosted` (`AddHostedService`), `dbcontext` (`AddDbContext`, `Add…DbContext` z Aspire), `httpclient` (typowany `AddHttpClient<T>`), `controller` (kontrolery NestJS), `component` (komponenty, dyrektywy i pipe’y Angulara) |
+| `framework` | `nest`, `angular`… (brak: .NET) |
 | `key` | klucz dla `AddKeyed*` |
 | `registeredIn`, `location` | metoda i miejsce w kodzie, które rejestruje usługę |
 
@@ -246,6 +249,10 @@ oraz typów aktywowanych przez framework (kontrolery i huby jako `transient`, mi
 | `optional` | parametr z wartością domyślną |
 | `implementations` | co kontener faktycznie wstrzyknie (pusta lista: nic nie jest zarejestrowane) |
 | `lifetime` | czas życia wstrzykiwanej usługi |
+| `framework` | kontener (brak: .NET); w surowym grafie wtyczki może go pominąć, wtedy decyduje rejestracja konsumenta |
+
+W TypeScripcie zależności to parametry konstruktora (typ albo token z `@Inject(TOKEN)`, `@InjectRepository(E)` → `Repository<E>`,
+`@Optional`), właściwości z `@Inject` i wywołania `inject(X)` w Angularze.
 
 `issues`: problemy, błędy najpierw.
 
@@ -254,8 +261,11 @@ oraz typów aktywowanych przez framework (kontrolery i huby jako `transient`, mi
 | `captive` | `error` | singleton zależy od usługi scoped: jedna instancja jest współdzielona przez wszystkie żądania i żyje dłużej niż jej scope |
 | `captive-transient` | `warning` | singleton trzyma usługę transient, która przez to też staje się singletonem |
 | `unregistered` | `warning` | konstruktor potrzebuje usługi z analizowanego kodu, której nikt nie rejestruje |
+| `interface-injection` | `warning` | NestJS: parametr typu interfejsu bez tokenu; interfejsów nie ma w czasie działania, potrzebny `@Inject(TOKEN)` |
+| `scope-bubbling` | `info` | NestJS: usługa zależy od usługi o zasięgu żądania, więc sama też go dostaje (nowa instancja na każde żądanie); to zamierzone, ale kosztuje |
+| `unreachable` | `error` | Angular: usługa z `providedIn: 'root'` potrzebuje usługi, którą dostarczają tylko komponenty (`NullInjectorError`) |
 
-Każdy problem ma też `consumer`, `service` i czytelny `message`.
+Każdy problem ma też `consumer`, `service` i czytelny `message`. Kolejność: błędy, ostrzeżenia, uwagi.
 
 ## Przykładowe zapytania
 

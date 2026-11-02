@@ -853,8 +853,9 @@ class App {
     }
 
     if (view === 'di' && this.diStats) {
-      const { errors, warnings } = this.diStats;
-      lines.unshift(errors || warnings ? `${errors} lifetime error(s) · ${warnings} warning(s)` : 'No DI problems found');
+      const { errors, warnings, notes } = this.diStats;
+      const problems = errors || warnings ? `${errors} lifetime error(s) · ${warnings} warning(s)` : 'No DI problems found';
+      lines.unshift(notes ? `${problems} · ${notes} note(s)` : problems);
     }
 
     if (view === 'flow' && this.flow) {

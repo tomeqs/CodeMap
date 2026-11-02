@@ -4,7 +4,8 @@ CodeMap zna C# sam z siebie. Inne języki dochodzą jako **wtyczki**: osobne pro
 i zapisują **surowy graf** w formacie [CodeMap JSON](format.md). Resztę CodeMap robi tak samo jak dla C#: metryki, cykle,
 nieużywany kod, warstwy, analizę DI, historię gita, łączenie kilku języków w jedną mapę, raporty i mapę 3D.
 
-Pierwszą wtyczką jest TypeScript / JavaScript ([`analyzers/typescript`](../analyzers/typescript)): Node.js + TypeScript compiler API.
+Pierwszą wtyczką jest TypeScript / JavaScript ([`analyzers/typescript`](../analyzers/typescript)): Node.js + TypeScript compiler API,
+z Expressem (trasy), NestJS i Angularem (role, punkty wejścia, kontener DI) rozpoznawanymi po importach.
 
 ## Gdzie CodeMap szuka wtyczek
 
@@ -93,7 +94,7 @@ Dokument [CodeMap JSON](format.md) w wersji `1.x`:
 * `edges`: zależności (`calls` i `instantiates` z `line` pierwszego wystąpienia; własne rodzaje są dozwolone);
 * `location` względem `root`, z `/`; metryki `loc` i `complexity` (1 + liczba decyzji, jak w C#), tagi ról (`entrypoint`, `test`, `controller`…);
 * `source` (`path`, `root`, `kind`, `name`), `analysis.warnings`;
-* opcjonalnie `analysis.di`: rejestracje kontenera (`registrations`) i zależności konstruktorów (`dependencies`: `consumer`, `service`, `external`, `many`, `optional`). Czasy życia, implementacje i problemy (captive dependency…) policzy CodeMap.
+* opcjonalnie `analysis.di`: rejestracje kontenera (`registrations`, z `framework`) i zależności konstruktorów (`dependencies`: `consumer`, `service`, `external`, `many`, `optional`). Czasy życia, implementacje i problemy policzy CodeMap według reguł kontenera: `microsoft` (domyślny), `nest`, `angular`; dla nieznanej nazwy tylko powiązania i brakujące rejestracje.
 
 Metryki pochodne (coupling, fan-in/out, abstractness…), cykle, warstwy, nieużywany kod, hotspoty i statystyki liczy CodeMap.
 

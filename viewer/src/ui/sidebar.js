@@ -313,7 +313,7 @@ export class Sidebar {
     const { app } = this;
     const { model } = app;
     const counts = LIFETIMES.filter((l) => l.id !== 'missing')
-      .map((l) => [l, di.registrations.filter((r) => r.lifetime === l.id).length])
+      .map((l) => [l, di.registrations.filter((r) => (r.effective ?? r.lifetime) === l.id).length])
       .filter(([, n]) => n > 0);
     const section = h('div', { class: 'section' },
       h('h3', { title: 'Registrations found in code, resolved like the container would' }, 'Dependency injection',
@@ -327,7 +327,7 @@ export class Sidebar {
       section.append(
         h('div', { class: `issue ${issue.severity}`, title: issue.message, onClick: () => app.showDiIssue(issue) },
           h('div', { class: 'issue-head' },
-            h('span', { class: 'chip ' + (issue.severity === 'error' ? 'danger' : 'warn') }, issue.kind.replace('-', ' ')),
+            h('span', { class: 'chip ' + (issue.severity === 'error' ? 'danger' : issue.severity === 'info' ? 'note' : 'warn') }, issue.kind.replaceAll('-', ' ')),
             h('b', {}, consumer ? shortName(consumer) : issue.consumer),
           ),
           h('div', { class: 'small muted' }, issue.message),
@@ -537,6 +537,7 @@ export function renderLegend(el, app) {
   } else if (state.view === 'di') {
     for (const l of LIFETIMES) el.append(item(l.color, `${l.title} plane`));
     el.append(line(VIOLATION_COLORS.error, 'captive (singleton → scoped)'), line(VIOLATION_COLORS.warning, 'warning'));
+    if (model.doc.analysis?.di?.issues?.some((i) => i.severity === 'info')) el.append(line(VIOLATION_COLORS.info, 'note (scope spreads)'));
     return;
   }
 

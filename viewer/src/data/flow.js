@@ -231,6 +231,12 @@ export function findEntryPoints(model, { limit = 40 } = {}) {
     result.push({ node: type, role: entry.role, title: entry.title, methods });
   }
 
+  // A file whose entry methods are all a class' (a NestJS controller and its file): the class is enough.
+  const ofClasses = new Set(result.filter((r) => r.node.level === 'member').flatMap((r) => r.methods.map((m) => m.id)));
+  for (let i = result.length - 1; i >= 0; i--) {
+    if (result[i].node.level === 'type' && result[i].methods.every((m) => ofClasses.has(m.id))) result.splice(i, 1);
+  }
+
   for (const r of result) r.reach = buildCallFlow(model, [r.node.id], { maxDepth: 12, maxNodes: 400 }).nodes.size;
   const order = new Map(ROLE_ENTRIES.map((e, i) => [e.role, i]));
   result.sort((a, b) => order.get(a.role) - order.get(b.role) || b.reach - a.reach || cmp(a.node.name, b.node.name));

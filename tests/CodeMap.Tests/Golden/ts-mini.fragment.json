@@ -1024,7 +1024,8 @@
             "file": "api/src/app.ts",
             "line": 8,
             "endLine": 8
-          }
+          },
+          "framework": "nest"
         },
         {
           "service": "ts:api:src/orders/orders.service.ts#OrdersService",
@@ -1035,7 +1036,8 @@
             "file": "api/src/app.ts",
             "line": 9,
             "endLine": 9
-          }
+          },
+          "framework": "nest"
         },
         {
           "service": "ts:api:src/shared/request-context.ts#RequestContext",
@@ -1046,7 +1048,8 @@
             "file": "api/src/app.ts",
             "line": 10,
             "endLine": 10
-          }
+          },
+          "framework": "nest"
         }
       ],
       "dependencies": [

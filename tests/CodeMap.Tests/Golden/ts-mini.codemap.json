@@ -559,8 +559,8 @@
       },
       "tags": [
         "di-issue",
-        "service",
-        "singleton"
+        "scoped",
+        "service"
       ],
       "metrics": {
         "complexity": 7,
@@ -1347,6 +1347,7 @@
           "implementation": "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository",
           "lifetime": "singleton",
           "kind": "type",
+          "framework": "nest",
           "registeredIn": "ts:api:src/app.ts#createApp",
           "location": {
             "file": "api/src/app.ts",
@@ -1357,7 +1358,9 @@
         {
           "service": "ts:api:src/orders/orders.service.ts#OrdersService",
           "lifetime": "singleton",
+          "effective": "scoped",
           "kind": "type",
+          "framework": "nest",
           "registeredIn": "ts:api:src/app.ts#createApp",
           "location": {
             "file": "api/src/app.ts",
@@ -1369,6 +1372,7 @@
           "service": "ts:api:src/shared/request-context.ts#RequestContext",
           "lifetime": "scoped",
           "kind": "type",
+          "framework": "nest",
           "registeredIn": "ts:api:src/app.ts#createApp",
           "location": {
             "file": "api/src/app.ts",
@@ -1380,7 +1384,7 @@
       "dependencies": [
         {
           "consumer": "ts:api:src/orders/orders.service.ts#OrdersService",
-          "consumerLifetime": "singleton",
+          "consumerLifetime": "scoped",
           "service": "ts:api:src/orders/orders.repository.ts#OrdersRepository",
           "external": false,
           "many": false,
@@ -1388,11 +1392,12 @@
           "implementations": [
             "ts:api:src/orders/orders.repository.ts#SqlOrdersRepository"
           ],
-          "lifetime": "singleton"
+          "lifetime": "singleton",
+          "framework": "nest"
         },
         {
           "consumer": "ts:api:src/orders/orders.service.ts#OrdersService",
-          "consumerLifetime": "singleton",
+          "consumerLifetime": "scoped",
           "service": "ts:api:src/shared/request-context.ts#RequestContext",
           "external": false,
           "many": false,
@@ -1400,16 +1405,17 @@
           "implementations": [
             "ts:api:src/shared/request-context.ts#RequestContext"
           ],
-          "lifetime": "scoped"
+          "lifetime": "scoped",
+          "framework": "nest"
         }
       ],
       "issues": [
         {
-          "kind": "captive",
-          "severity": "error",
+          "kind": "scope-bubbling",
+          "severity": "info",
           "consumer": "ts:api:src/orders/orders.service.ts#OrdersService",
           "service": "ts:api:src/shared/request-context.ts#RequestContext",
-          "message": "OrdersService lives as a singleton but depends on scoped RequestContext: one instance gets shared by every request and outlives its scope."
+          "message": "OrdersService becomes request-scoped because it depends on request-scoped RequestContext: Nest creates a new OrdersService for every request."
         }
       ]
     },

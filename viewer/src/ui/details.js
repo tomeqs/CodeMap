@@ -188,7 +188,8 @@ export class DetailsPanel {
       const target = r.registeredIn ?? (asService ? r.implementation : null);
       section.append(
         h('div', { class: 'di-row', title: r.location ? `${r.location.file}:${r.location.line}` : '', onClick: () => target && this.app.reveal(target) },
-          h('span', { class: 'life', style: { color: LIFETIME_COLORS[r.lifetime] } }, r.lifetime),
+          h('span', { class: 'life', style: { color: LIFETIME_COLORS[r.effective ?? r.lifetime] }, title: r.effective ? `declared ${r.lifetime}, the container makes it ${r.effective}` : '' },
+            r.effective ? `${r.lifetime} → ${r.effective}` : r.lifetime),
           h('span', {}, text + where),
           r.kind !== 'type' ? h('span', { class: 'faint' }, r.kind) : null,
         ),

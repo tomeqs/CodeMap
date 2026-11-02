@@ -452,6 +452,18 @@ try {
       });
     }
 
+    await test('a TypeScript map: the DI view notes what the NestJS container changes on purpose', async () => {
+      await settled(ts.page, 60000);
+      const di = await ts.page.evaluate(() => {
+        const app = window.codemap;
+        app.setLevel('type');
+        app.setView('di');
+        return { hud: document.getElementById('hud').textContent, info: app.view.links?.filter((l) => l.violation === 'info').length };
+      });
+      assert.match(di.hud, /No DI problems found · 1 note\(s\)/);
+      assert.equal(di.info, 1, 'the link that makes OrdersService request-scoped is marked');
+    });
+
     await test('a TypeScript map: the call flow starts at the routes and dispatches through the interface', async () => {
       await settled(ts.page, 60000);
       const flow = await ts.page.evaluate(() => {

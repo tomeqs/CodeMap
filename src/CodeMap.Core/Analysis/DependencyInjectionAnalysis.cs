@@ -4,52 +4,83 @@ namespace CodeMap.Analysis;
 
 /// <summary>
 /// Rebuilds what the DI container will do: which implementation each constructor receives and with
-/// which lifetime. Flags captive dependencies (a singleton holding a scoped/transient service) and
-/// services that nothing registers.
+/// which lifetime. Flags services that nothing registers and what the container's rules make of the
+/// lifetimes: captive dependencies in .NET (a singleton holding a scoped/transient service), request scope
+/// spreading to its consumers in NestJS, root services that cannot reach component providers in Angular.
+/// Each registration says which container it belongs to (<see cref="ServiceRegistration.Framework"/>).
 /// </summary>
 internal static class DependencyInjectionAnalysis
 {
     private const string Singleton = DiRegistrationDetector.Singleton;
     private const string Scoped = DiRegistrationDetector.Scoped;
-    private const string Transient = DiRegistrationDetector.Transient;
-
-    /// <summary>Lifetimes of common framework services (by type definition name).</summary>
-    private static readonly Dictionary<string, string> FrameworkLifetimes = new(StringComparer.Ordinal)
-    {
-        ["Microsoft.Extensions.Options.IOptions<TOptions>"] = Singleton,
-        ["Microsoft.Extensions.Options.IOptionsMonitor<TOptions>"] = Singleton,
-        ["Microsoft.Extensions.Options.IOptionsSnapshot<TOptions>"] = Scoped,
-        ["Microsoft.Extensions.Logging.ILogger<TCategoryName>"] = Singleton,
-        ["Microsoft.Extensions.Logging.ILoggerFactory"] = Singleton,
-        ["Microsoft.Extensions.Configuration.IConfiguration"] = Singleton,
-        ["Microsoft.Extensions.Hosting.IHostEnvironment"] = Singleton,
-        ["Microsoft.AspNetCore.Hosting.IWebHostEnvironment"] = Singleton,
-        ["Microsoft.Extensions.Hosting.IHostApplicationLifetime"] = Singleton,
-        ["System.Net.Http.IHttpClientFactory"] = Singleton,
-        ["Microsoft.AspNetCore.Http.IHttpContextAccessor"] = Singleton,
-        ["Microsoft.Extensions.DependencyInjection.IServiceScopeFactory"] = Singleton,
-        ["System.TimeProvider"] = Singleton,
-        ["Microsoft.Extensions.Caching.Memory.IMemoryCache"] = Singleton,
-        ["Microsoft.Extensions.Caching.Distributed.IDistributedCache"] = Singleton,
-    };
 
     private sealed record Registration(ServiceRegistration Public, string Ident);
 
     /// <summary>
-    /// Works from what the language put in <c>analysis.di</c> (registrations, and the services every type's
+    /// Works from what the languages put in <c>analysis.di</c> (registrations, and the services every type's
     /// constructor asks for) and replaces it with the result: who gets what with which lifetime, and the issues.
     /// </summary>
-    public static void Compute(CodeGraph graph)
+    /// <param name="languageOf">Language of a node (by its project), so framework conventions apply to their language only.</param>
+    public static void Compute(CodeGraph graph, Func<GraphNode, string?>? languageOf = null)
     {
         var setup = graph.Analysis.Di;
         graph.Analysis.Di = null;
+        languageOf ??= _ => null;
         var byId = graph.Nodes.ToDictionary(n => n.Id, StringComparer.Ordinal);
+        var registrations = setup?.Registrations ?? new List<ServiceRegistration>();
+        var dependencies = setup?.Dependencies ?? new List<DiDependency>();
 
-        static string Ident(string service, bool external) => external ? "ext:" + service : service;
+        // Raw dependencies may leave their container out: the consumer's registration knows it.
+        var containerOf = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var r in registrations)
+        {
+            var id = r.Implementation ?? (r.External ? null : r.Service);
+            if (id != null) containerOf.TryAdd(id, r.Framework ?? DiRules.Microsoft);
+        }
 
-        var registrations = (setup?.Registrations ?? new List<ServiceRegistration>())
-            .Select(r => new Registration(r, Ident(r.Service, r.External)))
+        string FrameworkOf(DiDependency d) => d.Framework ?? containerOf.GetValueOrDefault(d.Consumer) ?? DiRules.Microsoft;
+        var frameworks = registrations.Select(r => r.Framework ?? DiRules.Microsoft)
+            .Concat(dependencies.Select(FrameworkOf))
+            .Append(DiRules.Microsoft)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(f => f == DiRules.Microsoft ? 0 : 1)
+            .ThenBy(f => f, StringComparer.Ordinal)
             .ToList();
+
+        var di = new DiAnalysis();
+        var found = false;
+        foreach (var framework in frameworks)
+        {
+            var rules = DiRules.For(framework);
+            found |= ComputeContainer(graph, byId, rules,
+                registrations.Where(r => (r.Framework ?? DiRules.Microsoft) == framework).ToList(),
+                dependencies.Where(d => FrameworkOf(d) == framework).ToList(),
+                languageOf, di);
+        }
+
+        if (!found) return;
+
+        foreach (var issue in di.Issues)
+        {
+            if (byId.TryGetValue(issue.Consumer, out var node)) node.AddTag(Tags.DiIssue);
+        }
+
+        di.Issues = di.Issues
+            .DistinctBy(i => (i.Kind, i.Consumer, i.Service))
+            .OrderBy(i => i.Severity switch { "error" => 0, "warning" => 1, _ => 2 })
+            .ThenBy(i => i.Consumer, StringComparer.Ordinal)
+            .ToList();
+        graph.Analysis.Di = di;
+    }
+
+    /// <summary>One container's registrations and dependencies; false when it has nothing to say.</summary>
+    private static bool ComputeContainer(CodeGraph graph, Dictionary<string, GraphNode> byId, DiRules rules,
+        List<ServiceRegistration> rawRegistrations, List<DiDependency> rawDependencies, Func<GraphNode, string?> languageOf, DiAnalysis di)
+    {
+        static string Ident(string service, bool external) => external ? "ext:" + service : service;
+        string Name(string id) => byId.TryGetValue(id, out var n) ? n.Name : id.Split('.', ':').Last();
+
+        var registrations = rawRegistrations.Select(r => new Registration(r, Ident(r.Service, r.External))).ToList();
 
         // Who gets constructed by the container, and for how long it lives.
         var consumers = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -62,31 +93,49 @@ internal static class DependencyInjectionAnalysis
         }
 
         // Types the framework activates without a registration.
-        foreach (var node in graph.Nodes.Where(n => NodeLevels.IsType(n) && !n.External && n.Modifiers?.Contains("abstract") != true))
+        foreach (var (id, lifetime) in rules.ImplicitConsumers(graph, languageOf))
         {
-            if (consumers.ContainsKey(node.Id)) continue;
-            if (node.HasTag(Tags.Controller) || node.HasTag(Tags.Hub)) consumers[node.Id] = Transient; // one per request
-            else if (node.HasTag(Tags.Middleware)) consumers[node.Id] = Singleton; // convention middleware is created once
+            consumers.TryAdd(id, lifetime);
         }
 
-        if (registrations.Count == 0 && consumers.Count == 0) return;
+        if (registrations.Count == 0 && consumers.Count == 0) return false;
 
         var byService = registrations.GroupBy(r => r.Ident).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
-        var dependenciesById = (setup?.Dependencies ?? new List<DiDependency>())
+        var dependenciesById = rawDependencies
             .GroupBy(d => d.Consumer, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
 
-        var di = new DiAnalysis { Registrations = registrations.Select(r => r.Public).ToList() };
-        string Name(string id) => byId.TryGetValue(id, out var n) ? n.Name : id.Split('.', ':').Last();
+        List<Registration>? Selected(DiDependency dependency) =>
+            byService.TryGetValue(Ident(dependency.Service, dependency.External), out var candidates)
+                ? dependency.Many ? candidates : new List<Registration> { candidates[^1] } // the last registration wins
+                : null;
 
-        foreach (var (consumer, lifetime) in consumers.OrderBy(c => c.Key, StringComparer.Ordinal))
+        static string? ImplementationOf(Registration r) => r.Public.Implementation ?? (r.Public.External ? null : r.Public.Service);
+
+        // The container's own rules may change lifetimes (NestJS: request scope spreads to consumers).
+        var effective = new Dictionary<string, string>(consumers, StringComparer.Ordinal);
+        var wiring = consumers.Keys
+            .Select(consumer => (consumer, (IReadOnlyList<string>)(dependenciesById.GetValueOrDefault(consumer) ?? new List<DiDependency>())
+                .SelectMany(d => Selected(d) ?? new List<Registration>())
+                .Select(ImplementationOf)
+                .Where(i => i != null)
+                .Select(i => i!)
+                .ToList()))
+            .ToList();
+        rules.Adjust(effective, wiring, di.Issues, Name);
+
+        string LifetimeOf(Registration r) => ImplementationOf(r) is { } id && effective.TryGetValue(id, out var lifetime) ? lifetime : r.Public.Lifetime;
+
+        di.Registrations.AddRange(registrations.Select(r => r.Public));
+
+        foreach (var (consumer, _) in consumers.OrderBy(c => c.Key, StringComparer.Ordinal))
         {
+            var lifetime = effective[consumer];
             if (!dependenciesById.TryGetValue(consumer, out var dependencies)) continue;
             foreach (var dependency in dependencies)
             {
                 var external = dependency.External;
                 var serviceName = dependency.Service;
-                var ident = Ident(serviceName, external);
                 var result = new DiDependency
                 {
                     Consumer = consumer,
@@ -95,85 +144,46 @@ internal static class DependencyInjectionAnalysis
                     External = external,
                     Many = dependency.Many,
                     Optional = dependency.Optional,
+                    Framework = rules.Framework == DiRules.Microsoft ? null : rules.Framework,
                 };
 
                 var lifetimes = new List<string>();
-                if (byService.TryGetValue(ident, out var candidates))
+                if (Selected(dependency) is { } selected)
                 {
-                    var selected = dependency.Many ? candidates : new List<Registration> { candidates[^1] }; // the last registration wins
                     result.Implementations = selected
-                        .Select(r => r.Public.Implementation ?? (r.Public.External ? null : r.Public.Service))
+                        .Select(ImplementationOf)
                         .Where(i => i != null)
                         .Select(i => i!)
                         .Distinct(StringComparer.Ordinal)
                         .ToList();
-                    lifetimes.AddRange(selected.Select(r => r.Public.Lifetime).Distinct());
+                    lifetimes.AddRange(selected.Select(LifetimeOf).Distinct());
                 }
                 else if (external)
                 {
-                    if (FrameworkLifetimes.TryGetValue(serviceName, out var known)) lifetimes.Add(known);
+                    if (rules.KnownLifetime(serviceName) is { } known) lifetimes.Add(known);
                 }
                 else if (!dependency.Optional && !dependency.Many)
                 {
-                    di.Issues.Add(new DiIssue
-                    {
-                        Kind = "unregistered",
-                        Severity = "warning",
-                        Consumer = consumer,
-                        Service = serviceName,
-                        Message = $"{Name(consumer)} needs {Name(serviceName)}, but no registration for it was found in the analyzed code.",
-                    });
+                    di.Issues.Add(rules.Unregistered(consumer, serviceName, byId.GetValueOrDefault(serviceName), Name));
                 }
 
                 result.Lifetime = lifetimes.Count == 1 ? lifetimes[0] : lifetimes.Count > 1 ? "mixed" : null;
                 di.Dependencies.Add(result);
-
-                if (lifetime != Singleton) continue;
-                var shortName = external ? serviceName.Split('<')[0].Split('.').Last() : Name(serviceName);
-                if (lifetimes.Contains(Scoped))
-                {
-                    di.Issues.Add(new DiIssue
-                    {
-                        Kind = "captive",
-                        Severity = "error",
-                        Consumer = consumer,
-                        Service = serviceName,
-                        Message = $"{Name(consumer)} lives as a singleton but depends on scoped {shortName}: one instance gets shared by every request and outlives its scope.",
-                    });
-                }
-                else if (lifetimes.Contains(Transient) && !external)
-                {
-                    di.Issues.Add(new DiIssue
-                    {
-                        Kind = "captive-transient",
-                        Severity = "warning",
-                        Consumer = consumer,
-                        Service = serviceName,
-                        Message = $"{Name(consumer)} is a singleton, so the transient {shortName} it receives lives for the whole application.",
-                    });
-                }
+                di.Issues.AddRange(rules.Check(consumer, lifetime, serviceName, external, lifetimes, Name));
             }
         }
 
         // Make lifetimes visible on the map.
         foreach (var registration in registrations)
         {
+            var lifetime = LifetimeOf(registration);
+            if (lifetime != registration.Public.Lifetime) registration.Public.Effective = lifetime;
             foreach (var id in new[] { registration.Public.Implementation, registration.Public.External ? null : registration.Public.Service })
             {
-                if (id != null && byId.TryGetValue(id, out var node)) node.AddTag(registration.Public.Lifetime);
+                if (id != null && byId.TryGetValue(id, out var node)) node.AddTag(lifetime);
             }
         }
 
-        foreach (var issue in di.Issues)
-        {
-            if (byId.TryGetValue(issue.Consumer, out var node)) node.AddTag(Tags.DiIssue);
-        }
-
-        di.Issues = di.Issues
-            .DistinctBy(i => (i.Kind, i.Consumer, i.Service))
-            .OrderBy(i => i.Severity == "error" ? 0 : 1)
-            .ThenBy(i => i.Consumer, StringComparer.Ordinal)
-            .ToList();
-        graph.Analysis.Di = di;
+        return true;
     }
 }

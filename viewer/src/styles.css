@@ -277,6 +277,7 @@ input[type='range'] { width: 120px; accent-color: var(--accent); }
 .chip { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: rgba(110, 168, 255, 0.14); color: #b9d2ff; border: 1px solid rgba(110, 168, 255, 0.25); }
 .chip.warn { background: rgba(255, 183, 77, 0.12); color: #ffd08a; border-color: rgba(255, 183, 77, 0.3); }
 .chip.danger { background: rgba(255, 107, 107, 0.12); color: #ffb0b0; border-color: rgba(255, 107, 107, 0.3); }
+.chip.note { background: rgba(100, 181, 246, 0.12); color: #a8d4fa; border-color: rgba(100, 181, 246, 0.3); }
 .chip.ok { background: rgba(53, 201, 165, 0.12); color: #9ff0da; border-color: rgba(53, 201, 165, 0.3); }
 .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
 .metric { background: rgba(255, 255, 255, 0.04); border: 1px solid var(--panel-border); border-radius: 8px; padding: 6px 8px; }
@@ -341,6 +342,7 @@ a:hover { text-decoration: underline; }
 
 .issue { padding: 6px 8px; border-radius: 8px; cursor: pointer; margin: 4px 0; border-left: 2px solid var(--warn); background: rgba(255, 183, 77, 0.06); }
 .issue.error { border-left-color: var(--danger); background: rgba(255, 107, 107, 0.07); }
+.issue.info { border-left-color: #64b5f6; background: rgba(100, 181, 246, 0.06); }
 .issue:hover { background: rgba(110, 168, 255, 0.12); }
 .issue-head { display: flex; align-items: center; gap: 6px; }
 .issue .chip { margin: 0; }

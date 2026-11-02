@@ -61,7 +61,7 @@ public class LanguagePipelineTests
 
         Assert.Contains(graph.Analysis.Cycles, c => c.Level == "type" && c.Nodes.Contains(service) && c.Nodes.Contains("ts:api:src/orders/orders.repository.ts"));
         Assert.Equal(new[] { service + "#legacyTotal" }, graph.Analysis.UnusedCandidates);
-        Assert.Equal("captive", Assert.Single(graph.Analysis.Di!.Issues).Kind);
+        Assert.Equal("scope-bubbling", Assert.Single(graph.Analysis.Di!.Issues).Kind); // a NestJS container: request scope spreads, by design
 
         var language = Assert.Single(graph.Source.Languages!);
         Assert.Equal(("typescript", "File", "Files", "npm packages"), (language.Id, language.Levels.Type[0], language.Levels.Type[1], language.External));
