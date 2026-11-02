@@ -1,21 +1,29 @@
+using CodeMap.Languages;
+
 namespace CodeMap.Server;
 
-public sealed record BrowseEntry(string Name, string Path, string Kind, bool HasCode);
+/// <param name="Languages">Ids of the languages whose project files are in it (a file: its language).</param>
+public sealed record BrowseEntry(string Name, string Path, string Kind, bool HasCode, IReadOnlyList<string>? Languages = null);
 
 public sealed record BrowseResult(string Path, string? Parent, IReadOnlyList<BrowseEntry> Entries, IReadOnlyList<BrowseEntry> Places);
 
 /// <summary>
 /// Server-side folder browser for the UI: a browser page cannot see absolute paths on disk, so the
-/// local server lists folders and highlights solutions and projects.
+/// local server lists folders and highlights solutions and projects of every language CodeMap knows.
 /// </summary>
 public static class DirectoryBrowser
 {
-    private static readonly string[] SolutionExtensions = { ".sln", ".slnx", ".slnf" };
-    private static readonly HashSet<string> Skipped = new(StringComparer.OrdinalIgnoreCase) { "bin", "obj", "node_modules", "packages", "TestResults" };
+    /// <summary>Folders no language keeps code in; each language adds its own (dist, node_modules…).</summary>
+    private static readonly string[] AlwaysSkipped = { "bin", "obj", "node_modules", "TestResults" };
 
-    public static BrowseResult Browse(string? path, string startDirectory)
+    private static HashSet<string> Skipped(LanguageRegistry registry) =>
+        new(AlwaysSkipped.Concat(registry.Languages.SelectMany(l => l.IgnoredFolders)), StringComparer.OrdinalIgnoreCase);
+
+    public static BrowseResult Browse(string? path, string startDirectory, LanguageRegistry? registry = null)
     {
-        var places = Places(startDirectory);
+        registry ??= LanguageRegistry.Default;
+        var skipped = Skipped(registry);
+        var places = Places(startDirectory, registry);
         if (string.IsNullOrWhiteSpace(path)) path = startDirectory;
         var full = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ExpandHome(path.Trim())));
         if (File.Exists(full)) full = Path.GetDirectoryName(full)!;
@@ -24,18 +32,20 @@ public static class DirectoryBrowser
         var entries = new List<BrowseEntry>();
         try
         {
-            foreach (var file in Directory.EnumerateFiles(full))
+            foreach (var language in registry.Languages)
             {
-                var ext = Path.GetExtension(file).ToLowerInvariant();
-                if (SolutionExtensions.Contains(ext)) entries.Add(new BrowseEntry(Path.GetFileName(file), file, "solution", true));
-                else if (ext == ".csproj") entries.Add(new BrowseEntry(Path.GetFileName(file), file, "project", true));
+                foreach (var (file, kind) in language.MarkersIn(full))
+                {
+                    entries.Add(new BrowseEntry(Path.GetFileName(file), file, kind, true, new[] { language.Info.Id }));
+                }
             }
 
             foreach (var dir in Directory.EnumerateDirectories(full))
             {
                 var name = Path.GetFileName(dir);
-                if (name.StartsWith('.') || Skipped.Contains(name)) continue;
-                entries.Add(new BrowseEntry(name, dir, "folder", ContainsCode(dir)));
+                if (name.StartsWith('.') || skipped.Contains(name)) continue;
+                var languages = LanguagesIn(dir, registry);
+                entries.Add(new BrowseEntry(name, dir, "folder", languages.Count > 0, languages.Count > 0 ? languages : null));
             }
         }
         catch (UnauthorizedAccessException)
@@ -44,15 +54,22 @@ public static class DirectoryBrowser
         }
 
         var ordered = entries
+            .DistinctBy(e => e.Path)
             .OrderBy(e => e.Kind switch { "solution" => 0, "project" => 1, _ => 2 })
             .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         return new BrowseResult(full, Directory.GetParent(full)?.FullName, ordered, places);
     }
 
-    /// <summary>Finds the best thing to analyze inside a folder: a lone solution, otherwise the folder itself.</summary>
-    public static string ResolveAnalysisTarget(string folder)
+    /// <summary>
+    /// Finds the best thing to analyze inside a folder: a lone solution, unless other languages have code there
+    /// too (then the folder, so they all make one map); otherwise the folder itself.
+    /// </summary>
+    public static string ResolveAnalysisTarget(string folder, LanguageRegistry? registry = null)
     {
+        registry ??= LanguageRegistry.Default;
+        if (registry.Languages.Any(l => l.Info.Id != "csharp" && l.Detect(folder, CancellationToken.None))) return folder;
+
         foreach (var candidate in new[] { folder, Path.Combine(folder, "src") })
         {
             if (!Directory.Exists(candidate)) continue;
@@ -69,24 +86,24 @@ public static class DirectoryBrowser
         return folder;
     }
 
-    private static bool ContainsCode(string dir)
+    /// <summary>Languages with project files directly in a folder (cheap: one listing, no recursion).</summary>
+    private static List<string> LanguagesIn(string dir, LanguageRegistry registry)
     {
         try
         {
-            return Directory.EnumerateFiles(dir).Any(f =>
-                f.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) || SolutionExtensions.Any(e => f.EndsWith(e, StringComparison.OrdinalIgnoreCase)));
+            return registry.Languages.Where(l => l.MarkersIn(dir).Any()).Select(l => l.Info.Id).ToList();
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
         {
-            return false;
+            return new List<string>();
         }
     }
 
-    private static List<BrowseEntry> Places(string startDirectory)
+    private static List<BrowseEntry> Places(string startDirectory, LanguageRegistry registry)
     {
         var places = new List<BrowseEntry>();
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (Directory.Exists(startDirectory)) places.Add(new BrowseEntry("Start folder", startDirectory, "place", ContainsCode(startDirectory)));
+        if (Directory.Exists(startDirectory)) places.Add(new BrowseEntry("Start folder", startDirectory, "place", LanguagesIn(startDirectory, registry).Count > 0));
         if (Directory.Exists(home)) places.Add(new BrowseEntry("Home", home, "place", false));
         foreach (var name in new[] { "source/repos", "repos", "src", "projects", "Projects", "code", "dev" })
         {

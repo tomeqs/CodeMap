@@ -18,6 +18,7 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
         Id = "csharp",
         Name = "C#",
         Inputs = "a .sln, .slnx, .slnf, .csproj, .cs file",
+        InputPatterns = new[] { "*.sln", "*.slnx", "*.slnf", "*.csproj", "*.cs" },
         Markers = ".csproj or .cs files",
         External = "BCL / NuGet",
         Unused = new UnusedPolicy
@@ -35,7 +36,23 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
         },
     };
 
+    private static readonly string[] Watched = { ".cs", ".csproj", ".sln", ".slnx", ".props", ".targets" };
+
     public bool CanAnalyzeFile(string path) => FileInputs.Contains(Path.GetExtension(path).ToLowerInvariant());
+
+    public IEnumerable<(string File, string Kind)> MarkersIn(string directory)
+    {
+        foreach (var file in Directory.EnumerateFiles(directory))
+        {
+            var extension = Path.GetExtension(file).ToLowerInvariant();
+            if (extension is ".sln" or ".slnx" or ".slnf") yield return (file, "solution");
+            else if (extension == ".csproj") yield return (file, "project");
+        }
+    }
+
+    public bool IsWatched(string path) => Watched.Contains(Path.GetExtension(path).ToLowerInvariant());
+
+    public IReadOnlyCollection<string> IgnoredFolders { get; } = new[] { "bin", "obj", "TestResults" };
 
     public bool Detect(string directory, CancellationToken ct) =>
         ProjectLoader.EnumerateFiles(directory, "*.csproj").Any() || ProjectLoader.EnumerateFiles(directory, "*.cs").Any();

@@ -97,6 +97,17 @@ async function scenario(controller) {
   mark('close');
   controller.panel.dispose();
   assert.equal(controller.panel, null);
+
+  // TypeScript runs on the Node.js inside VS Code (Electron as Node): nothing else has to be installed.
+  mark('TypeScript on the Node.js of VS Code');
+  const { resolveAnalyzer, runAnalyzer } = require('../../src/analyzer');
+  const nest = path.resolve(__dirname, '..', '..', '..', 'analyzers', 'typescript', 'test', 'fixtures', 'nest');
+  const analyzer = resolveAnalyzer({ extensionPath: controller.context.extensionPath });
+  const ts = await runAnalyzer(analyzer, nest, { gitHistory: false }, { onLine: (l) => log.push(l) });
+  assert.ok(process.versions.electron, 'the extension host is Electron');
+  assert.ok(ts.source.languages.some((l) => l.id === 'typescript'), 'mapped as TypeScript');
+  assert.ok(ts.nodes.some((n) => n.kind === 'module' && n.location?.file?.endsWith('.ts')), 'files are on the map');
+  assert.ok(ts.analysis?.di?.registrations?.some((r) => r.framework === 'nest'), 'the Nest container is read');
   console.log('Integration tests passed.');
 }
 

@@ -20,6 +20,9 @@ Folder jest wtyczką, gdy ma plik `codemap-plugin.json`, albo folderem wtyczek, 
 
 `codemap --version` wypisuje znalezione języki, czy ich środowisko (np. Node.js) jest dostępne i dlaczego ewentualnie nie jest.
 
+Rozszerzenie VS Code ma wtyczkę TypeScript w sobie i ustawia `CODEMAP_NODE` na Node.js wbudowany w VS Code (Electron jako Node),
+chyba że wskazano inny w ustawieniu `codemap.nodePath` albo w zmiennej `CODEMAP_NODE`.
+
 ## Manifest `codemap-plugin.json`
 
 ```json

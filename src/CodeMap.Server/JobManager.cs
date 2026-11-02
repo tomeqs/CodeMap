@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using CodeMap.Analysis;
 using CodeMap.Export;
+using CodeMap.Languages;
 using CodeMap.Model;
 
 namespace CodeMap.Server;
@@ -49,8 +50,9 @@ public sealed class JobManager : IDisposable
     private AnalysisJob? _current;
     private AnalysisJob? _lastCompleted;
 
-    private FileSystemWatcher? _watcher;
+    private readonly List<FileSystemWatcher> _watchers = new();
     private string? _watchPath;
+    private string? _watchRoot;
     private AnalysisSettings? _watchSettings;
     private Timer? _debounce;
     private bool _rerunPending;
@@ -64,7 +66,7 @@ public sealed class JobManager : IDisposable
     }
 
     public AnalysisJob? Current => _current;
-    public string? WatchedPath => _watcher != null ? _watchPath : null;
+    public string? WatchedPath => _watchers.Count > 0 ? _watchPath : null;
 
     public AnalysisJob? Get(string id) => _jobs.TryGetValue(id, out var job) ? job : null;
 
@@ -148,6 +150,7 @@ public sealed class JobManager : IDisposable
                 Settings = job.Settings,
                 Key = job.Key,
                 Stats = job.Stats,
+                Languages = graph.Source.Languages?.Select(l => l.Id).ToList(),
             }, job.Graph);
 
             // Watch before announcing "done": whoever reacts to "done" finds the watch in place, and no change slips in between.
@@ -222,7 +225,7 @@ public sealed class JobManager : IDisposable
         var watchSettings = (settings ?? new AnalysisSettings()).Clone();
         watchSettings.Watch = true;
         StartWatching(path, root, watchSettings);
-        return _watcher != null;
+        return _watchers.Count > 0;
     }
 
     private void StartWatching(string path, string root, AnalysisSettings settings)
@@ -231,28 +234,28 @@ public sealed class JobManager : IDisposable
         {
             _watchSettings = settings.Clone();
             _watchSettings.Watch = true;
-            if (_watcher != null && _watchPath == path) return;
+            if (_watchers.Count > 0 && _watchPath == path) return;
             StopWatchingLocked();
             try
             {
-                _watcher = new FileSystemWatcher(root)
+                // The root itself, and each folder in it that can hold code, with everything below: node_modules
+                // and build output are left out (thousands of folders that would each take a watch).
+                var ignored = IgnoredFolders(LanguageRegistry.Default);
+                _watchers.Add(Watch(root, recursive: false));
+                foreach (var dir in Directory.EnumerateDirectories(root))
                 {
-                    IncludeSubdirectories = true,
-                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                };
-                _watcher.Changed += OnSourceChanged;
-                _watcher.Created += OnSourceChanged;
-                _watcher.Deleted += OnSourceChanged;
-                _watcher.Renamed += OnSourceChanged;
-                _watcher.Error += (_, e) => _hub.Publish(new { type = "watch-error", message = e.GetException().Message });
-                _watcher.EnableRaisingEvents = true;
+                    var name = System.IO.Path.GetFileName(dir);
+                    if (!name.StartsWith('.') && !ignored.Contains(name)) _watchers.Add(Watch(dir, recursive: true));
+                }
+
                 _watchPath = path;
+                _watchRoot = root;
                 _debounce = new Timer(_ => ScheduleRerun(), null, Timeout.Infinite, Timeout.Infinite);
             }
-            catch (Exception ex) when (ex is IOException or ArgumentException or PlatformNotSupportedException)
+            catch (Exception ex) when (ex is IOException or ArgumentException or PlatformNotSupportedException or UnauthorizedAccessException)
             {
-                _watcher?.Dispose();
-                _watcher = null;
+                foreach (var watcher in _watchers) watcher.Dispose();
+                _watchers.Clear();
                 _hub.Publish(new { type = "watch-error", message = ex.Message });
                 return;
             }
@@ -266,35 +269,63 @@ public sealed class JobManager : IDisposable
         bool wasWatching;
         lock (_gate)
         {
-            wasWatching = _watcher != null;
+            wasWatching = _watchers.Count > 0;
             StopWatchingLocked();
         }
 
         if (wasWatching) _hub.Publish(new { type = "watch", enabled = false });
     }
 
+    private FileSystemWatcher Watch(string folder, bool recursive)
+    {
+        var watcher = new FileSystemWatcher(folder)
+        {
+            IncludeSubdirectories = recursive,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
+        };
+        watcher.Changed += OnSourceChanged;
+        watcher.Created += OnSourceChanged;
+        watcher.Deleted += OnSourceChanged;
+        watcher.Renamed += OnSourceChanged;
+        watcher.Error += (_, e) => _hub.Publish(new { type = "watch-error", message = e.GetException().Message });
+        watcher.EnableRaisingEvents = true;
+        return watcher;
+    }
+
     private void StopWatchingLocked()
     {
-        _watcher?.Dispose();
-        _watcher = null;
+        foreach (var watcher in _watchers) watcher.Dispose();
+        _watchers.Clear();
         _debounce?.Dispose();
         _debounce = null;
         _watchPath = null;
+        _watchRoot = null;
     }
 
     private void OnSourceChanged(object sender, FileSystemEventArgs e)
     {
-        if (!IsRelevant(e.FullPath) && !(e is RenamedEventArgs r && IsRelevant(r.OldFullPath))) return;
+        var root = _watchRoot;
+        if (!IsRelevant(e.FullPath, root) && !(e is RenamedEventArgs r && IsRelevant(r.OldFullPath, root))) return;
         _debounce?.Change(1200, Timeout.Infinite);
     }
 
-    internal static bool IsRelevant(string path)
+    internal static bool IsRelevant(string path, string? root = null) => IsRelevant(path, LanguageRegistry.Default, root);
+
+    /// <summary>
+    /// A change worth a new analysis: a file some language reads, outside build output, dependencies and hidden
+    /// folders (.git…) of the watched <paramref name="root"/> (the root itself may be anywhere, ~/.local/… too).
+    /// </summary>
+    internal static bool IsRelevant(string path, LanguageRegistry registry, string? root = null)
     {
-        var normalized = path.Replace('\\', '/');
-        if (normalized.Contains("/bin/") || normalized.Contains("/obj/") || normalized.Contains("/.git/") || normalized.Contains("/node_modules/")) return false;
-        var ext = System.IO.Path.GetExtension(normalized).ToLowerInvariant();
-        return ext is ".cs" or ".csproj" or ".sln" or ".slnx" or ".props" or ".targets";
+        var ignored = IgnoredFolders(registry);
+        var inside = root != null ? System.IO.Path.GetRelativePath(root, path) : path;
+        var parts = inside.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.SkipLast(1).Any(p => p.StartsWith('.') || ignored.Contains(p))) return false;
+        return registry.Languages.Any(l => l.IsWatched(path));
     }
+
+    private static HashSet<string> IgnoredFolders(LanguageRegistry registry) =>
+        new(new[] { "bin", "obj", "node_modules" }.Concat(registry.Languages.SelectMany(l => l.IgnoredFolders)), StringComparer.OrdinalIgnoreCase);
 
     private void ScheduleRerun()
     {

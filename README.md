@@ -57,16 +57,18 @@ codemap            # otwiera aplikację w przeglądarce
 
 Mapa otwiera się w karcie edytora, a z kodu do mapy i z powrotem przechodzisz jednym kliknięciem:
 
-* **CodeMap: Open Code Map** z palety poleceń albo prawym przyciskiem na `.sln` / `.slnx` / `.csproj` / folderze w Explorerze;
+* **CodeMap: Open Code Map** z palety poleceń albo prawym przyciskiem na `.sln` / `.slnx` / `.csproj` / `package.json` / `tsconfig.json` / folderze w Explorerze;
+  gdy w workspace jest C# i TypeScript / JavaScript, rozszerzenie pyta, a folder daje jedną mapę z obydwoma;
 * **Open** w panelu szczegółów (albo dwuklik na metodzie) otwiera kod w edytorze obok;
-* **Show in Code Map** (`Ctrl+Alt+M`) zaznacza na mapie metodę albo klasę spod kursora;
-* **Show Call Flow** (menu kontekstowe edytora) pokazuje przepływ wywołań i diagram sekwencji metody spod kursora;
-* po zapisaniu pliku `.cs` mapa sama się odświeża i nie gubi kamery ani zaznaczenia;
+* **Show in Code Map** (`Ctrl+Alt+M`) zaznacza na mapie metodę, funkcję, klasę albo plik spod kursora (C#, TypeScript, JavaScript);
+* **Show Call Flow** (menu kontekstowe edytora) pokazuje przepływ wywołań i diagram sekwencji metody albo funkcji spod kursora;
+* po zapisaniu pliku `.cs`, `.ts`, `.js`, projektu albo `package.json` mapa sama się odświeża i nie gubi kamery ani zaznaczenia;
 * Mermaid i JSON zapisujesz przez okno zapisu VS Code.
 
 Instalacja: plik `codemap-<wersja>.vsix` z [Releases](https://github.com/tomeqs/CodeMap/releases), potem
 *Extensions → … → Install from VSIX…* albo `code --install-extension codemap-0.2.0.vsix`. Rozszerzenie ma w sobie
 analizator (wymaga .NET SDK 8+, który i tak masz do C#). Bez .NET ustaw `codemap.analyzerPath` na samodzielny plik `codemap`.
+TypeScript i JavaScript analizuje wtyczka dołączona do rozszerzenia, na Node.js wbudowanym w VS Code (inny: `codemap.nodePath`).
 Kod rozszerzenia jest w [`vscode/`](vscode/).
 
 ### Wydawanie nowej wersji

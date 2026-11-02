@@ -10,8 +10,13 @@ const { flowRootsFor, nodeAt, relativeToRoot, resolveInRoot } = require('./locat
 const VIEW_TYPE = 'codemap.map';
 const TARGET_KEY = 'codemap.target';
 const CACHE_FILE = 'map.codemap.json';
-const SOURCE_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf)$/i;
+// Files whose change makes the map out of date: C# and its projects, TypeScript / JavaScript and their packages.
+const SOURCE_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf|[cm]?tsx?|[cm]?jsx?)$|(^|[\\/])(package|jsconfig|tsconfig(\.[\w-]+)?)\.json$/i;
+const NOT_SOURCE = /\.d\.[cm]?ts$|\.min\.js$|(^|[\\/])(node_modules|dist|bin|obj)[\\/]/i;
 const EXCLUDE = '**/{node_modules,bin,obj,.git,.vs}/**';
+const SCRIPT_EXCLUDE = '**/{node_modules,bin,obj,dist,build,out,coverage,.git,.vs,.next,.angular}/**';
+const SCRIPT_MARKERS = '**/{package.json,tsconfig.json,jsconfig.json}';
+const SCRIPT_SOURCES = '**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}';
 const READY_TIMEOUT_MS = 30000;
 
 /** One code map per window: the webview with the 3D map, the analysis behind it and the live updates. */
@@ -86,7 +91,7 @@ class CodeMapController {
     if (!node) return;
     const ids = flowRootsFor(this.doc, node);
     if (!ids.length) {
-      vscode.window.showInformationMessage('CodeMap: put the cursor in a method or a class to follow its calls.');
+      vscode.window.showInformationMessage('CodeMap: put the cursor in a method, a function or a class to follow its calls.');
       return;
     }
 
@@ -280,6 +285,7 @@ class CodeMapController {
       includeTests: settings.get('includeTests', true),
       includeExternal: settings.get('includeExternal', false),
       gitHistory: settings.get('gitHistory', true),
+      nodePath: settings.get('nodePath'),
     };
 
     const controller = new AbortController();
@@ -329,10 +335,11 @@ class CodeMapController {
     }
   }
 
-  /** Live updates: analyze again shortly after C# or project files are saved, created or deleted. */
+  /** Live updates: analyze again shortly after source or project files are saved, created or deleted. */
   onFileChanged(file) {
-    if (!this.panel || !this.doc || !this.settings.get('liveUpdate', true) || !SOURCE_FILES.test(file)) return;
-    if (!relativeToRoot(this.doc.source?.root, file)) return;
+    if (!this.panel || !this.doc || !this.settings.get('liveUpdate', true)) return;
+    const relative = relativeToRoot(this.doc.source?.root, file);
+    if (!relative || !isSourceFile(relative)) return;
     this.output.appendLine(`Changed: ${path.basename(file)}`);
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.analyze({ preserve: true }), 900);
@@ -385,31 +392,54 @@ class CodeMapController {
     this.status.show();
   }
 
-  /** Solutions first (shallowest first), then projects; asks when there is more than one. */
+  /**
+   * What to analyze. C#: solutions first (shallowest first), then projects; asks when there is more than one.
+   * TypeScript / JavaScript only: the workspace folder. Both: asks, with the folder (one map of everything) first.
+   */
   async pickTarget({ always = false } = {}) {
     const folders = vscode.workspace.workspaceFolders ?? [];
     if (!folders.length) {
-      vscode.window.showWarningMessage('CodeMap: open a folder with a C# solution or project first.');
+      vscode.window.showWarningMessage('CodeMap: open a folder with code first (a C# solution or project, or a TypeScript / JavaScript package).');
       return null;
     }
 
     let candidates = await vscode.workspace.findFiles('**/*.{sln,slnx,slnf}', EXCLUDE, 50);
     if (!candidates.length) candidates = await vscode.workspace.findFiles('**/*.csproj', EXCLUDE, 200);
     const paths = candidates.map((uri) => uri.fsPath).sort((a, b) => depth(a) - depth(b) || a.localeCompare(b));
-    if (!paths.length) return folders[0].uri.fsPath;
-    if (paths.length === 1 && !always) return paths[0];
+    const scripts = paths.length ? await this.hasScripts() : false;
+    if (!paths.length && (!always || folders.length === 1)) return folders[0].uri.fsPath;
+    if (paths.length === 1 && !always && !scripts) return paths[0];
 
-    const items = [
-      ...paths.map((p) => ({ label: path.basename(p), description: vscode.workspace.asRelativePath(path.dirname(p)), target: p })),
-      ...folders.map((f) => ({ label: `$(folder) ${f.name}`, description: 'every C# file in the folder', target: f.uri.fsPath })),
-    ];
-    const choice = await vscode.window.showQuickPick(items, { placeHolder: 'Which solution or project should CodeMap analyze?' });
+    const description = scripts
+      ? 'C# and TypeScript / JavaScript: one map of everything in the folder'
+      : paths.length ? 'every C# project in the folder' : 'everything in the folder';
+    const folderItems = folders.map((f) => ({ label: `$(folder) ${f.name}`, description, target: f.uri.fsPath }));
+    const solutionItems = paths.map((p) => ({ label: path.basename(p), description: vscode.workspace.asRelativePath(path.dirname(p)), target: p }));
+    const items = scripts ? [...folderItems, ...solutionItems] : [...solutionItems, ...folderItems];
+    const placeHolder = scripts
+      ? 'What should CodeMap analyze? The folder maps C# and TypeScript / JavaScript together.'
+      : paths.length ? 'Which solution or project should CodeMap analyze?' : 'Which folder should CodeMap analyze?';
+    const choice = await vscode.window.showQuickPick(items, { placeHolder });
     return choice?.target ?? null;
+  }
+
+  /** Whether the workspace has TypeScript / JavaScript code: source files in a folder with (or under) a package.json or tsconfig. */
+  async hasScripts() {
+    const markers = await vscode.workspace.findFiles(SCRIPT_MARKERS, SCRIPT_EXCLUDE, 200);
+    if (!markers.length) return false;
+    const roots = markers.map((uri) => path.dirname(uri.fsPath) + path.sep);
+    const sources = await vscode.workspace.findFiles(SCRIPT_SOURCES, SCRIPT_EXCLUDE, 500);
+    return sources.some((uri) => isSourceFile(vscode.workspace.asRelativePath(uri.fsPath, false)) && roots.some((root) => uri.fsPath.startsWith(root)));
   }
 }
 
 function depth(file) {
   return file.split(/[\\/]/).length;
+}
+
+/** Whether a change to a file (its path inside the analyzed folder) can change the map. */
+function isSourceFile(file) {
+  return SOURCE_FILES.test(file) && !NOT_SOURCE.test(file);
 }
 
 function activate(context) {
@@ -444,4 +474,4 @@ function activate(context) {
 
 function deactivate() {}
 
-module.exports = { activate, deactivate, CodeMapController };
+module.exports = { activate, deactivate, CodeMapController, isSourceFile };

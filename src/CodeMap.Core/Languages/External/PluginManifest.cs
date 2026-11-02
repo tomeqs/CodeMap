@@ -149,6 +149,7 @@ public sealed class PluginManifest
         Id = Id,
         Name = Name,
         Inputs = string.IsNullOrEmpty(Inputs) ? string.Join(", ", Detect.Inputs) + " file" : Inputs,
+        InputPatterns = Detect.Inputs,
         Markers = string.IsNullOrEmpty(Markers) ? string.Join(", ", Detect.Markers.Concat(Detect.Sources)) + " files" : Markers,
         Levels = Display?.Levels ?? new LevelLabels(),
         External = Display?.External ?? "external",

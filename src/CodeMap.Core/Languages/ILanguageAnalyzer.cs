@@ -31,6 +31,18 @@ public interface ILanguageAnalyzer
     /// Other metrics, cycles, layers, unused code and git data are left to the pipeline.
     /// </summary>
     CodeGraph Analyze(string path, AnalyzerOptions options, CancellationToken ct);
+
+    /// <summary>Project files directly in a folder, for the folder browser: their names and what they are (solution, project).</summary>
+    IEnumerable<(string File, string Kind)> MarkersIn(string directory) => Array.Empty<(string, string)>();
+
+    /// <summary>Whether a change to this file can change the map (live updates).</summary>
+    bool IsWatched(string path) => false;
+
+    /// <summary>Folders with no code of the language (build output, dependencies): not browsed, not watched.</summary>
+    IReadOnlyCollection<string> IgnoredFolders => Array.Empty<string>();
+
+    /// <summary>Why the language cannot be analyzed on this computer (a missing runtime), or null.</summary>
+    string? Unavailable => null;
 }
 
 /// <summary>What the pipeline and the messages need to know about a language.</summary>
@@ -44,6 +56,9 @@ public sealed class LanguageInfo
 
     /// <summary>Files that can be passed in, for messages: "a .sln, .slnx, .slnf, .csproj, .cs file".</summary>
     public required string Inputs { get; init; }
+
+    /// <summary>The same as file name patterns ("*.sln", "package.json"), for the app's path box.</summary>
+    public IReadOnlyList<string> InputPatterns { get; init; } = Array.Empty<string>();
 
     /// <summary>What a folder needs to contain, for messages: ".csproj or .cs files".</summary>
     public required string Markers { get; init; }

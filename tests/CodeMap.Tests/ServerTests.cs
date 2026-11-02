@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using CodeMap.Export;
+using CodeMap.Languages;
 using CodeMap.Server;
 
 namespace CodeMap.Tests;
@@ -168,6 +169,65 @@ public sealed class ServerTests : IAsyncLifetime
     [InlineData("/repo/readme.md", false)]
     public void Live_mode_only_reacts_to_code_changes(string path, bool relevant) =>
         Assert.Equal(relevant, JobManager.IsRelevant(path));
+
+    private static LanguageRegistry WithTypeScript() =>
+        LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+
+    [Fact]
+    public void Browse_marks_folders_and_project_files_of_every_language()
+    {
+        using var ws = new TestWorkspace()
+            .Project("Api")
+            .File("web/package.json", "{}").File("web/src/main.ts", "")
+            .File("both/Both.sln", "").File("both/package.json", "{}")
+            .File("web/node_modules/x/package.json", "{}").File("dist/a.js", "").File("packages/core/package.json", "{}");
+
+        var listing = DirectoryBrowser.Browse(ws.Root, ws.Root, WithTypeScript());
+
+        var entries = listing.Entries.ToDictionary(e => e.Name);
+        Assert.Equal(new[] { "csharp" }, entries["Api"].Languages);
+        Assert.Equal(new[] { "typescript" }, entries["web"].Languages);
+        Assert.Equal(new[] { "csharp", "typescript" }, entries["both"].Languages);
+        Assert.False(entries.ContainsKey("dist")); // build output of the TypeScript plugin
+        Assert.True(entries.ContainsKey("packages")); // npm workspaces live there
+
+        var web = DirectoryBrowser.Browse(Path.Combine(ws.Root, "web"), ws.Root, WithTypeScript());
+        var manifest = Assert.Single(web.Entries, e => e.Name == "package.json");
+        Assert.Equal(("project", "typescript"), (manifest.Kind, manifest.Languages!.Single()));
+        Assert.DoesNotContain(web.Entries, e => e.Name == "node_modules");
+    }
+
+    [Fact]
+    public void A_folder_with_a_solution_and_typescript_is_analyzed_as_a_whole()
+    {
+        using var ws = new TestWorkspace().File("Shop.sln", "").Project("Api").File("Api/A.cs", "class A { }");
+        Assert.Equal(Path.Combine(ws.Root, "Shop.sln"), DirectoryBrowser.ResolveAnalysisTarget(ws.Root, WithTypeScript()));
+
+        ws.File("web/package.json", "{}").File("web/src/main.ts", "");
+        Assert.Equal(ws.Root, DirectoryBrowser.ResolveAnalysisTarget(ws.Root, WithTypeScript()));
+        Assert.Equal(Path.Combine(ws.Root, "Shop.sln"), DirectoryBrowser.ResolveAnalysisTarget(ws.Root, LanguageRegistry.BuiltIn));
+    }
+
+    [Theory]
+    [InlineData("/repo/web/src/main.ts", true)]
+    [InlineData("/repo/web/package.json", true)]
+    [InlineData("/repo/web/tsconfig.app.json", true)]
+    [InlineData("/repo/web/node_modules/lib/index.js", false)]
+    [InlineData("/repo/web/dist/main.js", false)]
+    [InlineData("/repo/web/src/types.d.ts", false)]
+    [InlineData("/repo/src/A.cs", true)]
+    [InlineData("/repo/readme.md", false)]
+    public void Live_mode_reacts_to_the_code_of_every_language(string path, bool relevant) =>
+        Assert.Equal(relevant, JobManager.IsRelevant(path, WithTypeScript()));
+
+    [Theory]
+    [InlineData("/home/me/.local/repo/src/A.cs", true)]
+    [InlineData("/home/me/.local/repo/web/src/main.ts", true)]
+    [InlineData("/home/me/.local/repo/.git/index", false)]
+    [InlineData("/home/me/.local/repo/web/.angular/cache/x.js", false)]
+    [InlineData("/home/me/.local/repo/web/node_modules/lib/index.js", false)]
+    public void Live_mode_looks_at_folders_inside_the_watched_root_only(string path, bool relevant) =>
+        Assert.Equal(relevant, JobManager.IsRelevant(path, WithTypeScript(), "/home/me/.local/repo"));
 
     private async Task<JsonElement> WaitForJob(string jobId)
     {

@@ -29,6 +29,22 @@ function resolveAnalyzer({ extensionPath, analyzerPath, dotnetPath }) {
   return { command: 'codemap', args: [], label: 'codemap on PATH', needsDotnet: false };
 }
 
+/**
+ * The analyzer's environment. TypeScript / JavaScript run on Node.js: `codemap.nodePath`, else CODEMAP_NODE
+ * from the environment, else the Node.js inside VS Code itself (Electron run as Node), so nothing has to be installed.
+ */
+function analyzerEnv({ nodePath } = {}, base = process.env, runtime = { execPath: process.execPath, electron: !!process.versions.electron }) {
+  const env = { ...base, DOTNET_NOLOGO: '1', DOTNET_CLI_TELEMETRY_OPTOUT: '1' };
+  if (nodePath) {
+    env.CODEMAP_NODE = nodePath;
+  } else if (!env.CODEMAP_NODE) {
+    env.CODEMAP_NODE = runtime.execPath;
+    if (runtime.electron) env.ELECTRON_RUN_AS_NODE = '1';
+  }
+
+  return env;
+}
+
 function analyzerArgs(target, outDir, { includeTests = true, includeExternal = false, gitHistory = true } = {}) {
   const args = [target, '-o', outDir, '-f', 'json', '--name', 'map'];
   if (!includeTests) args.push('--no-tests');
@@ -52,7 +68,7 @@ function runAnalyzer(analyzer, target, options, { onLine, signal, cwd } = {}) {
       child = spawn(analyzer.command, args, {
         cwd,
         windowsHide: true,
-        env: { ...process.env, DOTNET_NOLOGO: '1', DOTNET_CLI_TELEMETRY_OPTOUT: '1' },
+        env: analyzerEnv(options),
       });
     } catch (error) {
       cleanup();
@@ -109,4 +125,4 @@ function explain(error, analyzer) {
   return Object.assign(new Error(message), { code: 'ENOENT' });
 }
 
-module.exports = { CancelledError, analyzerArgs, resolveAnalyzer, runAnalyzer };
+module.exports = { CancelledError, analyzerArgs, analyzerEnv, resolveAnalyzer, runAnalyzer };

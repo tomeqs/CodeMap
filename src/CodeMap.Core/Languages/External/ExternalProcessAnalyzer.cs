@@ -71,6 +71,23 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
         return false;
     }
 
+    public IEnumerable<(string File, string Kind)> MarkersIn(string directory) =>
+        Directory.EnumerateFiles(directory)
+            .Where(f => Manifest.Detect.Markers.Contains(Path.GetFileName(f), StringComparer.OrdinalIgnoreCase))
+            .Select(f => (f, "project"));
+
+    public bool IsWatched(string path)
+    {
+        var name = Path.GetFileName(path);
+        var sources = new HashSet<string>(Manifest.Detect.Sources, StringComparer.OrdinalIgnoreCase);
+        if (sources.Contains(Path.GetExtension(name))) return IsSource(path, sources); // not .d.ts, not .min.js
+        return Manifest.Detect.Markers.Contains(name, StringComparer.OrdinalIgnoreCase) || Manifest.Detect.Inputs.Any(p => Matches(p, name)); // tsconfig.app.json…
+    }
+
+    public IReadOnlyCollection<string> IgnoredFolders => Manifest.Detect.IgnoreDirs;
+
+    public string? Unavailable => Manifest.Runtime is { } runtime && Manifest.Command[0] == runtime.Name ? RuntimeLocator.Find(runtime).Problem : null;
+
     public CodeGraph Analyze(string path, AnalyzerOptions options, CancellationToken ct)
     {
         var log = options.Log ?? (_ => { });

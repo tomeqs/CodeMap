@@ -146,3 +146,60 @@ test('asks which solution when there are several', async () => {
     restore();
   }
 });
+
+test('C# and TypeScript in one workspace: the whole folder comes first', async () => {
+  const web = path.join(shop, 'web');
+  const files = [solution, path.join(web, 'package.json'), path.join(web, 'src', 'app.ts'), path.join(web, 'node_modules', 'x', 'index.js')];
+  const { vscode, log } = createMock({ workspaceRoot: shop, files });
+  const restore = installMock(vscode);
+  try {
+    const { CodeMapController } = require('../../src/extension');
+    const controller = new CodeMapController(fakeContext(extensionPath));
+    assert.equal(await controller.pickTarget(), shop); // the mock picks the first item
+    assert.match(log.quickPicks[0][0].label, /folder/);
+    assert.match(log.quickPicks[0][0].description, /C# and TypeScript/);
+    assert.deepEqual(log.quickPicks[0].slice(1).map((i) => i.label), ['Shop.sln']);
+  } finally {
+    restore();
+  }
+});
+
+test('TypeScript alone: the folder, without asking', async () => {
+  const files = [path.join(shop, 'package.json'), path.join(shop, 'src', 'main.ts')];
+  const { vscode, log } = createMock({ workspaceRoot: shop, files });
+  const restore = installMock(vscode);
+  try {
+    const { CodeMapController } = require('../../src/extension');
+    assert.equal(await new CodeMapController(fakeContext(extensionPath)).pickTarget(), shop);
+    assert.equal(log.quickPicks.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test('a package.json without TypeScript or JavaScript next to it does not make a solution mixed', async () => {
+  const files = [solution, path.join(shop, 'package.json'), path.join(shop, 'types', 'env.d.ts'), path.join(shop, 'dist', 'app.js')];
+  const { vscode, log } = createMock({ workspaceRoot: shop, files });
+  const restore = installMock(vscode);
+  try {
+    const { CodeMapController } = require('../../src/extension');
+    assert.equal(await new CodeMapController(fakeContext(extensionPath)).pickTarget(), solution);
+    assert.equal(log.quickPicks.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test('live updates follow C# and TypeScript / JavaScript sources and their project files', () => {
+  const { isSourceFile } = require('../../src/extension');
+  // paths inside the analyzed folder: wherever that folder is (~/bin/repo too), only its own folders count
+  for (const file of ['A.cs', 'src/A.csproj', 'Directory.Build.props', 'X.slnx', 'web/src/app.ts', 'web/App.tsx', 'a.mjs', 'a.cjs', 'bin-tools/src/a.ts',
+    'web/package.json', 'web/tsconfig.json', 'web/tsconfig.app.json', 'web\\jsconfig.json']) {
+    assert.ok(isSourceFile(file), file);
+  }
+
+  for (const file of ['web/types.d.ts', 'web/vendor.min.js', 'web/node_modules/x/index.js', 'node_modules/x/index.js', 'web/dist/main.js', 'A/bin/Debug/x.cs',
+    'A\\obj\\x.cs', 'web/package-lock.json', 'web/angular.json', 'README.md', 'web/styles.css']) {
+    assert.ok(!isSourceFile(file), file);
+  }
+});

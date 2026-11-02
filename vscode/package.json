@@ -1,7 +1,7 @@
 {
   "name": "codemap",
   "displayName": "CodeMap",
-  "description": "Interactive 3D map of your C# solution: dependencies, architecture layers, DI lifetimes, call flows and sequence diagrams, one click away from the code.",
+  "description": "Interactive 3D map of your C# and TypeScript / JavaScript code: dependencies, architecture layers, DI lifetimes, call flows and sequence diagrams, one click away from the code.",
   "version": "0.1.0",
   "publisher": "tomeqs",
   "repository": {
@@ -21,6 +21,10 @@
   "keywords": [
     "csharp",
     "dotnet",
+    "typescript",
+    "javascript",
+    "nestjs",
+    "angular",
     "architecture",
     "dependency graph",
     "code map",
@@ -45,7 +49,8 @@
       "description": "The analyzer only reads the code, but in untrusted workspaces CodeMap ignores analyzer paths set by the workspace.",
       "restrictedConfigurations": [
         "codemap.analyzerPath",
-        "codemap.dotnetPath"
+        "codemap.dotnetPath",
+        "codemap.nodePath"
       ]
     },
     "virtualWorkspaces": false
@@ -82,7 +87,7 @@
       },
       {
         "command": "codemap.chooseTarget",
-        "title": "Choose Solution…",
+        "title": "Choose What to Analyze…",
         "category": "CodeMap"
       }
     ],
@@ -90,19 +95,19 @@
       "explorer/context": [
         {
           "command": "codemap.open",
-          "when": "explorerResourceIsFolder || resourceExtname =~ /^\\.(sln|slnx|slnf|csproj)$/",
+          "when": "explorerResourceIsFolder || resourceExtname =~ /^\\.(sln|slnx|slnf|csproj)$/ || resourceFilename =~ /^(package|jsconfig|tsconfig(\\.[\\w-]+)?)\\.json$/",
           "group": "navigation@90"
         }
       ],
       "editor/context": [
         {
           "command": "codemap.revealInMap",
-          "when": "resourceLangId == csharp",
+          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact)$/",
           "group": "navigation@90"
         },
         {
           "command": "codemap.callFlow",
-          "when": "resourceLangId == csharp",
+          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact)$/",
           "group": "navigation@91"
         }
       ],
@@ -121,11 +126,11 @@
       "commandPalette": [
         {
           "command": "codemap.revealInMap",
-          "when": "editorLangId == csharp"
+          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact)$/"
         },
         {
           "command": "codemap.callFlow",
-          "when": "editorLangId == csharp"
+          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact)$/"
         }
       ]
     },
@@ -134,7 +139,7 @@
         "command": "codemap.revealInMap",
         "key": "ctrl+alt+m",
         "mac": "cmd+alt+m",
-        "when": "editorLangId == csharp"
+        "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact)$/"
       }
     ],
     "configuration": {
@@ -143,17 +148,17 @@
         "codemap.liveUpdate": {
           "type": "boolean",
           "default": true,
-          "description": "Analyze again and refresh the map (keeping the camera and selection) when C# or project files are saved."
+          "description": "Analyze again and refresh the map (keeping the camera and selection) when source or project files are saved."
         },
         "codemap.includeTests": {
           "type": "boolean",
           "default": true,
-          "description": "Include test projects in the map."
+          "description": "Include test projects and test files in the map."
         },
         "codemap.includeExternal": {
           "type": "boolean",
           "default": false,
-          "description": "Include framework and NuGet types the code depends on."
+          "description": "Include the framework, NuGet and npm code the analyzed code depends on."
         },
         "codemap.gitHistory": {
           "type": "boolean",
@@ -182,6 +187,12 @@
           "default": "dotnet",
           "scope": "machine",
           "description": "The dotnet command that runs the bundled analyzer (.NET 8 or newer)."
+        },
+        "codemap.nodePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Node.js (18 or newer) that analyzes TypeScript and JavaScript. Empty: the Node.js built into VS Code, so nothing needs to be installed. Set it to a `node` executable for very large code bases (VS Code's Node.js has a smaller memory limit)."
         }
       }
     }

@@ -32,16 +32,20 @@ function nodeAt(doc, relativeFile, line, { ignoreCase = process.platform === 'wi
   return best?.node ?? null;
 }
 
-const FLOW_MEMBERS = new Set(['method', 'constructor', 'property']);
-const FLOW_TYPES = new Set(['class', 'struct', 'record', 'recordStruct', 'interface']);
+// Declarations a flow starts from: C# methods, constructors and properties, TypeScript / JavaScript functions.
+const FLOW_MEMBERS = new Set(['method', 'constructor', 'property', 'function']);
+// Declarations whose entry methods start the flow: classes and the like, and TypeScript / JavaScript files (modules).
+const FLOW_OWNERS = new Set(['class', 'struct', 'record', 'recordStruct', 'interface', 'module']);
 
-/** Ids to start a call flow from: the method under the cursor, otherwise its type (that type's entry methods). */
+/**
+ * Ids to start a call flow from: the method or function under the cursor, otherwise the class or file it is in
+ * (the map follows that one's entry methods: routes, controller actions, public methods...).
+ */
 function flowRootsFor(doc, node) {
   if (!node) return [];
-  if (FLOW_MEMBERS.has(node.kind)) return [node.id];
-  if (FLOW_TYPES.has(node.kind)) return [node.id];
+  if (FLOW_MEMBERS.has(node.kind) || FLOW_OWNERS.has(node.kind)) return [node.id];
   const parent = node.parent && doc.nodes.find((n) => n.id === node.parent);
-  return parent && FLOW_TYPES.has(parent.kind) ? [parent.id] : [];
+  return parent && FLOW_OWNERS.has(parent.kind) ? [parent.id] : [];
 }
 
 /** Absolute path of a graph location, refusing anything that would leave the analyzed root. */

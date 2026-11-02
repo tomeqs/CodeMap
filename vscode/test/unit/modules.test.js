@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const test = require('node:test');
-const { analyzerArgs, resolveAnalyzer, runAnalyzer } = require('../../src/analyzer');
+const { analyzerArgs, analyzerEnv, resolveAnalyzer, runAnalyzer } = require('../../src/analyzer');
 const { flowRootsFor, nodeAt, relativeToRoot, resolveInRoot } = require('../../src/locate');
 const { standaloneHtml, webviewHtml } = require('../../src/html');
 
@@ -87,6 +87,48 @@ test('analyzer resolution: settings, bundled copy, then PATH', () => {
   assert.equal(resolveAnalyzer({ extensionPath: dir, analyzerPath: 'C:\\tools\\codemap.exe' }).command, 'C:\\tools\\codemap.exe');
   assert.deepEqual(resolveAnalyzer({ extensionPath: dir, analyzerPath: '/x/codemap.dll' }).args, ['/x/codemap.dll']);
   fs.rmSync(dir, { recursive: true });
+});
+
+test('call flow roots of TypeScript declarations: functions, routes, class members, else their class or file', () => {
+  const ts = {
+    nodes: [
+      { id: 'ts:ns:api/src', kind: 'namespace' },
+      { id: 'ts:api:src/orders.ts', kind: 'module', level: 'type', parent: 'ts:ns:api/src' },
+      { id: 'ts:api:src/orders.ts#OrdersService', kind: 'class', level: 'member', parent: 'ts:api:src/orders.ts' },
+      { id: 'ts:api:src/orders.ts#OrdersService.place', kind: 'method', level: 'member', parent: 'ts:api:src/orders.ts#OrdersService' },
+      { id: 'ts:api:src/orders.ts#OrdersService.repo', kind: 'field', level: 'member', parent: 'ts:api:src/orders.ts#OrdersService' },
+      { id: 'ts:api:src/orders.ts#total', kind: 'function', level: 'member', parent: 'ts:api:src/orders.ts' },
+      { id: 'ts:api:src/orders.ts#route:GET /orders', kind: 'function', level: 'member', parent: 'ts:api:src/orders.ts', tags: ['route'] },
+      { id: 'ts:api:src/orders.ts#LIMIT', kind: 'variable', level: 'member', parent: 'ts:api:src/orders.ts' },
+      { id: 'ts:api:src/orders.ts#Order', kind: 'typeAlias', level: 'member', parent: 'ts:api:src/orders.ts' },
+    ],
+  };
+  const roots = (i) => flowRootsFor(ts, ts.nodes[i]);
+  assert.deepEqual(roots(3), ['ts:api:src/orders.ts#OrdersService.place']);
+  assert.deepEqual(roots(5), ['ts:api:src/orders.ts#total']);
+  assert.deepEqual(roots(6), ['ts:api:src/orders.ts#route:GET /orders']);
+  assert.deepEqual(roots(2), ['ts:api:src/orders.ts#OrdersService']);
+  assert.deepEqual(roots(4), ['ts:api:src/orders.ts#OrdersService']); // a field: its class
+  assert.deepEqual(roots(7), ['ts:api:src/orders.ts']); // a constant: its file
+  assert.deepEqual(roots(8), ['ts:api:src/orders.ts']);
+  assert.deepEqual(roots(1), ['ts:api:src/orders.ts']); // a file: its entry points
+  assert.deepEqual(roots(0), []);
+});
+
+test('TypeScript runs on codemap.nodePath, CODEMAP_NODE or the Node.js inside VS Code', () => {
+  const vscodeNode = { execPath: '/apps/Code Helper', electron: true };
+  const inside = analyzerEnv({}, { PATH: '/bin' }, vscodeNode);
+  assert.equal(inside.CODEMAP_NODE, '/apps/Code Helper');
+  assert.equal(inside.ELECTRON_RUN_AS_NODE, '1');
+  assert.equal(inside.DOTNET_NOLOGO, '1');
+  assert.equal(inside.PATH, '/bin');
+
+  const configured = analyzerEnv({ nodePath: '/usr/local/bin/node' }, { CODEMAP_NODE: '/old/node' }, vscodeNode);
+  assert.equal(configured.CODEMAP_NODE, '/usr/local/bin/node');
+  assert.equal(configured.ELECTRON_RUN_AS_NODE, undefined);
+
+  assert.equal(analyzerEnv({}, { CODEMAP_NODE: '/opt/node' }, vscodeNode).CODEMAP_NODE, '/opt/node');
+  assert.equal(analyzerEnv({}, {}, { execPath: '/usr/bin/node', electron: false }).ELECTRON_RUN_AS_NODE, undefined);
 });
 
 test('analyzer arguments follow the settings', () => {

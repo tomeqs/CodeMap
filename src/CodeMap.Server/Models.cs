@@ -52,6 +52,9 @@ public sealed class RecentProject
     public AnalysisSettings Settings { get; set; } = new();
     public string Key { get; set; } = "";
     public Dictionary<string, int> Stats { get; set; } = new();
+
+    /// <summary>Ids of the languages in the map (csharp, typescript…).</summary>
+    public List<string>? Languages { get; set; }
 }
 
 public sealed class UiServerOptions
