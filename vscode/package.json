@@ -2,7 +2,7 @@
   "name": "codemap-3d",
   "displayName": "CodeMap 3D",
   "description": "Interactive 3D map of your C# and TypeScript / JavaScript code: dependencies, architecture layers, DI lifetimes, call flows and sequence diagrams, one click away from the code.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "publisher": "tomeqs",
   "license": "MIT",
   "repository": {
