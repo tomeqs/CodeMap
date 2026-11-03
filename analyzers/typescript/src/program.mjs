@@ -1,7 +1,19 @@
 import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { packageName } from './ids.mjs';
-import { isSource } from './discover.mjs';
+import { isSource, toPosix } from './discover.mjs';
+
+const CODE = /\.d\.[cm]?ts$|\.[cm]?[jt]sx?$/;
+
+/**
+ * Where the source of a built path is: dist/server.js → src/server.ts. Only the first folder within the
+ * package is replaced, never a folder above it (a checkout in /opt/build/…).
+ */
+function sourceBase(dir, path) {
+  const rel = relative(dir, path);
+  const mapped = rel.replace(/^(dist|build|lib|out)([\\/])/, 'src$2');
+  return mapped === rel ? null : join(dir, mapped).replace(CODE, '');
+}
 
 /**
  * Compiler options of a package: its tsconfig.json / jsconfig.json (or the nearest one above, up to the
@@ -49,10 +61,22 @@ export function compilerOptions(ts, projectDir, root) {
  * with one the link leads to built .d.ts files rather than the code.
  */
 export class Resolver {
-  constructor(ts, packages) {
+  /** @param isAnalyzed whether a file is one the analysis reads: a package's sources beat its built output. */
+  constructor(ts, packages, isAnalyzed = () => false) {
     this.ts = ts;
     this.packages = packages;
+    this.isAnalyzed = isAnalyzed;
     this.cache = new Map();
+  }
+
+  /**
+   * The first candidate that is an analyzed file, else the first that exists. With forward slashes, as the
+   * compiler writes file names (and as the analysis keys its files), also on Windows.
+   */
+  pick(candidates) {
+    const existing = candidates.filter((c) => isSource(c) && existsSync(c));
+    const file = existing.find(this.isAnalyzed) ?? existing[0];
+    return file ? toPosix(file) : null;
   }
 
   resolve(specifier, containingFile, options, mode) {
@@ -72,14 +96,13 @@ export class Resolver {
   /** The source behind a path package.json gives (main: dist/server.js → src/server.ts). */
   sourceFor(dir, field) {
     const path = resolve(dir, field);
-    const bases = [path.replace(/\.d\.[cm]?ts$|\.[cm]?[jt]sx?$/, ''), path.replace(/[\\/](dist|build|lib|out)[\\/]/, '/src/').replace(/\.d\.[cm]?ts$|\.[cm]?[jt]sx?$/, '')];
+    const bases = [path.replace(CODE, ''), sourceBase(dir, path)].filter(Boolean);
+    const candidates = [path];
     for (const base of bases) {
-      for (const candidate of [path, ...['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'].map((e) => base + e), join(base, 'index.ts'), join(base, 'index.js')]) {
-        if (isSource(candidate) && existsSync(candidate)) return candidate;
-      }
+      candidates.push(...['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'].map((e) => base + e), join(base, 'index.ts'), join(base, 'index.js'));
     }
 
-    return null;
+    return this.pick(candidates);
   }
 
   /** The source file a workspace package import means: `@shop/domain` → packages/domain/src/index.ts. */
@@ -95,19 +118,20 @@ export class Resolver {
       for (const field of [pkg.json.source, pkg.json.types, pkg.json.typings, pkg.json.module, pkg.json.main]) {
         if (typeof field !== 'string') continue;
         const path = resolve(pkg.dir, field);
-        bases.push(path.replace(/\.d\.[cm]?ts$|\.[cm]?jsx?$/, ''), path.replace(/[\\/](dist|build|lib|out)[\\/]/, '/src/').replace(/\.d\.[cm]?ts$|\.[cm]?jsx?$/, ''));
+        bases.push(path.replace(CODE, ''));
+        const source = sourceBase(pkg.dir, path);
+        if (source) bases.push(source);
       }
 
       bases.push(join(pkg.dir, 'src', 'index'), join(pkg.dir, 'index'), join(pkg.dir, 'lib', 'index'));
     }
 
+    const candidates = [];
     for (const base of bases) {
-      for (const candidate of [base, ...['.ts', '.tsx', '.mts', '.js', '.jsx', '.mjs'].map((e) => base + e), ...['.ts', '.tsx', '.js'].map((e) => join(base, 'index' + e))]) {
-        if (isSource(candidate) && existsSync(candidate)) return candidate;
-      }
+      candidates.push(base, ...['.ts', '.tsx', '.mts', '.js', '.jsx', '.mjs'].map((e) => base + e), ...['.ts', '.tsx', '.js'].map((e) => join(base, 'index' + e)));
     }
 
-    return null;
+    return this.pick(candidates);
   }
 }
 

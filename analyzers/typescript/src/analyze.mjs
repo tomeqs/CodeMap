@@ -66,16 +66,19 @@ export function analyze(ts, request, log = () => {}) {
     project.analyzedFiles = analyzed;
     const json = project.json;
     const manifestFile = join(project.dir, 'package.json');
+    // A folder inside a package: its package.json is above the root, where the map has no files.
+    const manifestRel = toPosix(relative(root, manifestFile));
+    const manifestInside = !manifestRel.startsWith('../') && manifestRel !== '..';
     const allTests = analyzed.length > 0 && analyzed.every((f) => files.get(toPosix(f)).isTest);
     const tags = [...(allTests ? ['test-project'] : []), ...(json.bin ? ['entrypoint'] : [])];
     graph.addNode({
       id,
       kind: 'project',
       name: project.name,
-      fullName: project.hasPackageJson ? toPosix(relative(root, manifestFile)) : toPosix(relative(root, project.dir)) || '.',
+      fullName: project.hasPackageJson ? (manifestInside ? manifestRel : project.name) : toPosix(relative(root, project.dir)) || '.',
       project: id,
       signature: [json.version, json.type === 'module' ? 'ESM' : json.type === 'commonjs' ? 'CommonJS' : null, project.hasPackageJson ? null : 'no package.json'].filter(Boolean).join(' · ') || undefined,
-      location: project.hasPackageJson && existsSync(manifestFile) ? { file: toPosix(relative(root, manifestFile)), line: 1, endLine: 1 } : undefined,
+      location: project.hasPackageJson && manifestInside && existsSync(manifestFile) ? { file: manifestRel, line: 1, endLine: 1 } : undefined,
       tags: tags.length ? tags : undefined,
       metrics: { files: analyzed.length, lines },
     });
@@ -92,7 +95,7 @@ export function analyze(ts, request, log = () => {}) {
   }
 
   const sourceCache = new Map();
-  const resolver = new Resolver(ts, packages);
+  const resolver = new Resolver(ts, packages, (file) => files.has(toPosix(file)));
   const shared = { di: { registrations: [], dependencies: [] }, claimed: new Map(), nestScopes: new Map(), express: { routers: new Map(), mounts: new Map(), routes: [] } };
   projects.forEach((project, i) => {
     if (!project.analyzedFiles.length) return;

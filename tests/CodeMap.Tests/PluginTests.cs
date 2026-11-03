@@ -66,13 +66,14 @@ public class PluginTests
     [NodeFact]
     public void A_plugin_takes_files_it_names_and_folders_with_its_project_files()
     {
-        using var ws = new TestWorkspace().File("x/stub.json", "{}").File("x/a.stub", "").File("y/loose.stub", "").File("z/skipped/stub.json", "").File("z/skipped/b.stub", "");
+        using var ws = new TestWorkspace().File("x/stub.json", "{}").File("x/a.stub", "").File("x/src/c.stub", "").File("y/loose.stub", "").File("z/skipped/stub.json", "").File("z/skipped/b.stub", "");
         var (_, stub) = Stub();
 
         Assert.True(stub.CanAnalyzeFile(Path.Combine(ws.Root, "y/loose.stub")));
         Assert.False(stub.CanAnalyzeFile(Path.Combine(ws.Root, "x/stub.json")));
         Assert.True(stub.Detect(ws.Root, CancellationToken.None));
         Assert.True(stub.Detect(Path.Combine(ws.Root, "x"), CancellationToken.None));
+        Assert.True(stub.Detect(Path.Combine(ws.Root, "x", "src"), CancellationToken.None)); // its project file is above it
         Assert.False(stub.Detect(Path.Combine(ws.Root, "y"), CancellationToken.None)); // sources without a project file
         Assert.False(stub.Detect(Path.Combine(ws.Root, "z"), CancellationToken.None)); // only in an ignored folder
     }
@@ -195,6 +196,11 @@ public class PluginTests
         Assert.Equal("typescript", graph.Node("ts:project:basic").Language);
         Assert.Equal(new[] { "File", "Files" }, graph.Source.Languages![0].Levels.Type);
         Assert.Equal("src/orders/orders.service.ts", graph.Node(service).Location!.File);
+
+        // A folder inside the package maps with the package's ids, and locations relative to the folder.
+        var orders = CodeMapAnalyzer.Analyze(Path.Combine(fixture, "src", "orders"), registry, NoGit);
+        Assert.Equal("orders.service.ts", orders.Node(service).Location!.File);
+        Assert.Equal("ts:project:basic", Assert.Single(orders.Nodes, n => n.Kind == NodeKinds.Project).Id);
     }
 
     [NodeFact(typescript: true)]
