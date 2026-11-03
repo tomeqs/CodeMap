@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <Version>0.2.2</Version>
+    <Version>0.2.3</Version>
     <Authors>CodeMap contributors</Authors>
     <Copyright>Copyright (c) 2026 CodeMap contributors</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
