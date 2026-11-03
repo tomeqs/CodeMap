@@ -3,9 +3,9 @@
 **A code map for C# and TypeScript / JavaScript**: an analyzer (Roslyn for C#, the TypeScript compiler API in a plugin
 for TypeScript and JavaScript, more languages as [plugins](docs/plugins.md)) that turns code into a graph of relationships
 (classes, interfaces, methods, functions, calls, imports, inheritance, dependency injection…), and an interactive
-**3D map** with five views: *Galaxy* (a force-directed graph in space), *City* (a code city where types are buildings),
-*Layers* (architecture layers computed from the code), *DI* (the dependency injection container with service lifetimes)
-and *Flow* (the call flow from an entry point, with a sequence diagram).
+**3D map** with six views: *Galaxy* (a force-directed graph in space), *City* (a code city where types are buildings),
+*Layers* (architecture layers computed from the code), *DI* (the dependency injection container with service lifetimes),
+*Flow* (the call flow from an entry point, with a sequence diagram) and *Matrix* (a dependency structure matrix in 3D).
 
 ```
 codemap MySolution.sln            →  MySolution.codemap.json   (the graph: a format for further processing)
@@ -321,6 +321,14 @@ Other formats:
   The **sequence diagram** shows the same flow as participants (types) and messages (`alt` for several possible implementations, `loop` for `IEnumerable<T>`).
   It can be copied as **Mermaid** (paste it into GitHub, GitLab, Notion or docs) or downloaded as `.mmd` / `.svg`.
   You choose the entry point in Insights (*Entry points*), in the list in the view, or with the *Call flow ↘* button on any method.
+* **Matrix**: a dependency structure matrix (DSM) in 3D. The projects, namespaces or types (TypeScript: packages,
+  folders, files) are on both axes in the same order, one tile each on the diagonal, and a column stands in cell
+  (row, column) when the row uses the column: the taller and brighter, the more references. The order puts every cycle
+  in one framed block on the diagonal and the blocks in layers (bands along the diagonal, the bottom layer first),
+  so every dependency that follows the layers is below the diagonal; the ones against them stand above it, in red.
+  Click a tile to light up its row (what it uses) and column (who uses it), a column to select that dependency
+  (the HUD lists what it is made of: calls, injects…); double-click a tile to go into it. Unlike a graph, it stays readable
+  when there are many links. Up to 400 rows; beyond that, drill into a project or namespace.
 * **Auto (semantic zoom)**: instead of switching levels, you just fly the camera. From afar a namespace is one star
   in the middle of its types. As you get closer it unfolds into its types, and the nearest types into their members (methods, properties, fields).
   Moving away folds everything back. The layout is computed once, so the map doesn't rearrange, and search flies to a member hidden in a folded type by itself.
@@ -334,7 +342,7 @@ Other formats:
 * **DI lifetime** colour in every view (namespaces and projects get the dominant lifetime of their types),
   and *Dependency injection* and *Changes together with* sections in the details panel.
 * Filters for relationship kinds, projects, tests, external types, minimum link strength.
-* Search (`/`), shortcuts: `1`–`4` level, `Z` semantic zoom, `G`/`C`/`L`/`D`/`E` view (Galaxy, City, Layers, DI, Flow), `F` fit, `Esc` back.
+* Search (`/`), shortcuts: `1`–`4` level, `Z` semantic zoom, `G`/`C`/`L`/`D`/`E`/`M` view (Galaxy, City, Layers, DI, Flow, Matrix), `F` fit, `Esc` back.
 
 The viewer can also be opened without data: drop any `*.codemap.json` file on it
 or use the `?data=url.json` parameter.
@@ -404,7 +412,7 @@ The mouse cursor (visible in one eye only) is replaced by a ring in the middle o
 | wheel, `+` / `−` | closer / farther |
 | `[` / `]` | smaller / bigger map |
 | `R` | re-centre |
-| `G` `C` `L` `D` `E`, `1`–`4`, `Z` | views and levels as usual |
+| `G` `C` `L` `D` `E` `M`, `1`–`4`, `Z` | views and levels as usual |
 | `Esc` | clears the selection, a second time leaves AR |
 
 The start dialog has: the glasses profile (field of view: 1S 52° on a 16:10 screen, where a 16:9 picture has a band

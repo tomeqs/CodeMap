@@ -439,7 +439,7 @@ export class CityView {
 }
 
 /** The last two parts of a namespace (Shop.Domain.Orders) or folder path (src/orders/api). */
-function shortNamespace(name) {
+export function shortNamespace(name) {
   const separator = name.includes('/') ? '/' : '.';
   const parts = name.split(separator);
   return parts.length > 2 ? '…' + parts.slice(-2).join(separator) : name;

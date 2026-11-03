@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- New **Matrix** view (`M`): a dependency structure matrix in 3D. Who uses whom, layers along the diagonal, cycles as framed blocks, and the dependencies against the layers in red above the diagonal.
+
 ## 0.2.2
 
 - First version on the VS Code Marketplace and Open VSX, as **CodeMap 3D** (`tomeqs.codemap-3d`): the name `codemap` is taken there.

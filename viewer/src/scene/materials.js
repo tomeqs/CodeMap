@@ -71,6 +71,23 @@ export function buildingMaterial() {
 }
 
 /**
+ * Columns of the dependency matrix: plain boxes that glow in their own colour (bright ones, e.g. dependencies
+ * against the layers, catch the bloom) and rise out of the grid one after another when a matrix is built
+ * (`userData.rise`, like the city's buildings).
+ */
+export function columnMaterial(glow = 0.3) {
+  const material = new MeshStandardNodeMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.1 });
+  const rise = uniform(1e6);
+  material.userData.rise = rise;
+  const k = clamp(rise.sub(hash(float(instanceIndex)).mul(RISE_STAGGER)).div(RISE), 0, 1);
+  const height = float(1).sub(float(1).sub(k).pow(3)).mul(0.98).add(0.02);
+  material.positionNode = positionLocal.mul(vec3(1, height, 1));
+  material.userData.glow = uniform(glow);
+  material.emissiveNode = diffuseColor.rgb.mul(material.userData.glow);
+  return material;
+}
+
+/**
  * Round sprites, one instance each, with a size in pixels (or world units with `sizeAttenuation`).
  * WebGPU draws point primitives one pixel wide, so points are instanced quads.
  */

@@ -17,7 +17,10 @@ export class LabelLayer {
     this.eyes = null; // { left: { el, pool }, right: { el, pool } } once stereo was used
   }
 
-  /** items: [{ text, position: Vector3, cls, priority, offsetY }] – highest priority first. */
+  /**
+   * items: [{ text, position: Vector3, cls, priority, offsetY, align }] – highest priority first. `align`:
+   * where the point is on the label ('center' by default, 'right': the label ends there, 'left': starts there).
+   */
   render(items, maxLabels = 120) {
     if (this.stage.stereo) return this.renderStereo(items, maxLabels);
     if (this.eyes) this.hideEyes();
@@ -29,7 +32,7 @@ export class LabelLayer {
       if (!p || p.x < -50 || p.y < -20 || p.x > this.stage.width + 50 || p.y > this.stage.height + 20) continue;
 
       const { width, height } = labelSize(item);
-      const x = p.x - width / 2;
+      const x = p.x - anchor(item, width);
       const y = p.y - (item.offsetY ?? 0) - height;
       if (!item.force && overlaps(placed, x, y, width, height)) continue;
       placed.push({ x, y, w: width, h: height });
@@ -59,12 +62,12 @@ export class LabelLayer {
 
       const size = labelSize(item);
       const width = size.width * squeeze;
-      const x = lx - width / 2;
+      const x = lx - anchor(item, width);
       const y = ly - (item.offsetY ?? 0) - size.height;
       if (!item.force && overlaps(placed, x, y, width, size.height)) continue;
       placed.push({ x, y, w: width, h: size.height });
       show(this.element(eyes.left.pool, eyes.left.el, used), item, x, y, squeeze);
-      show(this.element(eyes.right.pool, eyes.right.el, used), item, right.x - width / 2, right.y - (item.offsetY ?? 0) - size.height, squeeze);
+      show(this.element(eyes.right.pool, eyes.right.el, used), item, right.x - anchor(item, width), right.y - (item.offsetY ?? 0) - size.height, squeeze);
       used++;
     }
 
@@ -106,6 +109,11 @@ export class LabelLayer {
 
     return pool[index];
   }
+}
+
+/** How far left of its point a label starts. */
+function anchor(item, width) {
+  return item.align === 'right' ? width : item.align === 'left' ? 0 : width / 2;
 }
 
 function labelSize(item) {

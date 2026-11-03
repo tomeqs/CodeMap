@@ -2,12 +2,14 @@ import './styles.css';
 import { Stage } from './scene/stage.js';
 import { LabelLayer } from './scene/labels.js';
 import { CodeModel, LEVELS, defaultEdgeKinds } from './data/model.js';
-import { kindColor } from './data/palette.js';
+import { EDGE_KINDS, kindColor } from './data/palette.js';
 import { GalaxyView } from './views/galaxy.js';
 import { CityView } from './views/city.js';
 import { LayeredView } from './views/layered.js';
 import { ZoomView } from './views/zoom.js';
+import { MatrixView } from './views/matrix.js';
 import { computeLayers } from './data/layering.js';
+import { buildMatrix } from './data/matrix.js';
 import { buildDiGraph } from './data/di.js';
 import { buildCallFlow, findEntryPoints } from './data/flow.js';
 import { DetailsPanel } from './ui/details.js';
@@ -35,7 +37,9 @@ const maxUnits = () => {
 };
 const NEXT_LEVEL = { project: 'namespace', namespace: 'type', type: 'member' };
 /** Views that show one level of detail at a time (the level buttons apply). */
-const LEVEL_VIEWS = new Set(['galaxy', 'layers']);
+const LEVEL_VIEWS = new Set(['galaxy', 'layers', 'matrix']);
+/** Rows of the dependency matrix: beyond this the names can't be read (and the cells are N²). */
+const MATRIX_MAX = 400;
 
 class App {
   constructor() {
@@ -72,7 +76,7 @@ class App {
     const model = perf.time('model', () => new CodeModel(doc));
     this.view?.deactivate();
     // A new graph gets new views: free the GPU memory of the old ones.
-    for (const view of [this.galaxy, this.city, this.layers, this.diView, this.flowView, this.zoomView]) view?.dispose();
+    for (const view of [this.galaxy, this.city, this.layers, this.diView, this.flowView, this.zoomView, this.matrix]) view?.dispose();
     this.sequence.hide();
     this.model = model;
     this.entryPoints = null;
@@ -85,6 +89,7 @@ class App {
     this.flowView.radiusScale = 2.4;
     this.zoomView = new ZoomView(this.stage, model, this.labels);
     this.zoomView.onUnitsChanged = () => this.onZoomUnits();
+    this.matrix = new MatrixView(this.stage, model, this.labels);
     this.applyModelWords(model);
 
     const typeCount = model.nodes.filter((n) => n.level === 'type' && !n.external).length;
@@ -108,6 +113,7 @@ class App {
       allArcs: false,
       flowRoots: [],
       flowDepth: 8,
+      matrixHeight: 'log',
       semantic: false,
     };
 
@@ -153,7 +159,7 @@ class App {
 
     this.model = model;
     this.entryPoints = null;
-    for (const view of [this.galaxy, this.city, this.layers, this.diView, this.flowView, this.zoomView]) view.model = model;
+    for (const view of [this.galaxy, this.city, this.layers, this.diView, this.flowView, this.zoomView, this.matrix]) view.model = model;
     this.applyModelWords(model);
     const s = this.state;
     if (s.view === 'di' && !model.doc.analysis?.di) {
@@ -171,9 +177,11 @@ class App {
 
     for (const view of [this.galaxy, this.layers, this.diView, this.flowView, this.zoomView]) view.userMoved = true; // keep the camera where the user left it
     this.city.keepCamera = true;
+    this.matrix.keepCamera = true;
     this.sidebar.render();
     this.rebuild();
     this.city.keepCamera = false;
+    this.matrix.keepCamera = false;
     if (this.selection) this.details.show(model.get(this.selection.nodeId), this.selection.unitId ? model.get(this.selection.unitId)?.level : undefined);
 
     const changes = [added && `+${added}`, removed && `−${removed}`].filter(Boolean).join(' / ');
@@ -269,7 +277,7 @@ class App {
   activateView() {
     this.view?.deactivate();
     const galaxy = this.state.semantic ? this.zoomView : this.galaxy;
-    this.view = { galaxy, city: this.city, layers: this.layers, di: this.diView, flow: this.flowView }[this.state.view] ?? galaxy;
+    this.view = { galaxy, city: this.city, layers: this.layers, di: this.diView, flow: this.flowView, matrix: this.matrix }[this.state.view] ?? galaxy;
     this.view.activate();
     this.applyOptions();
     document.querySelectorAll('#view-toggle button').forEach((b) => b.classList.toggle('active', b.dataset.view === this.state.view));
@@ -307,6 +315,7 @@ class App {
     const s = this.state;
     for (const view of [this.galaxy, this.layers, this.diView, this.flowView, this.zoomView]) view.setOptions({ flowAll: s.flowAll, labels: s.labels, autoRotate: s.autoRotate, particles: s.particles });
     this.city.setOptions({ allArcs: s.allArcs, labels: s.labels, particles: s.particles });
+    this.matrix.setOptions({ labels: s.labels });
   }
 
   setView(view) {
@@ -417,6 +426,20 @@ class App {
       }));
       this.layerStats = { layers: result.count, upward: result.upward.size };
       this.layers.build(units, links, s, { layerOf: result.layerOf, layers });
+    } else if (s.view === 'matrix') {
+      const units = model.units(s);
+      if (units.length > MATRIX_MAX && s.level !== 'project') {
+        this.toast(`${fmt(units.length)} ${this.levelWord(s.level)} are too many rows for a matrix – drill into a ${this.levelWord('project', 1)} or ${this.levelWord('namespace', 1)} first.`);
+        s.level = LEVELS[Math.max(0, LEVELS.indexOf(s.level) - 1)];
+        return this.rebuild();
+      }
+
+      // As for the layers: change coupling is not a dependency.
+      const dependencyKinds = new Set([...s.edgeKinds].filter((k) => k !== 'changesWith'));
+      const { links } = model.aggregate(units, { ...s, edgeKinds: dependencyKinds });
+      const layout = buildMatrix(units, links, computeLayers(units.map((u) => u.id), links));
+      this.matrixStats = { layers: layout.levels.length, upward: layout.cells.filter((c) => c.upward).length, cycles: layout.blocks.length };
+      this.matrix.build(units, links, s, layout);
     } else if (s.view === 'di') {
       const graph = buildDiGraph(model, s);
       if (!graph) {
@@ -852,6 +875,12 @@ class App {
       lines.unshift(`${layers} layers · ${upward ? `${upward} upward dependenc${upward === 1 ? 'y' : 'ies'} (red)` : 'no upward dependencies'}`);
     }
 
+    if (view === 'matrix' && this.matrixStats) {
+      const { layers, upward, cycles } = this.matrixStats;
+      const against = upward ? `${upward} against the layers (red)` : 'nothing against the layers';
+      lines.unshift(`${layers} layer${layers === 1 ? '' : 's'} · ${against} · ${cycles ? `${cycles} cycle${cycles === 1 ? '' : 's'}` : 'no cycles'}`);
+    }
+
     if (view === 'di' && this.diStats) {
       const { errors, warnings, notes } = this.diStats;
       const problems = errors || warnings ? `${errors} lifetime error(s) · ${warnings} warning(s)` : 'No DI problems found';
@@ -986,6 +1015,7 @@ class App {
       else if (e.key === 'l' || e.key === 'L') this.setView('layers');
       else if (e.key === 'd' || e.key === 'D') this.setView('di');
       else if (e.key === 'e' || e.key === 'E') this.setView('flow');
+      else if (e.key === 'm' || e.key === 'M') this.setView('matrix');
       else if (e.key === 'z' || e.key === 'Z') this.setLevel(this.state.semantic && this.state.view === 'galaxy' ? 'type' : 'auto');
       else if (e.key === 'f' || e.key === 'F') this.view.fit(true);
       else if (e.key === 'Escape') {
@@ -1003,7 +1033,33 @@ class App {
     if (!this.view) return;
     // AR glasses: the mouse pointer is hidden; the reticle in the middle of the view picks.
     if (this.ar.active) return this.ar.selectAtReticle();
+    // Matrix: a click on a dependency's column selects that dependency.
+    if (this.view.pickAt) {
+      const hit = this.view.pickAt(e);
+      if (hit?.cell) return this.selectCell(hit.cell);
+      return this.handleClickOn(hit?.unit?.id ?? null, e);
+    }
+
     this.handleClickOn(this.view.pick(e), e);
+  }
+
+  /** Matrix: both ends of a dependency and the link between them, with what the dependency is made of. */
+  selectCell(cell) {
+    this.showPath(cell.source, cell.target);
+    this.statusLine = `${this.cellTitle(cell)}: ${this.cellKinds(cell)}${cell.upward ? ' · against the layers' : ''}`;
+    this.updateHud();
+  }
+
+  cellTitle(cell) {
+    return `${shortName(this.model.get(cell.source))} → ${shortName(this.model.get(cell.target))}`;
+  }
+
+  /** "7 calls · 3 injects", strongest first. */
+  cellKinds(cell) {
+    return Object.entries(cell.link.kinds ?? { [cell.kind]: cell.weight })
+      .sort((a, b) => b[1] - a[1])
+      .map(([kind, weight]) => `${fmt(weight)} ${EDGE_KINDS[kind]?.label ?? kind}`)
+      .join(' · ');
   }
 
   /** A click on the unit `id` (null: on nothing): select it, or (Shift / path pending) show the path to it. */
@@ -1028,7 +1084,18 @@ class App {
       return;
     }
 
-    const id = this.view.pick(e);
+    let id;
+    if (this.view.pickAt) {
+      const hit = this.view.pickAt(e);
+      this.view.setHoveredCell(hit?.cell ?? null);
+      if (hit?.cell) {
+        this.stage.canvas.style.cursor = 'pointer';
+        return this.showCellTooltip(hit.cell, e);
+      }
+
+      id = hit?.unit?.id ?? null;
+    } else id = this.view.pick(e);
+
     this.view.setHovered(id);
     this.stage.canvas.style.cursor = id ? 'pointer' : '';
     if (!id) {
@@ -1052,6 +1119,21 @@ class App {
       parts.length ? h('div', { class: 't-metrics' }, parts.join(' · ')) : null,
       node.tags.length ? h('div', { class: 't-metrics' }, node.tags.slice(0, 4).join(' · ')) : null,
     ].filter(Boolean));
+    this.placeTooltip(e);
+  }
+
+  /** Matrix: the dependency under the pointer. */
+  showCellTooltip(cell, e) {
+    const kindColorOf = cell.upward ? '#ff6b6b' : EDGE_KINDS[cell.kind]?.color ?? '#9fb3c8';
+    clear(this.tooltip).append(
+      h('div', { class: 't-kind', style: { color: kindColorOf } }, cell.upward ? 'dependency · against the layers' : 'dependency'),
+      h('div', { class: 't-name' }, this.cellTitle(cell)),
+      h('div', { class: 't-metrics' }, this.cellKinds(cell)),
+    );
+    this.placeTooltip(e);
+  }
+
+  placeTooltip(e) {
     this.tooltip.classList.remove('hidden');
     const x = Math.min(e.clientX + 16, window.innerWidth - this.tooltip.offsetWidth - 8);
     const y = Math.min(e.clientY + 16, window.innerHeight - this.tooltip.offsetHeight - 8);

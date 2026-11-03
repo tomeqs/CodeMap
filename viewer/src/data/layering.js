@@ -8,7 +8,9 @@
  *
  * @param {string[]} nodes
  * @param {{source:string, target:string, weight:number}[]} links  source depends on target
- * @returns {{ layerOf: Map<string, number>, count: number, upward: Set<object> }}
+ * @returns {{ layerOf: Map<string, number>, count: number, upward: Set<object>, order: string[], components: string[][] }}
+ *   order: every node, users before what they use (cycles kept together, in the order that cuts the fewest links);
+ *   components: the cycles (strongly connected components of more than one node), in that order.
  */
 export function computeLayers(nodes, links) {
   const ids = [...new Set(nodes)].sort();
@@ -82,7 +84,7 @@ export function computeLayers(nodes, links) {
     }
   }
 
-  const order = orderNodes(graph);
+  const { order, components } = orderNodes(graph);
   const position = new Int32Array(n);
   order.forEach((v, i) => (position[v] = i));
 
@@ -119,7 +121,11 @@ export function computeLayers(nodes, links) {
   const upward = new Set();
   for (let k = 0; k < L; k++) if (linkSource[k] >= 0 && layer[linkTarget[k]] >= layer[linkSource[k]]) upward.add(links[k]);
 
-  return { layerOf, count, upward };
+  const cycles = components
+    .filter((members) => members.length > 1)
+    .map((members) => [...members].sort((a, b) => position[a] - position[b]).map((v) => ids[v]))
+    .sort((a, b) => position[at.get(a[0])] - position[at.get(b[0])]);
+  return { layerOf, count, upward, order: order.map((v) => ids[v]), components: cycles };
 }
 
 function orderNodes(graph) {
@@ -154,7 +160,7 @@ function orderNodes(graph) {
     for (const c of successors[next]) if (--indegree[c] === 0) ready.push(c);
   }
 
-  return order;
+  return { order, components };
 }
 
 /**
