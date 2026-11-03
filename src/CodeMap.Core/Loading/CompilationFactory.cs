@@ -178,16 +178,20 @@ public sealed class CompilationFactory
     private static string? GlobalUsingsSource(ProjectInfo project)
     {
         // The SDK writes the exact list to obj/**/<Project>.GlobalUsings.g.cs – prefer it when the project was built.
+        // A build running at the same time may delete obj/ under us, or a folder in it may be unreadable: then
+        // fall back to the usings worked out below rather than stopping the analysis.
         var objDir = Path.Combine(project.Directory, "obj");
         if (!project.IsVirtual && Directory.Exists(objDir))
         {
-            var generated = Directory.EnumerateFiles(objDir, "*.GlobalUsings.g.cs", SearchOption.AllDirectories)
-                .OrderByDescending(File.GetLastWriteTimeUtc)
-                .FirstOrDefault();
-            if (generated != null)
+            try
             {
-                try { return File.ReadAllText(generated); }
-                catch (IOException) { }
+                var generated = Directory.EnumerateFiles(objDir, "*.GlobalUsings.g.cs", SearchOption.AllDirectories)
+                    .OrderByDescending(File.GetLastWriteTimeUtc)
+                    .FirstOrDefault();
+                if (generated != null) return File.ReadAllText(generated);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
             }
         }
 

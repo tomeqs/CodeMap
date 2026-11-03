@@ -8,6 +8,110 @@ namespace CodeMap.Tests;
 
 public class LoaderTests
 {
+    private static string[] Sources(TestWorkspace ws, string project) =>
+        ProjectLoader.ReadProject(Path.Combine(ws.Root, project)).SourceFiles
+            .Select(f => Path.GetRelativePath(ws.Root, f).Replace('\\', '/')).Order(StringComparer.Ordinal).ToArray();
+
+    [Fact]
+    public void Compile_items_follow_their_conditions_for_the_target_framework()
+    {
+        using var ws = new TestWorkspace()
+            .File("Lib/Lib.csproj", """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup><TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks></PropertyGroup>
+                  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'"><Compile Remove="Modern/**" /></ItemGroup>
+                  <ItemGroup Condition=" '$(TargetFramework)' != 'netstandard2.0' "><Compile Remove="Legacy/**" /></ItemGroup>
+                  <ItemGroup><Compile Remove="Generated/**" Condition="'$(Configuration)' == 'Debug' and '$(TargetFramework)' == 'net8.0'" /></ItemGroup>
+                </Project>
+                """)
+            .File("Lib/Core.cs", "class Core { }")
+            .File("Lib/Modern/A.cs", "class A { }")
+            .File("Lib/Legacy/B.cs", "class B { }")
+            .File("Lib/Generated/G.cs", "class G { }");
+
+        // net8.0 is the framework we compile for: its removals apply, the netstandard2.0 ones don't.
+        Assert.Equal(new[] { "Lib/Core.cs", "Lib/Modern/A.cs" }, Sources(ws, "Lib/Lib.csproj"));
+    }
+
+    [Fact]
+    public void A_compile_include_after_a_remove_brings_the_file_back()
+    {
+        using var ws = new TestWorkspace()
+            .File("Lib/Lib.csproj", """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+                  <ItemGroup>
+                    <Compile Remove="Legacy/**" />
+                    <Compile Include="Legacy/Shim.cs" />
+                    <Compile Include="../Shared/**/*.cs" Exclude="../Shared/Old/**" />
+                  </ItemGroup>
+                </Project>
+                """)
+            .File("Lib/Core.cs", "class Core { }")
+            .File("Lib/Legacy/Old.cs", "class Old { }")
+            .File("Lib/Legacy/Shim.cs", "class Shim { }")
+            .File("Shared/Util.cs", "class Util { }")
+            .File("Shared/Old/Gone.cs", "class Gone { }");
+
+        Assert.Equal(new[] { "Lib/Core.cs", "Lib/Legacy/Shim.cs", "Shared/Util.cs" }, Sources(ws, "Lib/Lib.csproj"));
+    }
+
+    [Theory]
+    [InlineData("EnableDefaultItems")]
+    [InlineData("EnableDefaultCompileItems")]
+    public void Without_default_items_only_the_listed_files_are_compiled(string property)
+    {
+        using var ws = new TestWorkspace()
+            .File("Lib/Lib.csproj", $"""
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup><TargetFramework>net8.0</TargetFramework><{property}>false</{property}></PropertyGroup>
+                  <ItemGroup><Compile Include="Src/A.cs" /></ItemGroup>
+                </Project>
+                """)
+            .File("Lib/Src/A.cs", "class A { }")
+            .File("Lib/Src/Other.cs", "class Other { }");
+
+        Assert.Equal(new[] { "Lib/Src/A.cs" }, Sources(ws, "Lib/Lib.csproj"));
+    }
+
+    [Fact]
+    public void An_unreadable_folder_in_a_project_is_skipped_not_the_project()
+    {
+        // root reads everything and Windows has no Unix modes: nothing to check there.
+        if (OperatingSystem.IsWindows() || Environment.UserName == "root") return;
+        using var ws = new TestWorkspace()
+            .Project("App")
+            .File("App/Code.cs", "namespace App; public class Kept { }")
+            .File("App/data/postgres/readme.txt", "");
+        var locked = Path.Combine(ws.Root, "App", "data", "postgres");
+        File.SetUnixFileMode(locked, UnixFileMode.None);
+        try
+        {
+            Assert.Equal(new[] { "App/Code.cs" }, Sources(ws, "App/App.csproj"));
+        }
+        finally
+        {
+            File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
+    [Theory]
+    [InlineData("'$(TargetFramework)' == 'net8.0'", true)]
+    [InlineData("'$(TargetFramework)'=='NET8.0'", true)]
+    [InlineData("'$(TargetFramework)' != 'net8.0'", false)]
+    [InlineData("'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'", true)]
+    [InlineData("$(TargetFramework) == 'net8.0' and ('$(Missing)' == '' or false)", true)]
+    [InlineData("!('$(Configuration)' == 'Release')", true)]
+    [InlineData("Exists('foo.props')", null)]
+    [InlineData("'$(TargetFramework.StartsWith(net))' == 'true'", null)]
+    [InlineData("'@(Compile)' != ''", null)]
+    [InlineData("", true)]
+    public void Simple_msbuild_conditions_are_evaluated(string condition, bool? expected)
+    {
+        var properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["TargetFramework"] = "net8.0", ["Configuration"] = "Debug", ["Platform"] = "AnyCPU" };
+        Assert.Equal(expected, MsBuildCondition.Evaluate(condition, key => properties.GetValueOrDefault(key)));
+    }
+
     [Fact]
     public void Reads_solution_and_respects_compile_removals_and_nested_projects()
     {
