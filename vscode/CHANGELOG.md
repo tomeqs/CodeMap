@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- C# maps are more accurate:
+  - Dependencies that were missing now show up: generic arguments of base types (`IRepository<Order>`), property patterns (`is { Status: … }`), and code under `#if NET6_0_OR_GREATER` or similar SDK symbols. `nameof(Method)` no longer counts as a call.
+  - Project files are read the way MSBuild reads them: `Compile` `Remove`/`Include` in order, conditions on the target framework, `EnableDefaultItems=false`. An unreadable subfolder, or a build running at the same time, no longer drops a project.
+  - DI: `TryAdd*` of a service that is already registered is ignored, as in the container. Keyed services match `[FromKeyedServices]`. `AddDbContext`'s lifetime argument is applied, and `AddSingleton(typeof(I), instance)` is read correctly. An override after `AddServiceDefaults()`-style extensions in another file wins. Each call of a fluent chain has its own line.
+
 ## 0.2.3
 
 - New **Matrix** view (`M`): a dependency structure matrix in 3D. Who uses whom, layers along the diagonal, cycles as framed blocks, and the dependencies against the layers in red above the diagonal.
