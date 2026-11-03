@@ -119,13 +119,15 @@ internal sealed class ReferenceWalker : CSharpSyntaxWalker
 
         if (DiRegistrationDetector.TryDetect(node, _model) is { } registration)
         {
-            var span = node.GetLocation().GetLineSpan();
+            // The line of the method name, not of the start of the call: in a fluent chain spread over
+            // several lines, every call starts where the chain starts.
+            var name = DiRegistrationDetector.MethodName(node)!;
             _builder.AddRegistration(registration, _source, new SourceLocation
             {
                 File = RelativePath,
-                Line = span.StartLinePosition.Line + 1,
-                EndLine = span.EndLinePosition.Line + 1,
-            });
+                Line = name.GetLocation().GetLineSpan().StartLinePosition.Line + 1,
+                EndLine = node.GetLocation().GetLineSpan().EndLinePosition.Line + 1,
+            }, name.SpanStart);
         }
 
         base.VisitInvocationExpression(node);

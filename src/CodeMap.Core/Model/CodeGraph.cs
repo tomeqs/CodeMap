@@ -305,6 +305,10 @@ public sealed class DiDependency
 
     public bool Optional { get; set; }
 
+    /// <summary>[FromKeyedServices(key)]: the service is asked for under this key, only a registration with that key matches.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Key { get; set; }
+
     /// <summary>Implementations the container would inject (empty when the service is not registered).</summary>
     public List<string> Implementations { get; set; } = new();
 

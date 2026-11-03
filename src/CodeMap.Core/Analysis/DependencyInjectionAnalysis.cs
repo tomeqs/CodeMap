@@ -100,15 +100,26 @@ internal static class DependencyInjectionAnalysis
 
         if (registrations.Count == 0 && consumers.Count == 0) return false;
 
-        var byService = registrations.GroupBy(r => r.Ident).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        // A keyed registration only serves requests for its key ([FromKeyedServices]), an unkeyed one only plain requests.
+        var byService = registrations.GroupBy(r => (r.Ident, r.Public.Key)).ToDictionary(g => g.Key, g => g.ToList());
         var dependenciesById = rawDependencies
             .GroupBy(d => d.Consumer, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
 
         List<Registration>? Selected(DiDependency dependency) =>
-            byService.TryGetValue(Ident(dependency.Service, dependency.External), out var candidates)
+            byService.TryGetValue((Ident(dependency.Service, dependency.External), dependency.Key), out var candidates)
                 ? dependency.Many ? candidates : new List<Registration> { candidates[^1] } // the last registration wins
                 : null;
+
+        string Unregistered(DiDependency dependency)
+        {
+            var ident = Ident(dependency.Service, dependency.External);
+            if (dependency.Key != null)
+                return $"{Name(dependency.Consumer)} needs {Name(dependency.Service)} under the key \"{dependency.Key}\", but no registration with that key was found in the analyzed code.";
+            var keys = byService.Keys.Where(k => k.Ident == ident && k.Key != null).Select(k => $"\"{k.Key}\"").Distinct().ToList();
+            return keys.Count == 0 ? ""
+                : $"{Name(dependency.Consumer)} needs {Name(dependency.Service)}, but it is only registered under a key ({string.Join(", ", keys)}): ask for it with [FromKeyedServices].";
+        }
 
         static string? ImplementationOf(Registration r) => r.Public.Implementation ?? (r.Public.External ? null : r.Public.Service);
 
@@ -144,6 +155,7 @@ internal static class DependencyInjectionAnalysis
                     External = external,
                     Many = dependency.Many,
                     Optional = dependency.Optional,
+                    Key = dependency.Key,
                     Framework = rules.Framework == DiRules.Microsoft ? null : rules.Framework,
                 };
 
@@ -164,7 +176,9 @@ internal static class DependencyInjectionAnalysis
                 }
                 else if (!dependency.Optional && !dependency.Many)
                 {
-                    di.Issues.Add(rules.Unregistered(consumer, serviceName, byId.GetValueOrDefault(serviceName), Name));
+                    var issue = rules.Unregistered(consumer, serviceName, byId.GetValueOrDefault(serviceName), Name);
+                    if (issue.Kind == "unregistered" && Unregistered(dependency) is { Length: > 0 } message) issue.Message = message;
+                    di.Issues.Add(issue);
                 }
 
                 result.Lifetime = lifetimes.Count == 1 ? lifetimes[0] : lifetimes.Count > 1 ? "mixed" : null;

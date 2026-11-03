@@ -8530,18 +8530,6 @@
     "di": {
       "registrations": [
         {
-          "service": "T:Shop.Api.RequestTimingMiddleware",
-          "implementation": "T:Shop.Api.RequestTimingMiddleware",
-          "lifetime": "singleton",
-          "kind": "type",
-          "registeredIn": "M:Program.{Main}$(System.String[])",
-          "location": {
-            "file": "src/Shop.Api/Program.cs",
-            "line": 7,
-            "endLine": 7
-          }
-        },
-        {
           "service": "T:Shop.Domain.Orders.IOrderRepository",
           "implementation": "T:Shop.Infrastructure.Persistence.InMemoryOrderRepository",
           "lifetime": "singleton",
@@ -8731,6 +8719,18 @@
             "file": "src/Shop.Infrastructure/ServiceCollectionExtensions.cs",
             "line": 34,
             "endLine": 34
+          }
+        },
+        {
+          "service": "T:Shop.Api.RequestTimingMiddleware",
+          "implementation": "T:Shop.Api.RequestTimingMiddleware",
+          "lifetime": "singleton",
+          "kind": "type",
+          "registeredIn": "M:Program.{Main}$(System.String[])",
+          "location": {
+            "file": "src/Shop.Api/Program.cs",
+            "line": 7,
+            "endLine": 7
           }
         }
       ],

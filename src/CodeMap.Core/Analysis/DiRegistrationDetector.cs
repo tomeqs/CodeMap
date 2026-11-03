@@ -5,13 +5,15 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace CodeMap.Analysis;
 
 /// <summary>A service registration recognised in code, still in Roslyn terms.</summary>
+/// <param name="IfMissing">TryAdd*: the container skips it when the service (and key) is already registered.</param>
 internal sealed record RegistrationCandidate(
     ITypeSymbol? Service,
     string? ServiceName,
     ITypeSymbol? Implementation,
     string Lifetime,
     string Kind,
-    string? Key);
+    string? Key,
+    bool IfMissing = false);
 
 /// <summary>
 /// Recognises Microsoft.Extensions.DependencyInjection registrations: AddSingleton/AddScoped/AddTransient
@@ -44,15 +46,29 @@ internal static class DiRegistrationDetector
         ["Transient"] = Transient, ["KeyedTransient"] = Transient,
     };
 
+    /// <summary>What each argument of a registration call is for.</summary>
+    private sealed class Arguments
+    {
+        public ExpressionSyntax? ServiceType;
+        public ExpressionSyntax? ImplementationType;
+        public ExpressionSyntax? Factory;
+        public ExpressionSyntax? Instance;
+        public ExpressionSyntax? Key;
+        public ExpressionSyntax? ContextLifetime;
+    }
+
+    /// <summary>The name of the called method (<c>AddScoped</c> in <c>services.AddScoped&lt;T&gt;()</c>).</summary>
+    public static SimpleNameSyntax? MethodName(InvocationExpressionSyntax node) => node.Expression switch
+    {
+        MemberAccessExpressionSyntax access => access.Name,
+        SimpleNameSyntax simple => simple,
+        MemberBindingExpressionSyntax binding => binding.Name,
+        _ => null,
+    };
+
     public static RegistrationCandidate? TryDetect(InvocationExpressionSyntax node, SemanticModel model)
     {
-        var name = node.Expression switch
-        {
-            MemberAccessExpressionSyntax access => access.Name,
-            SimpleNameSyntax simple => simple,
-            MemberBindingExpressionSyntax binding => binding.Name,
-            _ => null,
-        };
+        var name = MethodName(node);
         if (name == null) return null;
         var methodName = name.Identifier.ValueText;
 
@@ -78,11 +94,16 @@ internal static class DiRegistrationDetector
             return null;
         }
 
+        // TryAddX(...), and services.TryAdd(ServiceDescriptor.X(...)).
+        var ifMissing = methodName.StartsWith("TryAdd", StringComparison.Ordinal)
+                        || (kind == "type" && !Methods.ContainsKey(methodName)
+                            && node.Parent is ArgumentSyntax { Parent: ArgumentListSyntax { Parent: InvocationExpressionSyntax outer } }
+                            && MethodName(outer)?.Identifier.ValueText == "TryAdd");
         var info = model.GetSymbolInfo(node);
         var method = (info.Symbol ?? info.CandidateSymbols.FirstOrDefault()) as IMethodSymbol;
-        var arguments = node.ArgumentList.Arguments.Select(a => a.Expression).ToList();
 
         List<ITypeSymbol?> typeArguments;
+        Arguments arguments;
         if (method != null)
         {
             var definition = method.ReducedFrom ?? method;
@@ -91,8 +112,7 @@ internal static class DiRegistrationDetector
                           || (kind == "dbcontext" && ns.StartsWith("Microsoft.", StringComparison.Ordinal));
             if (!trusted) return null;
             typeArguments = method.TypeArguments.Cast<ITypeSymbol?>().ToList();
-            // Static call form ServiceCollectionServiceExtensions.AddX(services, ...): drop the collection argument.
-            if (method.ReducedFrom == null && method.IsExtensionMethod && arguments.Count > 0) arguments.RemoveAt(0);
+            arguments = ByParameter(node.ArgumentList.Arguments, method.Parameters);
         }
         else
         {
@@ -100,54 +120,173 @@ internal static class DiRegistrationDetector
             typeArguments = name is GenericNameSyntax generic
                 ? generic.TypeArgumentList.Arguments.Select(t => model.GetTypeInfo(t).Type).ToList()
                 : new List<ITypeSymbol?>();
-            if (typeArguments.Count == 0 && !arguments.Any(a => a is TypeOfExpressionSyntax) && arguments.Count != 1) return null;
+            var list = node.ArgumentList.Arguments;
+            if (typeArguments.Count == 0 && !list.Any(a => a.Expression is TypeOfExpressionSyntax) && list.Count != 1) return null;
+            arguments = ByPosition(list, kind, keyed: methodName.Contains("Keyed", StringComparison.Ordinal), generic: typeArguments.Count > 0);
         }
 
-        string? key = null;
-        if (methodName.Contains("Keyed", StringComparison.Ordinal) && arguments.Count > 0)
-        {
-            var constant = model.GetConstantValue(arguments[0]);
-            key = constant.HasValue ? constant.Value?.ToString() : arguments[0].ToString();
-            arguments.RemoveAt(0);
-        }
+        var key = arguments.Key == null ? null : KeyOf(arguments.Key, model);
+        ITypeSymbol? TypeOf(ExpressionSyntax? expression) => expression is TypeOfExpressionSyntax typeOf ? model.GetTypeInfo(typeOf.Type).Type : null;
+        RegistrationCandidate Candidate(ITypeSymbol? service, ITypeSymbol? implementation, string candidateKind, string? serviceName = null) =>
+            new(service, serviceName, implementation, lifetime, candidateKind, key, ifMissing);
 
         switch (kind)
         {
             case "hosted":
-                return typeArguments.Count > 0
-                    ? new RegistrationCandidate(null, "Microsoft.Extensions.Hosting.IHostedService", typeArguments[0], lifetime, kind, key)
-                    : null;
+                return typeArguments.Count > 0 ? Candidate(null, typeArguments[0], kind, "Microsoft.Extensions.Hosting.IHostedService") : null;
             case "dbcontext":
             case "httpclient":
                 if (typeArguments.Count == 0) return null; // AddHttpClient("name") registers no type of ours
-                return new RegistrationCandidate(typeArguments[0], null, typeArguments.Count > 1 ? typeArguments[1] : typeArguments[0], lifetime, kind, key);
+                if (kind == "dbcontext" && LifetimeOf(arguments.ContextLifetime, model) is { } contextLifetime) lifetime = contextLifetime;
+                return Candidate(typeArguments[0], typeArguments.Count > 1 ? typeArguments[1] : typeArguments[0], kind);
         }
 
-        var typeOfs = arguments.OfType<TypeOfExpressionSyntax>().Select(t => model.GetTypeInfo(t.Type).Type).ToList();
-        var factory = arguments.FirstOrDefault(a => a is AnonymousFunctionExpressionSyntax) as AnonymousFunctionExpressionSyntax;
+        var factory = arguments.Factory as AnonymousFunctionExpressionSyntax;
+        var service = typeArguments.Count > 0 ? typeArguments[0] : TypeOf(arguments.ServiceType);
 
         // AddX<IService, Impl>(sp => ...) : the lambda builds Impl, the container does not call its constructor.
-        if (typeArguments.Count >= 2) return new RegistrationCandidate(typeArguments[0], null, typeArguments[1], lifetime, factory != null ? "factory" : "type", key);
-        var instance = arguments.FirstOrDefault(a => a is not (TypeOfExpressionSyntax or AnonymousFunctionExpressionSyntax));
+        if (typeArguments.Count >= 2) return Candidate(typeArguments[0], typeArguments[1], arguments.Factory != null ? "factory" : "type");
 
-        var service = typeArguments.Count == 1 ? typeArguments[0] : typeOfs.FirstOrDefault();
-        if (factory != null)
+        if (arguments.Factory != null)
         {
-            var (implementation, factoryKind) = AnalyzeFactory(factory, model);
+            var (implementation, factoryKind) = factory != null ? AnalyzeFactory(factory, model) : (null, "factory");
             service ??= implementation;
-            return service == null ? null : new RegistrationCandidate(service, null, implementation, lifetime, factoryKind, key);
+            return service == null ? null : Candidate(service, implementation, factoryKind);
         }
 
-        if (typeOfs.Count >= 2) return new RegistrationCandidate(typeOfs[0], null, typeOfs[1], lifetime, "type", key);
+        if (arguments.ImplementationType != null) return service == null ? null : Candidate(service, TypeOf(arguments.ImplementationType), "type");
 
-        if (instance != null && typeOfs.Count == 0)
+        if (arguments.Instance != null)
         {
-            var instanceType = model.GetTypeInfo(instance).Type;
-            if (instanceType == null || instanceType.TypeKind == TypeKind.Error) return service == null ? null : new RegistrationCandidate(service, null, service, lifetime, "instance", key);
-            return new RegistrationCandidate(service ?? instanceType, null, instanceType, lifetime, "instance", key);
+            var instanceType = model.GetTypeInfo(arguments.Instance).Type;
+            if (instanceType == null || instanceType.TypeKind == TypeKind.Error) return service == null ? null : Candidate(service, service, "instance");
+            return Candidate(service ?? instanceType, instanceType, "instance");
         }
 
-        return service == null ? null : new RegistrationCandidate(service, null, service, lifetime, "type", key);
+        return service == null ? null : Candidate(service, service, "type");
+    }
+
+    /// <summary>Arguments of a resolved method, by the name of the parameter they go to (named arguments included).</summary>
+    private static Arguments ByParameter(SeparatedSyntaxList<ArgumentSyntax> list, IReadOnlyList<IParameterSymbol> parameters)
+    {
+        // The static call form ServiceCollectionServiceExtensions.AddX(services, ...) has the collection as
+        // parameter 0, so its argument lands on "services" / "collection" and is ignored.
+        var result = new Arguments();
+        for (var i = 0; i < list.Count; i++)
+        {
+            var argument = list[i];
+            var parameter = argument.NameColon is { } nameColon
+                ? parameters.FirstOrDefault(p => p.Name == nameColon.Name.Identifier.ValueText)
+                : i < parameters.Count ? parameters[i] : null;
+            switch (parameter?.Name)
+            {
+                case "serviceType" or "service": result.ServiceType = argument.Expression; break;
+                case "implementationType": result.ImplementationType = argument.Expression; break;
+                case "implementationFactory": result.Factory = argument.Expression; break;
+                case "implementationInstance" or "instance": result.Instance = argument.Expression; break;
+                case "serviceKey": result.Key = argument.Expression; break;
+                case "contextLifetime": result.ContextLifetime = argument.Expression; break;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Arguments of a call the compiler could not resolve: named ones by their name, the rest by their shape.
+    /// typeof(...) is the service type and then the implementation type, a lambda the factory, any other value
+    /// the instance. A keyed call's key is its first such value (the first argument of a generic one).
+    /// </summary>
+    private static Arguments ByPosition(SeparatedSyntaxList<ArgumentSyntax> list, string kind, bool keyed, bool generic)
+    {
+        var result = new Arguments();
+        var positional = new List<ExpressionSyntax>();
+        foreach (var argument in list)
+        {
+            switch (argument.NameColon?.Name.Identifier.ValueText)
+            {
+                case "serviceType" or "service": result.ServiceType = argument.Expression; break;
+                case "implementationType": result.ImplementationType = argument.Expression; break;
+                case "implementationFactory": result.Factory = argument.Expression; break;
+                case "implementationInstance" or "instance": result.Instance = argument.Expression; break;
+                case "serviceKey": result.Key = argument.Expression; break;
+                case "contextLifetime": result.ContextLifetime = argument.Expression; break;
+                case null: positional.Add(argument.Expression); break;
+            }
+        }
+
+        if (kind == "dbcontext")
+        {
+            // AddDbContext<T>(options, contextLifetime, optionsLifetime): the first lifetime is the context's.
+            result.ContextLifetime ??= positional.FirstOrDefault(a => a is MemberAccessExpressionSyntax { Expression: var type } && type.ToString().EndsWith("ServiceLifetime", StringComparison.Ordinal));
+            return result;
+        }
+
+        static bool IsValue(ExpressionSyntax e) => e is not (TypeOfExpressionSyntax or AnonymousFunctionExpressionSyntax);
+        if (keyed && result.Key == null)
+        {
+            result.Key = generic ? positional.FirstOrDefault() : positional.FirstOrDefault(IsValue);
+            if (result.Key != null) positional.Remove(result.Key);
+        }
+
+        var typeOfs = positional.OfType<TypeOfExpressionSyntax>().ToList();
+        if (typeOfs.Count > 0) result.ServiceType ??= typeOfs[0];
+        if (typeOfs.Count > 1) result.ImplementationType ??= typeOfs[1];
+        result.Factory ??= positional.FirstOrDefault(a => a is AnonymousFunctionExpressionSyntax);
+        result.Instance ??= positional.FirstOrDefault(IsValue);
+        return result;
+    }
+
+    /// <summary>The lifetime a ServiceLifetime argument names; null when it is not a plain ServiceLifetime.X.</summary>
+    private static string? LifetimeOf(ExpressionSyntax? expression, SemanticModel model)
+    {
+        if (expression == null) return null;
+        var member = expression is MemberAccessExpressionSyntax access ? access.Name.Identifier.ValueText : null;
+        var constant = model.GetConstantValue(expression);
+        if (member is not ("Singleton" or "Scoped" or "Transient") && constant is { HasValue: true, Value: int value })
+        {
+            member = value switch { 0 => "Singleton", 1 => "Scoped", 2 => "Transient", _ => null }; // ServiceLifetime's values
+        }
+
+        return member switch
+        {
+            "Singleton" => Singleton,
+            "Scoped" => Scoped,
+            "Transient" => Transient,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// A service key as text, the same for the registration and for [FromKeyedServices]: a string as itself,
+    /// an enum member as Type.Member, other constants by value, anything else as written. Null is no key.
+    /// </summary>
+    private static string? KeyOf(ExpressionSyntax expression, SemanticModel model)
+    {
+        var constant = model.GetConstantValue(expression);
+        return constant.HasValue ? KeyText(constant.Value, model.GetTypeInfo(expression).Type) : expression.ToString();
+    }
+
+    /// <summary>The key of a <c>[FromKeyedServices(key)]</c> parameter; null for none.</summary>
+    public static string? KeyOf(IParameterSymbol parameter)
+    {
+        var attribute = parameter.GetAttributes().FirstOrDefault(a => a.AttributeClass is { Name: "FromKeyedServicesAttribute" } type
+            && type.ContainingNamespace?.ToDisplayString() == "Microsoft.Extensions.DependencyInjection");
+        if (attribute == null || attribute.ConstructorArguments.Length == 0) return null;
+        var argument = attribute.ConstructorArguments[0];
+        return argument.Kind == TypedConstantKind.Array ? null : KeyText(argument.Value, argument.Type);
+    }
+
+    private static string? KeyText(object? value, ITypeSymbol? type)
+    {
+        if (value == null) return null;
+        if (type is INamedTypeSymbol { TypeKind: TypeKind.Enum } enumType)
+        {
+            var member = enumType.GetMembers().OfType<IFieldSymbol>().FirstOrDefault(f => f.HasConstantValue && Equals(f.ConstantValue, value));
+            if (member != null) return enumType.Name + "." + member.Name;
+        }
+
+        return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>sp => new X(...) is a factory for X; sp => sp.GetRequiredService&lt;X&gt;() forwards to X's registration.</summary>

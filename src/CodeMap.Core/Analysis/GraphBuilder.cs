@@ -33,10 +33,13 @@ internal sealed class GraphBuilder
     private readonly record struct EdgeKey(string Source, string Target, string Kind);
 
     /// <summary>A DI registration; services are identified by symbol key, or "ext:FullName" for framework types.</summary>
-    internal sealed record RegistrationDraft(string ServiceIdent, string? ImplementationKey, string Lifetime, string Kind, string? Key, string? SourceKey, SourceLocation Location);
+    /// <param name="Position">Offset of the method name in its file: orders registrations on one line.</param>
+    /// <param name="IfMissing">TryAdd*: skipped when the service and key are already registered.</param>
+    internal sealed record RegistrationDraft(string ServiceIdent, string? ImplementationKey, string Lifetime, string Kind, string? Key, string? SourceKey, SourceLocation Location, int Position, bool IfMissing);
 
     /// <summary>One constructor parameter of a type, as a DI container would see it.</summary>
-    internal sealed record DependencyDraft(string ServiceIdent, bool Many, bool Optional)
+    /// <param name="Key">[FromKeyedServices(key)]: only a registration under that key matches.</param>
+    internal sealed record DependencyDraft(string ServiceIdent, bool Many, bool Optional, string? Key = null)
     {
         public bool External => ServiceIdent.StartsWith("ext:", StringComparison.Ordinal);
     }
@@ -54,7 +57,7 @@ internal sealed class GraphBuilder
         return IsInternal(definition) ? SymbolKey(definition) : "ext:" + definition.ToDisplayString(SymbolFormats.FullType);
     }
 
-    public void AddRegistration(RegistrationCandidate candidate, string? sourceKey, SourceLocation location)
+    public void AddRegistration(RegistrationCandidate candidate, string? sourceKey, SourceLocation location, int position)
     {
         var service = ServiceIdent(candidate.Service, candidate.ServiceName);
         if (service == null) return;
@@ -64,7 +67,7 @@ internal sealed class GraphBuilder
             implementation = SymbolKey(impl.OriginalDefinition);
         }
 
-        _registrations.Add(new RegistrationDraft(service, implementation, candidate.Lifetime, candidate.Kind, candidate.Key, sourceKey, location));
+        _registrations.Add(new RegistrationDraft(service, implementation, candidate.Lifetime, candidate.Kind, candidate.Key, sourceKey, location, position, candidate.IfMissing));
     }
 
     public void SetConstructorDependencies(string typeKey, List<DependencyDraft> dependencies) => _constructorDependencies[typeKey] = dependencies;

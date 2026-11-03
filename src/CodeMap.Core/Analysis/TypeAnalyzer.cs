@@ -259,7 +259,7 @@ internal sealed class TypeAnalyzer
 
             if (parameterType.IsValueType) continue; // enums, numbers, structs: never container services
             var ident = _builder.ServiceIdent(parameterType);
-            if (ident != null) dependencies.Add(new GraphBuilder.DependencyDraft(ident, many, parameter.HasExplicitDefaultValue));
+            if (ident != null) dependencies.Add(new GraphBuilder.DependencyDraft(ident, many, parameter.HasExplicitDefaultValue, DiRegistrationDetector.KeyOf(parameter)));
         }
 
         if (dependencies.Count > 0) _builder.SetConstructorDependencies(key, dependencies);
