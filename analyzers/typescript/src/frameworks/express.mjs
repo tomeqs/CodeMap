@@ -46,7 +46,7 @@ export function expressRoutes(ctx, sf, info) {
     let result = false;
     if ((ts.isVariableDeclaration(decl) || ts.isPropertyDeclaration(decl)) && decl.initializer) result = isRouter(decl.initializer);
     if (!result && (ts.isParameter(decl) || ts.isVariableDeclaration(decl) || ts.isPropertyDeclaration(decl)) && decl.type && ts.isTypeReferenceNode(decl.type)) {
-      const source = importOf(ctx, decl.type.typeName.kind === ts.SyntaxKind.Identifier ? decl.type.typeName : decl.type.typeName.right);
+      const source = importOf(ctx, decl.type.typeName); // Router, or express.Router
       result = source?.module === 'express' && /^(Router|IRouter|Express|Application)$/.test(source.name);
     }
 
@@ -87,17 +87,21 @@ export function expressRoutes(ctx, sf, info) {
 
     if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && VERBS.has(n.expression.name.text)) {
       const receiver = n.expression.expression;
-      const routePath = ts.isCallExpression(receiver) && ts.isPropertyAccessExpression(receiver.expression) && receiver.expression.name.text === 'route'
-        ? stringOf(ts, receiver.arguments[0])
-        : stringOf(ts, n.arguments[0]);
-      const handlers = routePath !== null && ts.isCallExpression(receiver) && receiver.expression.name?.text === 'route' ? [...n.arguments] : n.arguments.slice(1);
-      if (routePath !== null && handlers.length > 0 && isRouter(receiver)) {
+      // Chains: router.route('/x').get(a).post(b), app.get('/a', h).post('/b', h2) (each verb returns its receiver).
+      let base = receiver;
+      while (ts.isCallExpression(base) && ts.isPropertyAccessExpression(base.expression) && VERBS.has(base.expression.name.text)) base = base.expression.expression;
+      const routeCall = ts.isCallExpression(base) && ts.isPropertyAccessExpression(base.expression) && base.expression.name.text === 'route' ? base : null;
+      const router = routeCall ?? base;
+      const routePath = routeCall ? stringOf(ts, routeCall.arguments[0]) : stringOf(ts, n.arguments[0]);
+      const handlers = routeCall ? [...n.arguments] : n.arguments.slice(1);
+      if (routePath !== null && handlers.length > 0 && isRouter(router)) {
         const verb = n.expression.name.text.toUpperCase();
         let name = `${verb} ${routePath}`;
         for (let i = 2; used.has(name); i++) name = `${verb} ${routePath} ~${i}`;
         used.add(name);
         const id = memberId(info.moduleId, `route:${name}`);
-        const start = sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+        // The line of the verb: in a chain over several lines, every call starts where the chain starts.
+        const start = sf.getLineAndCharacterOfPosition(n.expression.name.getStart(sf)).line + 1;
         const end = sf.getLineAndCharacterOfPosition(n.end).line + 1;
         graph.addNode({
           id,
@@ -109,12 +113,12 @@ export function expressRoutes(ctx, sf, info) {
           project: info.projectId,
           namespace: info.folder,
           accessibility: 'public',
-          signature: `${n.expression.getText(sf)}('${routePath}', …)`.replace(/\s+/g, ' '),
+          signature: `${(routeCall ? routeCall.expression.expression : router).getText(sf)}.${n.expression.name.text}('${routePath}', …)`.replace(/\s+/g, ' '),
           location: { file: info.rel, line: start, endLine: end },
           tags: ['route', 'entrypoint', ...(info.isTest ? ['test'] : [])],
           metrics: { loc: end - start + 1, complexity: handlers.reduce((sum, h) => sum + complexity(ts, h) - 1, 1) },
         });
-        ctx.express.routes.push({ id, verb, path: routePath, router: declarationOf(receiver) });
+        ctx.express.routes.push({ id, verb, path: routePath, router: declarationOf(router) });
         for (const handler of handlers) ctx.claimed.set(handler, id);
         owners.push({ id, node: n, code: handlers, kind: 'function' });
         addTag(graph.nodes.get(info.moduleId), 'controller');
