@@ -114,6 +114,8 @@ export function declareModule(ctx, sf, info) {
     metrics: { loc: info.lines },
   });
 
+  /** The metrics of a declaration, with its size (lines) when it does not say. */
+  const withLoc = (fresh) => (fresh.metrics?.loc === undefined ? { ...(fresh.metrics ?? {}), loc: fresh.location.endLine - fresh.location.line + 1 } : fresh.metrics);
   const add = (id, fields, node, code) => {
     const fresh = { id, ...base, ...fields, location: location(node), tags: tags ? [...tags] : undefined };
     const existing = graph.nodes.get(id);
@@ -121,13 +123,12 @@ export function declareModule(ctx, sf, info) {
       // Overloads and merged declarations: one node; the declaration with code is the main location.
       if (code && !existing.hasCode) {
         existing.extraLocations = [...(existing.extraLocations ?? []), existing.location];
-        Object.assign(existing, { location: fresh.location, signature: fresh.signature, metrics: fresh.metrics, hasCode: true });
+        Object.assign(existing, { location: fresh.location, signature: fresh.signature, metrics: withLoc(fresh), hasCode: true });
       } else {
         existing.extraLocations = [...(existing.extraLocations ?? []), fresh.location];
       }
     } else {
-      graph.addNode({ ...fresh, hasCode: !!code });
-      if (fresh.metrics?.loc === undefined) graph.nodes.get(id).metrics = { ...(fresh.metrics ?? {}), loc: fresh.location.endLine - fresh.location.line + 1 };
+      graph.addNode({ ...fresh, hasCode: !!code, metrics: withLoc(fresh) });
     }
 
     owners.push({ id, node, code, kind: fields.kind });
@@ -152,7 +153,7 @@ export function declareModule(ctx, sf, info) {
           parent: info.moduleId,
           accessibility: exportedHere ? 'public' : 'private',
           modifiers: modifiers(ts, statement, isConst && !isFunction ? ['const'] : []),
-          signature: signature(sf, statement, isFunction ? init.body : null),
+          signature: signature(ts, sf, statement, isFunction ? init.body : null),
           doc: doc(ts, statement),
           metrics: isFunction ? { complexity: complexity(ts, init.body) } : undefined,
         }, decl, init ?? null);
@@ -173,7 +174,7 @@ export function declareModule(ctx, sf, info) {
         parent: info.moduleId,
         accessibility: isExported ? 'public' : 'private',
         modifiers: modifiers(ts, statement),
-        signature: signature(sf, statement, isFunction ? statement.body : ts.isClassDeclaration(statement) || ts.isInterfaceDeclaration(statement) ? firstMember(statement) : null),
+        signature: signature(ts, sf, statement, isFunction ? statement.body : ts.isClassDeclaration(statement) || ts.isInterfaceDeclaration(statement) ? firstMember(statement) : null),
         attributes: decorators(ts, statement),
         doc: doc(ts, statement),
         metrics: isFunction ? { complexity: complexity(ts, statement.body) } : undefined,
@@ -190,7 +191,7 @@ export function declareModule(ctx, sf, info) {
           fullName: `${info.path}#default`,
           parent: info.moduleId,
           accessibility: 'public',
-          signature: signature(sf, statement, isFunction ? expr.body : null),
+          signature: signature(ts, sf, statement, isFunction ? expr.body : null),
           metrics: isFunction ? { complexity: complexity(ts, expr.body) } : undefined,
         }, statement, expr);
       } else {
@@ -235,13 +236,13 @@ function declareMembers(ctx, sf, info, owner, ownerId, ownerName, add) {
     const fullName = `${info.path}#${ownerName}.${name}`;
     const accessibility = isInterface ? 'public' : memberAccessibility(ts, member);
     if (ts.isConstructorDeclaration(member)) {
-      add(id, { kind: 'constructor', name, fullName, parent: ownerId, accessibility, modifiers: modifiers(ts, member), signature: signature(sf, member, member.body),
+      add(id, { kind: 'constructor', name, fullName, parent: ownerId, accessibility, modifiers: modifiers(ts, member), signature: signature(ts, sf, member, member.body),
         attributes: decorators(ts, member), metrics: { complexity: complexity(ts, member.body) } }, member, member.body ?? null);
       for (const parameter of member.parameters) {
         if (!ts.isParameterPropertyDeclaration?.(parameter, member) || !ts.isIdentifier(parameter.name)) continue;
         add(memberId(info.moduleId, `${ownerName}.${parameter.name.text}`), {
           kind: 'property', name: parameter.name.text, fullName: `${info.path}#${ownerName}.${parameter.name.text}`, parent: ownerId,
-          accessibility: memberAccessibility(ts, parameter), modifiers: modifiers(ts, parameter), signature: signature(sf, parameter, null),
+          accessibility: memberAccessibility(ts, parameter), modifiers: modifiers(ts, parameter), signature: signature(ts, sf, parameter, null),
         }, parameter, null);
       }
 
@@ -260,7 +261,7 @@ function declareMembers(ctx, sf, info, owner, ownerId, ownerName, add) {
       parent: ownerId,
       accessibility,
       modifiers: modifiers(ts, member),
-      signature: signature(sf, member, body),
+      signature: signature(ts, sf, member, body),
       attributes: decorators(ts, member),
       doc: doc(ts, member),
       metrics: body || code ? { complexity: complexity(ts, body ?? code) } : undefined,
@@ -333,11 +334,13 @@ function decorators(ts, node) {
 }
 
 /** The declaration up to its body, on one line: `async place(input: OrderInput): Promise<Order>`. */
-function signature(sf, node, body) {
-  const start = node.getStart(sf);
+function signature(ts, sf, node, body) {
+  // After the decorators, whatever their arguments hold (`@Component({ template: '<b (click)="go()">' })`).
+  const decorators = (ts.canHaveDecorators?.(node) && ts.getDecorators(node)) || [];
+  const start = decorators.length ? ts.skipTrivia(sf.text, decorators[decorators.length - 1].end) : node.getStart(sf);
   let end = body ? body.getStart(sf) : node.end;
   let text = sf.text.slice(start, end);
-  text = text.replace(/^(\s*@[\w.]+(\([^)]*\))?\s*)+/, '').replace(/\s+/g, ' ').replace(/\s*(=>|\{|=)?\s*$/, '').trim();
+  text = text.replace(/\s+/g, ' ').replace(/\s*(=>|\{|=)?\s*$/, '').trim();
   return text.length > 200 ? text.slice(0, 199) + '…' : text || undefined;
 }
 

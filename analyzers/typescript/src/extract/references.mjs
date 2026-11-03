@@ -185,8 +185,9 @@ function superConstructor(ctx, call) {
   if (!base) return null;
   const target = targetOf(ctx, nameOf(ts, base.expression));
   if (!target) return null;
-  const constructorId = `${target.id}.constructor`;
-  return ctx.graph.has(constructorId) || ctx.declared?.has(constructorId) ? { id: constructorId, kind: 'calls' } : target;
+  // From the declaration, not from the graph: the base class may be in a package not analyzed yet.
+  const declaresConstructor = ts.isClassDeclaration(target.decl) && target.decl.members.some((m) => ts.isConstructorDeclaration(m));
+  return declaresConstructor ? { id: `${target.id}.constructor`, kind: 'calls' } : target;
 }
 
 /** The identifier that names what an expression refers to: `a.b.c` → c. */
@@ -205,6 +206,8 @@ function rightmost(ts, name) {
 
 function isDeclarationName(ts, node) {
   const parent = node.parent;
+  // `{ list }` names a property and refers to `list`: a reference (see targetOf).
+  if (parent && ts.isShorthandPropertyAssignment(parent)) return false;
   return !!parent && parent.name === node && (ts.isDeclaration?.(parent) || ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isPropertyAssignment(parent) ||
     ts.isBindingElement(parent) || ts.isPropertySignature(parent) || ts.isMethodDeclaration(parent) || ts.isPropertyDeclaration(parent));
 }
@@ -215,7 +218,10 @@ export function targetOf(ctx, name) {
   const { ts, checker } = ctx;
   let symbol;
   try {
-    symbol = checker.getSymbolAtLocation(name);
+    // In `{ list }` the name is the property; what it refers to is the value's symbol.
+    symbol = name.parent && ts.isShorthandPropertyAssignment(name.parent) && name.parent.name === name
+      ? checker.getShorthandAssignmentValueSymbol(name.parent)
+      : checker.getSymbolAtLocation(name);
     if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
   } catch {
     return null;

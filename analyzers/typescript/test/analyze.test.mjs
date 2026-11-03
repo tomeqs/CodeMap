@@ -178,3 +178,61 @@ test('path aliases are local code, not npm packages', () => {
     assert.deepEqual(packages.sort(), ['ts:npm:zod']);
   });
 });
+
+/** A package `pkg` with these files in a temporary folder, analyzed as CodeMap asks; removed afterwards. */
+function inline(files) {
+  const dir = mkdtempSync(join(tmpdir(), 'codemap-ts-'));
+  try {
+    writeFileSync(join(dir, 'package.json'), '{ "name": "pkg" }');
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, path)), { recursive: true });
+      writeFileSync(join(dir, path), text);
+    }
+
+    const graph = analyze(ts, { target: dir, root: dir, options: {} });
+    const node = (id) => graph.nodes.find((n) => n.id === id) ?? assert.fail(`no node ${id}; nodes: ${graph.nodes.map((n) => n.id).join(', ')}`);
+    const hasEdge = (source, kind, target) => assert.ok(graph.edges.some((e) => e.source === source && e.kind === kind && e.target === target), `missing ${source} -${kind}-> ${target}; from it: ${graph.edges.filter((e) => e.source === source).map((e) => `${e.kind} ${e.target}`).join(', ')}`);
+    return { graph, node, hasEdge };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('functions put in an object by shorthand ({ list }) are referenced', () => {
+  const { hasEdge } = inline({
+    'src/handlers.ts': 'function list() { return 1; }\nfunction place() { return 2; }\nexport const handlers = { list, place };\nexport function api() { return { list }; }\n',
+  });
+  hasEdge('ts:pkg:src/handlers.ts#handlers', 'calls', 'ts:pkg:src/handlers.ts#list');
+  hasEdge('ts:pkg:src/handlers.ts#handlers', 'calls', 'ts:pkg:src/handlers.ts#place');
+  hasEdge('ts:pkg:src/handlers.ts#api', 'calls', 'ts:pkg:src/handlers.ts#list');
+});
+
+test('super() calls the constructor of a base class in a package analyzed later', () => {
+  scratch('workspace', {
+    'packages/domain/src/base.ts': 'export class Base {\n  constructor(public n: number) {}\n}\n',
+    'packages/api/src/derived.ts': "import { Base } from '@shop/domain/base';\nexport class Derived extends Base {\n  constructor() {\n    super(1);\n  }\n}\n",
+  }, (dir) => {
+    const graph = analyze(ts, { target: dir, root: dir, options: {} });
+    const calls = graph.edges.filter((e) => e.source === 'ts:@shop/api:src/derived.ts#Derived.constructor' && e.kind === 'calls').map((e) => e.target);
+    assert.deepEqual(calls, ['ts:@shop/domain:src/base.ts#Base.constructor']); // @shop/api is analyzed before @shop/domain
+  });
+});
+
+test('overloads keep the size of the implementation; signatures leave decorators out whatever their arguments', () => {
+  const { node } = inline({
+    'src/overloads.ts': 'export function f(a: string): void;\nexport function f(a: number): void;\nexport function f(a: any) {\n  if (a) return;\n}\n',
+    'src/app.component.ts': [
+      'function Component(x: any) { return (t: any) => t; }',
+      'function Get(path: string) { return (t: any, k: string) => {}; }',
+      "@Component({ selector: 'app', template: '<b (click)=\"go()\">x</b>' })",
+      'export class AppComponent {',
+      "  @Get(['a', 'b'].join('/'))",
+      '  list(page: number) { return page; }',
+      '}',
+      '',
+    ].join('\n'),
+  });
+  assert.deepEqual(node('ts:pkg:src/overloads.ts#f').metrics, { complexity: 2, loc: 3 });
+  assert.equal(node('ts:pkg:src/app.component.ts#AppComponent').signature, 'export class AppComponent');
+  assert.equal(node('ts:pkg:src/app.component.ts#AppComponent.list').signature, 'list(page: number)');
+});
