@@ -120,7 +120,7 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
             }
         }
 
-        graph.Analysis.Di = ContainerSetup(builder);
+        graph.Analysis.Di = ContainerSetup(builder, graph);
         graph.Analysis.Warnings = warnings;
         graph.Source.Path = load.SourcePath;
         graph.Source.Root = load.Root;
@@ -129,19 +129,28 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
         return graph;
     }
 
-    /// <summary>The registrations and constructor dependencies the analysis found, with public ids.</summary>
-    private static DiAnalysis? ContainerSetup(GraphBuilder builder)
+    /// <summary>
+    /// The registrations and constructor dependencies the analysis found, with public ids. Registrations come
+    /// in the order the container sees them (the last one of a service wins), and a TryAdd* of a service that
+    /// is already registered is left out, as the container ignores it.
+    /// </summary>
+    private static DiAnalysis? ContainerSetup(GraphBuilder builder, CodeGraph graph)
     {
         string? Resolve(string ident) => ident.StartsWith("ext:", StringComparison.Ordinal) ? ident : builder.IdOf(ident);
 
         var di = new DiAnalysis();
+        var registered = new HashSet<(string Service, string? Key)>();
+        var pathOf = RegistrationPath(builder, graph);
         foreach (var draft in builder.Registrations
-                     .OrderBy(r => r.Location.File, StringComparer.Ordinal)
-                     .ThenBy(r => r.Location.Line)
-                     .ThenBy(r => r.ServiceIdent, StringComparer.Ordinal))
+                     .Select(r => (Draft: r, Path: pathOf(r)))
+                     .OrderBy(r => r.Path, CallPathComparer.Instance)
+                     .ThenBy(r => r.Draft.ServiceIdent, StringComparer.Ordinal)
+                     .ThenBy(r => r.Draft.SourceKey, StringComparer.Ordinal)
+                     .Select(r => r.Draft))
         {
             var service = Resolve(draft.ServiceIdent);
             if (service == null) continue;
+            if (!registered.Add((service, draft.Key)) && draft.IfMissing) continue;
             var external = service.StartsWith("ext:", StringComparison.Ordinal);
             di.Registrations.Add(new ServiceRegistration
             {
@@ -170,11 +179,63 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
                     External = dependency.External,
                     Many = dependency.Many,
                     Optional = dependency.Optional,
+                    Key = dependency.Key,
                 });
             }
         }
 
         return di.Registrations.Count == 0 && di.Dependencies.Count == 0 ? null : di;
+    }
+
+    /// <summary>
+    /// Where a registration runs, from the outermost known call down to itself: (file, line, position) of
+    /// each call site. While the member that registers has exactly one caller, the caller's call site comes
+    /// in front, so AddServiceDefaults() on line 5 of Program.cs sorts before AddScoped&lt;…&gt;() on line 6
+    /// even though it registers in another file. A member called from several places stops the climb.
+    /// </summary>
+    private static Func<GraphBuilder.RegistrationDraft, List<(string File, int Line, int Position)>> RegistrationPath(GraphBuilder builder, CodeGraph graph)
+    {
+        var files = graph.Nodes.Where(n => n.Location != null).ToDictionary(n => n.Id, n => n.Location!.File, StringComparer.Ordinal);
+        var callers = graph.Edges
+            .Where(e => e.Kind == EdgeKinds.Calls && e.Source != e.Target)
+            .GroupBy(e => e.Target, StringComparer.Ordinal)
+            .Select(g => g.ToList())
+            .Where(calls => calls is [{ Weight: 1, Line: > 0 } call] && files.ContainsKey(call.Source))
+            .ToDictionary(calls => calls[0].Target, calls => calls[0], StringComparer.Ordinal);
+
+        return draft =>
+        {
+            var path = new List<(string File, int Line, int Position)> { (draft.Location.File, draft.Location.Line, draft.Position) };
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var member = builder.IdOf(draft.SourceKey);
+            while (member != null && seen.Add(member) && callers.TryGetValue(member, out var call))
+            {
+                path.Insert(0, (files[call.Source], call.Line, 0));
+                member = call.Source;
+            }
+
+            return path;
+        };
+    }
+
+    /// <summary>Compares call paths element by element; a path that is a prefix of another comes first.</summary>
+    private sealed class CallPathComparer : IComparer<List<(string File, int Line, int Position)>>
+    {
+        public static readonly CallPathComparer Instance = new();
+
+        public int Compare(List<(string File, int Line, int Position)>? x, List<(string File, int Line, int Position)>? y)
+        {
+            if (x == null || y == null) return x == null ? y == null ? 0 : -1 : 1;
+            for (var i = 0; i < Math.Min(x.Count, y.Count); i++)
+            {
+                var c = string.CompareOrdinal(x[i].File, y[i].File);
+                if (c == 0) c = x[i].Line.CompareTo(y[i].Line);
+                if (c == 0) c = x[i].Position.CompareTo(y[i].Position);
+                if (c != 0) return c;
+            }
+
+            return x.Count.CompareTo(y.Count);
+        }
     }
 
     private static void DeclareProject(GraphBuilder builder, ProjectInfo project, Dictionary<string, ProjectInfo> byPath, string root)

@@ -16,6 +16,8 @@ internal sealed class ReferenceWalker : CSharpSyntaxWalker
     private readonly SemanticModel _model;
     private string? _source;
     private INamedTypeSymbol? _selfType;
+    /// <summary>Inside nameof(...): names are only mentioned, nothing is called or read.</summary>
+    private bool _inNameof;
 
     public ReferenceWalker(GraphBuilder builder, SemanticModel model) : base(SyntaxWalkerDepth.Node)
     {
@@ -62,8 +64,11 @@ internal sealed class ReferenceWalker : CSharpSyntaxWalker
 
     private void HandleName(SimpleNameSyntax node)
     {
-        if (node.IsVar || node.Parent is NameColonSyntax) return;
+        // Argument names (Foo(count: 3), tuple element names) name parameters, not members; the names of a
+        // property pattern (`is { Status: ... }`) do read the property.
+        if (node.IsVar || node.Parent is NameColonSyntax { Parent: ArgumentSyntax or AttributeArgumentSyntax }) return;
         var symbol = GetSymbol(node);
+        if (_inNameof && symbol is not (INamedTypeSymbol or IAliasSymbol)) return;
         switch (symbol)
         {
             case null:
@@ -102,15 +107,27 @@ internal sealed class ReferenceWalker : CSharpSyntaxWalker
 
     public override void VisitInvocationExpression(InvocationExpressionSyntax node)
     {
+        // nameof(GetById) mentions the method, it does not call it: only the types in it count, as plain uses.
+        if (node.Expression is IdentifierNameSyntax { Identifier.ValueText: "nameof" } && _model.GetSymbolInfo(node.Expression).Symbol == null)
+        {
+            var previous = _inNameof;
+            _inNameof = true;
+            try { WithContext(EdgeKinds.Uses, () => Visit(node.ArgumentList)); }
+            finally { _inNameof = previous; }
+            return;
+        }
+
         if (DiRegistrationDetector.TryDetect(node, _model) is { } registration)
         {
-            var span = node.GetLocation().GetLineSpan();
+            // The line of the method name, not of the start of the call: in a fluent chain spread over
+            // several lines, every call starts where the chain starts.
+            var name = DiRegistrationDetector.MethodName(node)!;
             _builder.AddRegistration(registration, _source, new SourceLocation
             {
                 File = RelativePath,
-                Line = span.StartLinePosition.Line + 1,
-                EndLine = span.EndLinePosition.Line + 1,
-            });
+                Line = name.GetLocation().GetLineSpan().StartLinePosition.Line + 1,
+                EndLine = node.GetLocation().GetLineSpan().EndLinePosition.Line + 1,
+            }, name.SpanStart);
         }
 
         base.VisitInvocationExpression(node);

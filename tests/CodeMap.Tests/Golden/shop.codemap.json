@@ -44,14 +44,14 @@
     "members": 154,
     "packages": 2,
     "externalTypes": 0,
-    "edges": 421,
+    "edges": 423,
     "files": 29,
     "lines": 809,
     "cycles": 4,
     "edges.holds": 36,
     "edges.implements": 23,
     "edges.calls": 37,
-    "edges.uses": 54,
+    "edges.uses": 56,
     "edges.accesses": 142,
     "edges.returns": 19,
     "edges.accepts": 35,
@@ -7997,6 +7997,18 @@
       "weight": 1
     },
     {
+      "source": "T:Shop.Application.Orders.PlaceOrderHandler",
+      "target": "T:Shop.Application.Orders.PlaceOrderCommand",
+      "kind": "uses",
+      "weight": 1
+    },
+    {
+      "source": "T:Shop.Application.Orders.PlaceOrderHandler",
+      "target": "T:Shop.Application.Orders.PlaceOrderResult",
+      "kind": "uses",
+      "weight": 1
+    },
+    {
       "source": "T:Shop.Application.Pricing.BulkDiscount",
       "target": "T:Shop.Application.Pricing.DiscountPolicy",
       "kind": "inherits",
@@ -8518,18 +8530,6 @@
     "di": {
       "registrations": [
         {
-          "service": "T:Shop.Api.RequestTimingMiddleware",
-          "implementation": "T:Shop.Api.RequestTimingMiddleware",
-          "lifetime": "singleton",
-          "kind": "type",
-          "registeredIn": "M:Program.{Main}$(System.String[])",
-          "location": {
-            "file": "src/Shop.Api/Program.cs",
-            "line": 7,
-            "endLine": 7
-          }
-        },
-        {
           "service": "T:Shop.Domain.Orders.IOrderRepository",
           "implementation": "T:Shop.Infrastructure.Persistence.InMemoryOrderRepository",
           "lifetime": "singleton",
@@ -8719,6 +8719,18 @@
             "file": "src/Shop.Infrastructure/ServiceCollectionExtensions.cs",
             "line": 34,
             "endLine": 34
+          }
+        },
+        {
+          "service": "T:Shop.Api.RequestTimingMiddleware",
+          "implementation": "T:Shop.Api.RequestTimingMiddleware",
+          "lifetime": "singleton",
+          "kind": "type",
+          "registeredIn": "M:Program.{Main}$(System.String[])",
+          "location": {
+            "file": "src/Shop.Api/Program.cs",
+            "line": 7,
+            "endLine": 7
           }
         }
       ],

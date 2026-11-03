@@ -232,11 +232,15 @@ NestJS albo Angular w TypeScripcie (pole `framework`; bez niego to kontener .NET
 | `effective` | czas życia, który kontener w końcu nadaje, gdy różni się od zadeklarowanego (NestJS: zasięg żądania przechodzi na zależnych) |
 | `kind` | `type` (`AddScoped<I, T>()`, `typeof`, `useClass`), `instance` (`AddSingleton(obj)`, `useValue`), `factory` (lambda, `useFactory`), `forward` (`sp => sp.GetRequiredService<T>()`, `useExisting`), `hosted` (`AddHostedService`), `dbcontext` (`AddDbContext`, `Add…DbContext` z Aspire), `httpclient` (typowany `AddHttpClient<T>`), `controller` (kontrolery NestJS), `component` (komponenty, dyrektywy i pipe’y Angulara) |
 | `framework` | `nest`, `angular`… (brak: .NET) |
-| `key` | klucz dla `AddKeyed*` |
-| `registeredIn`, `location` | metoda i miejsce w kodzie, które rejestruje usługę |
+| `key` | klucz dla `AddKeyed*`: napis jak w kodzie, wartość enuma jako `Typ.Wartość`, inne stałe jako wartość |
+| `registeredIn`, `location` | metoda i miejsce w kodzie, które rejestruje usługę (`location.line` to linia nazwy metody, także w łańcuchu wywołań) |
 
 Rozpoznawane są też `TryAdd*`, `AddKeyed*` i deskryptory `ServiceDescriptor.Singleton/Scoped/Transient` (także `Keyed*`), np. w `services.TryAdd(...)`.
-Jak w kontenerze, wygrywa ostatnia rejestracja, a `IEnumerable<T>` dostaje wszystkie.
+Argumenty są rozpoznawane po nazwach parametrów (także nazwane argumenty), np. `AddSingleton(typeof(IClock), new SystemClock())` to `instance`,
+a `AddDbContext<T>(…, ServiceLifetime.Transient)` daje `transient`.
+Jak w kontenerze, wygrywa ostatnia rejestracja, a `IEnumerable<T>` dostaje wszystkie. Rejestracje są w kolejności wykonania:
+gdy metoda rejestrująca (np. `AddServiceDefaults()`) ma dokładnie jedno wywołanie, liczy się miejsce tego wywołania, także w innym pliku.
+`TryAdd*` usługi (z tym samym kluczem), która jest już zarejestrowana, nie działa w kontenerze i nie ma jej na liście.
 
 `dependencies`: parametry konstruktora (najszerszego publicznego) każdego typu, który buduje kontener,
 oraz typów aktywowanych przez framework (kontrolery i huby jako `transient`, middleware konwencyjne jako `singleton`).
@@ -247,6 +251,7 @@ oraz typów aktywowanych przez framework (kontrolery i huby jako `transient`, mi
 | `service` | żądana usługa (id albo pełna nazwa przy `external: true`) |
 | `many` | `IEnumerable<T>`: wstrzykiwane są wszystkie rejestracje |
 | `optional` | parametr z wartością domyślną |
+| `key` | `[FromKeyedServices(key)]`: pasują tylko rejestracje z tym kluczem; parametr bez klucza nie dostaje rejestracji z kluczem |
 | `implementations` | co kontener faktycznie wstrzyknie (pusta lista: nic nie jest zarejestrowane) |
 | `lifetime` | czas życia wstrzykiwanej usługi |
 | `framework` | kontener (brak: .NET); w surowym grafie wtyczki może go pominąć, wtedy decyduje rejestracja konsumenta |

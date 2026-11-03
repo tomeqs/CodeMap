@@ -228,6 +228,7 @@
               "external": { "type": "boolean" },
               "many": { "type": "boolean" },
               "optional": { "type": "boolean" },
+              "key": { "type": "string" },
               "implementations": { "type": "array", "items": { "type": "string" } },
               "lifetime": { "$ref": "#/$defs/lifetime" },
               "framework": { "type": "string" }

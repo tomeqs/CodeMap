@@ -154,4 +154,175 @@ public class DependencyInjectionTests
 
         Assert.Null(ws.Analyze().Analysis.Di);
     }
+
+    private const string Keyed = """
+        using Microsoft.Extensions.DependencyInjection;
+        using Microsoft.Extensions.DependencyInjection.Extensions;
+
+        namespace App;
+
+        public interface IClock { }
+        public class SystemClock : IClock { }
+        public class UtcClock : IClock { }
+        public interface ITicker { }
+        public class Ticker : ITicker { }
+        public interface ICache { }
+        public class RedisCache : ICache { }
+        public class MemoryCache : ICache { }
+        public enum Store { Redis, Memory }
+        public class Prices([FromKeyedServices("redis")] ICache cache, [FromKeyedServices("utc")] IClock clock);
+        public class Stock([FromKeyedServices(Store.Memory)] ICache cache);
+        public class Orders(ICache cache, IClock clock);
+
+        public static class Setup
+        {
+            public static void Register(IServiceCollection services)
+            {
+                services.AddSingleton<IClock, SystemClock>();
+                services.TryAddSingleton<IClock, UtcClock>();
+                services.TryAddScoped<RedisCache>();
+                services.TryAdd(ServiceDescriptor.Singleton<IClock, UtcClock>());
+                services.AddKeyedSingleton(typeof(IClock), "utc", typeof(UtcClock));
+                services.AddSingleton(typeof(ITicker), new Ticker());
+                services.AddKeyedSingleton<ICache, RedisCache>(serviceKey: "redis");
+                services.AddKeyedSingleton<ICache>(Store.Memory, new MemoryCache());
+                services
+                    .AddScoped<Prices>()
+                    .AddScoped<Stock>()
+                    .AddScoped<Orders>();
+            }
+        }
+        """;
+
+    [Fact]
+    public void Reads_arguments_by_parameter_TryAdd_keys_and_the_line_of_each_call()
+    {
+        using var ws = new TestWorkspace()
+            .Project("App", sdk: "Microsoft.NET.Sdk.Web")
+            .File("App/Setup.cs", Keyed);
+
+        var di = ws.Analyze().Analysis.Di!;
+
+        // TryAdd (also of a descriptor) of a service that is already registered does nothing; the first TryAdd of a service registers it.
+        Assert.Equal(new[] { "T:App.SystemClock" }, di.Registrations.Where(r => r is { Service: "T:App.IClock", Key: null }).Select(r => r.Implementation));
+        Assert.Contains(di.Registrations, r => r is { Service: "T:App.RedisCache", Lifetime: "scoped" });
+
+        // The key of a keyed Type overload is the key, not the service type.
+        Assert.Contains(di.Registrations, r => r is { Service: "T:App.IClock", Key: "utc", Implementation: "T:App.UtcClock", Kind: "type" });
+        Assert.Contains(di.Registrations, r => r is { Service: "T:App.ICache", Key: "redis", Implementation: "T:App.RedisCache" });
+        Assert.Contains(di.Registrations, r => r is { Service: "T:App.ICache", Key: "Store.Memory", Implementation: "T:App.MemoryCache", Kind: "instance" });
+        Assert.Contains(di.Registrations, r => r is { Service: "T:App.ITicker", Implementation: "T:App.Ticker", Kind: "instance" });
+
+        // [FromKeyedServices] gets the registration under its key; a plain parameter does not get a keyed one.
+        DiDependency Dependency(string consumer, string service) => di.Dependencies.Single(d => d.Consumer == consumer && d.Service == service);
+        Assert.Equal("redis", Dependency("T:App.Prices", "T:App.ICache").Key);
+        Assert.Equal(new[] { "T:App.RedisCache" }, Dependency("T:App.Prices", "T:App.ICache").Implementations);
+        Assert.Equal(new[] { "T:App.UtcClock" }, Dependency("T:App.Prices", "T:App.IClock").Implementations);
+        Assert.Equal(new[] { "T:App.MemoryCache" }, Dependency("T:App.Stock", "T:App.ICache").Implementations);
+        Assert.Equal(new[] { "T:App.SystemClock" }, Dependency("T:App.Orders", "T:App.IClock").Implementations);
+        Assert.Empty(Dependency("T:App.Orders", "T:App.ICache").Implementations);
+        var missing = Assert.Single(di.Issues, i => i is { Kind: "unregistered", Consumer: "T:App.Orders" });
+        Assert.Contains("only registered under a key", missing.Message);
+        Assert.DoesNotContain(di.Issues, i => i.Consumer is "T:App.Prices" or "T:App.Stock");
+
+        // Each call of a fluent chain is on its own line.
+        var lines = Keyed.Split('\n');
+        int LineOf(string text) => Array.FindIndex(lines, l => l.Contains(text)) + 1;
+        foreach (var consumer in new[] { "Prices", "Stock", "Orders" })
+        {
+            var location = di.Registrations.Single(r => r.Service == "T:App." + consumer).Location!;
+            Assert.Equal((LineOf($".AddScoped<{consumer}>()"), LineOf($".AddScoped<{consumer}>()")), (location.Line, location.EndLine));
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void The_context_lifetime_argument_of_AddDbContext_sets_its_lifetime(bool resolved)
+    {
+        var entityFramework = resolved ? """
+
+            namespace Microsoft.EntityFrameworkCore
+            {
+                using Microsoft.Extensions.DependencyInjection;
+                public class DbContext { }
+                public class DbContextOptionsBuilder { }
+                public static class EntityFrameworkServiceCollectionExtensions
+                {
+                    public static IServiceCollection AddDbContext<TContext>(this IServiceCollection serviceCollection,
+                        System.Action<DbContextOptionsBuilder>? optionsAction = null,
+                        ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
+                        ServiceLifetime optionsLifetime = ServiceLifetime.Scoped) where TContext : DbContext => serviceCollection;
+                }
+            }
+            """ : "";
+        using var ws = new TestWorkspace()
+            .Project("App", sdk: "Microsoft.NET.Sdk.Web")
+            .File("App/Setup.cs", """
+                using Microsoft.EntityFrameworkCore;
+                using Microsoft.Extensions.DependencyInjection;
+
+                namespace App
+                {
+                    public class ShopDb : DbContext { }
+                    public class LogDb : DbContext { }
+                    public class CacheDb : DbContext { }
+                    public static class Setup
+                    {
+                        public static void Register(IServiceCollection services)
+                        {
+                            services.AddDbContext<ShopDb>(o => { }, ServiceLifetime.Transient);
+                            services.AddDbContext<LogDb>(optionsLifetime: ServiceLifetime.Singleton);
+                            services.AddDbContext<CacheDb>(contextLifetime: ServiceLifetime.Singleton);
+                        }
+                    }
+                }
+                """ + entityFramework);
+
+        var di = ws.Analyze().Analysis.Di!;
+
+        string LifetimeOf(string type) => di.Registrations.Single(r => r.Service == "T:App." + type).Lifetime;
+        Assert.Equal(("transient", "scoped", "singleton"), (LifetimeOf("ShopDb"), LifetimeOf("LogDb"), LifetimeOf("CacheDb")));
+    }
+
+    [Fact]
+    public void A_registration_in_a_method_called_before_an_override_in_another_file_loses_to_it()
+    {
+        using var ws = new TestWorkspace()
+            .Project("App", sdk: "Microsoft.NET.Sdk.Web")
+            .File("App/Startup.cs", """
+                using Microsoft.Extensions.DependencyInjection;
+                namespace App;
+                public interface IClock { }
+                public class SystemClock : IClock { }
+                public class FakeClock : IClock { }
+                public class Uses(IClock clock);
+                public static class Startup
+                {
+                    public static void Configure(IServiceCollection services)
+                    {
+                        services.AddDefaults();
+                        services.AddSingleton<IClock, FakeClock>();
+                        services.AddTransient<Uses>();
+                    }
+                }
+                """)
+            .File("App/ZDefaults.cs", """
+                using Microsoft.Extensions.DependencyInjection;
+                namespace App;
+                public static class Defaults
+                {
+                    public static IServiceCollection AddDefaults(this IServiceCollection services)
+                    {
+                        services.AddSingleton<IClock, SystemClock>();
+                        return services;
+                    }
+                }
+                """);
+
+        var di = ws.Analyze().Analysis.Di!;
+
+        Assert.Equal(new[] { "T:App.SystemClock", "T:App.FakeClock" }, di.Registrations.Where(r => r.Service == "T:App.IClock").Select(r => r.Implementation));
+        Assert.Equal(new[] { "T:App.FakeClock" }, di.Dependencies.Single(d => d.Consumer == "T:App.Uses").Implementations);
+    }
 }

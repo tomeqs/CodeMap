@@ -237,7 +237,17 @@ public static class ProjectLoader
                              || info.PackageReferences.Any(p => p.Name is "Microsoft.NET.Test.Sdk" or "xunit" or "xunit.v3" or "NUnit" or "MSTest.TestFramework" or "TUnit")
                              || (sdk?.StartsWith("MSTest.Sdk", StringComparison.OrdinalIgnoreCase) ?? false);
 
-        info.SourceFiles.AddRange(CollectSources(doc, dir, info.IsSdkStyle, Prop("EnableDefaultCompileItems")));
+        // What the conditions on Compile items see: the target framework we compile for, a Debug build, the project's properties.
+        string? ConditionProperty(string key) => key.ToLowerInvariant() switch
+        {
+            "targetframework" => info.TargetFramework,
+            "configuration" => Prop("Configuration") ?? "Debug",
+            "platform" => Prop("Platform") ?? "AnyCPU",
+            "msbuildprojectname" or "projectname" => name,
+            _ => Prop(key),
+        };
+        var defaultItems = !IsFalse(Prop("EnableDefaultItems")) && !IsFalse(Prop("EnableDefaultCompileItems"));
+        info.SourceFiles.AddRange(CollectSources(doc, dir, info.IsSdkStyle && defaultItems, ConditionProperty));
         return info;
     }
 
@@ -258,49 +268,38 @@ public static class ProjectLoader
         return project;
     }
 
-    private static IEnumerable<string> CollectSources(XDocument doc, string dir, bool sdkStyle, string? enableDefaultCompileItems)
-    {
-        var useDefaultGlob = sdkStyle && !string.Equals(enableDefaultCompileItems, "false", StringComparison.OrdinalIgnoreCase);
-        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    private static bool IsFalse(string? value) => string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
 
-        if (useDefaultGlob)
+    /// <summary>
+    /// The Compile items as MSBuild builds them: the SDK's default glob first, then every Compile element in document
+    /// order. An Include adds files (minus its Exclude), a Remove takes away what is there so far, so a later Include
+    /// wins again. Item and ItemGroup conditions are evaluated where we can (<see cref="MsBuildCondition"/>); one we
+    /// can't read applies, as before.
+    /// </summary>
+    private static IEnumerable<string> CollectSources(XDocument doc, string dir, bool defaultGlob, Func<string, string?> property)
+    {
+        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (defaultGlob)
         {
             foreach (var file in EnumerateFiles(dir, "*.cs", stopAtNestedProjects: true)) files.Add(file);
         }
 
-        var removeMatcher = new Matcher(StringComparison.OrdinalIgnoreCase);
-        var hasRemovals = false;
+        // Patterns are expanded on disk the same way for Include, Exclude and Remove (also ../Shared/**).
+        HashSet<string> Expand(string? patterns) =>
+            string.IsNullOrWhiteSpace(patterns) ? new HashSet<string>() : new HashSet<string>(ExpandPattern(dir, patterns), StringComparer.OrdinalIgnoreCase);
 
         foreach (var item in Items(doc, "Compile"))
         {
-            var include = item.Attribute("Include")?.Value;
-            var remove = item.Attribute("Remove")?.Value;
-            if (!string.IsNullOrWhiteSpace(include))
-            {
-                foreach (var file in ExpandPattern(dir, include)) files.Add(file);
-            }
+            if (MsBuildCondition.Evaluate(item.Attribute("Condition")?.Value, property) == false) continue;
+            if (MsBuildCondition.Evaluate(item.Parent?.Attribute("Condition")?.Value, property) == false) continue;
 
-            if (!string.IsNullOrWhiteSpace(remove))
-            {
-                foreach (var pattern in remove.Split(';', StringSplitOptions.RemoveEmptyEntries))
-                {
-                    removeMatcher.AddInclude(pattern.Trim().Replace('\\', '/'));
-                    hasRemovals = true;
-                }
-            }
+            var include = Expand(item.Attribute("Include")?.Value);
+            include.ExceptWith(Expand(item.Attribute("Exclude")?.Value));
+            files.UnionWith(include);
+            files.ExceptWith(Expand(item.Attribute("Remove")?.Value));
         }
 
-        IEnumerable<string> result = files;
-        if (hasRemovals)
-        {
-            result = files.Where(f =>
-            {
-                var relative = Path.GetRelativePath(dir, f).Replace('\\', '/');
-                return !removeMatcher.Match(relative).HasMatches;
-            });
-        }
-
-        return result.OrderBy(f => f, StringComparer.Ordinal);
+        return files.OrderBy(f => f, StringComparer.Ordinal);
     }
 
     private static IEnumerable<string> ExpandPattern(string dir, string includeValue)
@@ -355,9 +354,22 @@ public static class ProjectLoader
             {
                 var name = Path.GetFileName(sub);
                 if (name.StartsWith('.') || IgnoredDirectories.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
-                if (stopAtNestedProjects && Directory.EnumerateFiles(sub, "*.csproj").Any()) continue;
+                if (stopAtNestedProjects && HasProject(sub)) continue;
                 stack.Push(sub);
             }
+        }
+    }
+
+    /// <summary>Whether a folder holds a project of its own; an unreadable folder is skipped (it holds no sources we can read).</summary>
+    private static bool HasProject(string dir)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(dir, "*.csproj").Any();
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return true;
         }
     }
 
