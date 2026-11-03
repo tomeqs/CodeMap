@@ -124,6 +124,10 @@ public sealed class PluginManifest
         {
             throw new InvalidDataException($"{path}: not valid JSON ({ex.Message}).");
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidDataException($"{path}: cannot be read ({ex.Message}).");
+        }
 
         if (manifest == null) throw new InvalidDataException($"{path}: empty.");
         manifest.Directory = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!;
@@ -132,16 +136,40 @@ public sealed class PluginManifest
         return manifest;
     }
 
+    /// <summary>Why the manifest cannot be used, or null. Explicit nulls in the JSON are problems too (or empty lists).</summary>
     private string? Problem()
     {
         if (Protocol != SupportedProtocol) return $"protocol {Protocol} is not supported (this CodeMap speaks {SupportedProtocol}).";
-        if (!Regex.IsMatch(Id, "^[a-z][a-z0-9-]*$")) return $"id '{Id}' must be lowercase letters, digits and dashes.";
-        if (!Regex.IsMatch(IdPrefix, "^[a-z][a-z0-9-]+:$")) return $"idPrefix '{IdPrefix}' must be lowercase, at least two characters, and end with ':'.";
+        if (Id == null || !Regex.IsMatch(Id, "^[a-z][a-z0-9-]*$")) return $"id '{Id}' must be lowercase letters, digits and dashes.";
+        if (IdPrefix == null || !Regex.IsMatch(IdPrefix, "^[a-z][a-z0-9-]+:$")) return $"idPrefix '{IdPrefix}' must be lowercase, at least two characters, and end with ':'.";
         if (ReservedPrefixes.Any(p => p.StartsWith(IdPrefix, StringComparison.Ordinal) || IdPrefix.StartsWith(p, StringComparison.Ordinal))) return $"idPrefix '{IdPrefix}' is reserved.";
         if (string.IsNullOrWhiteSpace(Name)) return "a name is needed.";
-        if (Command.Count == 0) return "a command is needed.";
+        if (Command == null || Command.Count == 0 || Command.Any(string.IsNullOrWhiteSpace)) return "a command is needed (a program and its arguments, none empty).";
+        if (Runtime != null && string.IsNullOrWhiteSpace(Runtime.Name)) return "runtime needs a name.";
+        if (Detect == null) return "detect is needed.";
+        Detect.Markers = Clean(Detect.Markers);
+        Detect.Sources = Clean(Detect.Sources);
+        Detect.Inputs = Clean(Detect.Inputs);
+        Detect.IgnoreDirs = Clean(Detect.IgnoreDirs);
         if (Detect.Sources.Count == 0 && Detect.Inputs.Count == 0) return "detect needs sources or inputs.";
+        Version ??= "";
+        Inputs ??= "";
+        Markers ??= "";
+        if (Unused?.SkipNamePattern is { Length: > 0 } pattern)
+        {
+            try
+            {
+                _ = new Regex(pattern, RegexOptions.CultureInvariant);
+            }
+            catch (ArgumentException ex)
+            {
+                return $"unused.skipNamePattern is not a valid regular expression ({ex.Message}).";
+            }
+        }
+
         return null;
+
+        static List<string> Clean(List<string>? values) => values?.Where(v => !string.IsNullOrWhiteSpace(v)).ToList() ?? new List<string>();
     }
 
     public LanguageInfo ToLanguageInfo() => new()

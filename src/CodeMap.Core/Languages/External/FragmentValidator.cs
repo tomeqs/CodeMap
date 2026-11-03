@@ -43,6 +43,25 @@ public static class FragmentValidator
             if (node.Project != null && !ids.Contains(node.Project)) node.Project = null;
         }
 
+        // Parents form a tree: a node that is its own ancestor (itself, or A → B → A) would send the analysis
+        // round in circles. Each cycle is cut at the node where the walk comes back to.
+        var byId = nodes.ToDictionary(n => n.Id, StringComparer.Ordinal);
+        var settled = new HashSet<string>(StringComparer.Ordinal);
+        int cycles = 0;
+        foreach (var start in nodes)
+        {
+            var path = new HashSet<string>(StringComparer.Ordinal);
+            for (var current = start; current != null && !settled.Contains(current.Id); current = current.Parent != null ? byId[current.Parent] : null)
+            {
+                if (path.Add(current.Id)) continue;
+                current.Parent = null; // back where the walk has been: cut here
+                cycles++;
+                break;
+            }
+
+            settled.UnionWith(path);
+        }
+
         var edges = graph.Edges.Where(e => ids.Contains(e.Source) && ids.Contains(e.Target) && !string.IsNullOrEmpty(e.Kind)).ToList();
         foreach (var edge in edges) edge.Weight = Math.Max(1, edge.Weight);
         var danglingEdges = graph.Edges.Count - edges.Count;
@@ -69,6 +88,7 @@ public static class FragmentValidator
         Count(levels, "unknown levels");
         Count(locations, "locations outside the root");
         Count(parents, "parents that do not exist");
+        Count(cycles, "parent cycles");
         Count(danglingEdges, "edges to nodes that do not exist");
         if (problems.Count > 0) graph.Analysis.Warnings.Add($"{plugin.Name}: dropped or fixed {string.Join(", ", problems)}.");
 
