@@ -193,24 +193,53 @@ try {
           return max;
         }, shot.toString('base64'));
       };
-      // The unrelated node measured: the biggest one on screen, away from the selection (whose glow would
-      // reach it); a small one is barely brighter than what is behind it.
+      // The unrelated node measured: the biggest one on screen (a small one is barely brighter than what is
+      // behind it), not under a panel (the screenshot would show the panel), and clear of everything that stays
+      // bright when the selection is made: the selected node's halo, the highlighted nodes with their glow, and
+      // the highlighted links. All in screen pixels: where the camera is depends on the tests before and on the
+      // layout, which varies from run to run.
       const other = await page.evaluate(() => {
         const app = window.codemap;
         const units = [...app.view.units].sort((a, b) => b.r - a.r);
         app.select(units[0].id);
         const h = app.view.highlight;
-        const center = app.stage.project(app.view.positionOf(units[0].id));
+        const byId = new Map(units.map((u) => [u.id, u]));
+        // The camera's up direction in the world (positionOf gives a fresh Vector3: three is not on window).
+        const up = app.view.positionOf(units[0].id).set(0, 1, 0).applyQuaternion(app.stage.camera.quaternion);
+        const screen = (u) => {
+          const position = app.view.positionOf(u.id);
+          const p = app.stage.project(position);
+          const edge = p && app.stage.project(position.clone().addScaledVector(up, u.r));
+          return p && edge && { x: p.x, y: p.y, r: Math.hypot(edge.x - p.x, edge.y - p.y) };
+        };
+        const toSegment = (p, a, b) => {
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const t = dx || dy ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy))) : 0;
+          return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+        };
+        const selected = screen(units[0]);
+        const lit = [...h.nodes].map((id) => byId.get(id)).filter(Boolean).map(screen).filter(Boolean);
+        const links = [...h.links].map((i) => app.view.links[i]).map((l) => [screen(l.s), screen(l.t)]).filter(([a, b]) => a && b);
+        const MARGIN = 12; // soft edges and bloom around what is drawn
+        const rect = app.stage.canvas.getBoundingClientRect();
+        // The canvas is what shows at the centre and the corners of the measured box (the labels get hidden).
+        const visible = (p) => [[0, 0], [-3, -3], [3, -3], [-3, 3], [3, 3]].every(([dx, dy]) =>
+          document.elementsFromPoint(rect.left + p.x + dx, rect.top + p.y + dy).find((e) => !e.closest('#labels')) === app.stage.canvas);
         const u = units.find((x) => {
           if (h.nodes.has(x.id)) return false;
-          const p = app.stage.project(app.view.positionOf(x.id));
-          return p && p.x > 20 && p.y > 20 && p.x < app.stage.width - 20 && p.y < app.stage.height - 20 && Math.hypot(p.x - center.x, p.y - center.y) > 80;
+          const p = screen(x);
+          if (!p || p.r < 3 || !visible(p)) return false;
+          if (selected && Math.hypot(p.x - selected.x, p.y - selected.y) < Math.max(80, selected.r * 2.5 + MARGIN)) return false; // halo: 1.8 r
+          if (lit.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < q.r * 2.5 + MARGIN)) return false;
+          return links.every(([a, b]) => toSegment(p, a, b) > MARGIN);
         });
         app.select(null);
-        const p = app.stage.project(app.view.positionOf(u.id));
-        const rect = app.stage.canvas.getBoundingClientRect();
+        if (!u) return null;
+        const p = screen(u);
         return { id: u.id, selected: units[0].id, x: Math.round(rect.left + p.x), y: Math.round(rect.top + p.y) };
       });
+      assert.ok(other, 'an unrelated node on screen, clear of the panels, the selection and its links');
       // Only the node counts: hide the HTML labels drawn over the canvas, and the sky behind it (a star in the
       // measured pixels, or a nebula as bright as a dimmed node, would hide the change).
       await page.evaluate(() => {
@@ -234,7 +263,7 @@ try {
         window.codemap.stage.sky.visible = true;
         window.codemap.stage.invalidate();
       });
-      assert.ok(after < before * 0.7, `brightness of an unrelated node: ${before} before, ${after} after selecting`);
+      assert.ok(after < before * 0.7, `brightness of an unrelated node (${other.id}, selected ${other.selected}): ${before} before, ${after} after selecting`);
     });
 
     await test('a hover right after a recolour keeps the full colour upload', async () => {
