@@ -10,6 +10,7 @@ An interactive 3D map of your C# solution or TypeScript / JavaScript code (or bo
 - **Layers**: architecture layers computed from the code, with dependencies that point upwards in red.
 - **DI**: services on singleton / scoped / transient planes, for Microsoft DI, NestJS and Angular. Captive dependencies, request scope spreading to its consumers and missing registrations are flagged.
 - **Flow**: what a controller action, an Express or Nest route, a handler or a background service calls, in source order and through interfaces to the implementation the container injects. Includes a **sequence diagram** you can copy as Mermaid.
+- **Matrix**: a dependency structure matrix in 3D. Who uses whom at a glance, layers along the diagonal, cycles as framed blocks, dependencies against the layers in red; readable even where a graph turns into a hairball.
 - **Auto zoom**: fly into a namespace and it opens into its types, then into their members.
 - **Insights**: cycles, hotspots, possibly unused code, hidden coupling from git history.
 

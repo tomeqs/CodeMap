@@ -55,6 +55,10 @@ export class Sidebar {
     appearance.append(h('div', { class: 'row' }, h('label', {}, 'Colour'), select(state.colorMode, colorOptions, (v) => app.setState({ colorMode: v }, 'recolor'))));
     if (state.view !== 'city') {
       appearance.append(h('div', { class: 'row' }, h('label', {}, 'Size'), select(state.sizeMetric, metricOptions.map(([k, m]) => [k, m.label]), (v) => app.setState({ sizeMetric: v }))));
+      if (state.view === 'matrix') {
+        appearance.append(h('div', { class: 'row', title: 'How tall a dependency stands: by its number of references' }, h('label', {}, 'Columns'),
+          select(state.matrixHeight ?? 'log', [['log', 'Weight (log scale)'], ['linear', 'Weight (linear)']], (v) => app.setState({ matrixHeight: v }))));
+      }
     } else {
       appearance.append(h('div', { class: 'row' }, h('label', {}, 'Height'), select(state.heightMetric, metricOptions.map(([k, m]) => [k, m.label]), (v) => app.setState({ heightMetric: v }))));
       appearance.append(h('div', { class: 'row' }, h('label', {}, 'Footprint'), select(state.footprintMetric, metricOptions.map(([k, m]) => [k, m.label]), (v) => app.setState({ footprintMetric: v }))));
@@ -68,9 +72,14 @@ export class Sidebar {
     appearance.append(h('div', { class: 'row', title: 'Living: the map always moves (twinkling sky, flowing links). Calm: decoration slows down and stops when you are away. Off: nothing moves by itself.' }, h('label', {}, 'Motion'),
       select(app.stage.motion, motionOptions, (v) => app.setMotion(v))));
     const particleOptions = [['0', 'Off'], ['0.34', 'Few'], ['1', 'Normal'], ['2', 'Many']];
-    appearance.append(h('div', { class: 'row', title: 'Particles flowing along links show the direction of dependencies' }, h('label', {}, 'Particles'),
-      select(String(state.particles), particleOptions, (v) => app.setState({ particles: Number(v) }, 'options'))));
-    if (state.view !== 'city') {
+    if (state.view !== 'matrix') {
+      appearance.append(h('div', { class: 'row', title: 'Particles flowing along links show the direction of dependencies' }, h('label', {}, 'Particles'),
+        select(String(state.particles), particleOptions, (v) => app.setState({ particles: Number(v) }, 'options'))));
+    }
+
+    if (state.view === 'matrix') {
+      // a matrix has no links to animate or a layout to turn
+    } else if (state.view !== 'city') {
       appearance.append(toggle('Flow particles on all links', state.flowAll, (v) => app.setState({ flowAll: v }, 'options')));
       appearance.append(toggle('Auto-rotate', state.autoRotate, (v) => app.setState({ autoRotate: v }, 'options')));
     } else {
@@ -530,6 +539,10 @@ export function renderLegend(el, app) {
 
   if (state.view === 'layers') {
     el.append(line(VIOLATION_COLORS.error, 'upward dependency (against the layering)'));
+  } else if (state.view === 'matrix') {
+    el.append(item('#5fa8e0', 'dependency (taller, brighter: more references)'), item(VIOLATION_COLORS.error, 'against the layers (above the diagonal)'), line('#ff8a3d', 'cycle (framed block)'));
+    el.append(h('span', { class: 'li faint' }, 'row uses column · height = number of references · bands = layers'));
+    return;
   } else if (state.view === 'flow') {
     el.append(line(EDGE_KINDS.calls.color, 'calls'), line(EDGE_KINDS.implements.color, 'dispatch to implementation'), line(VIOLATION_COLORS.warning, 'recursion'));
     el.append(h('span', { class: 'li faint' }, 'top plane = entry point · each plane = one call deeper'));

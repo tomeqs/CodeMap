@@ -58,7 +58,7 @@ try {
       });
     }
 
-    for (const view of ['galaxy', 'city', 'layers', 'di', 'flow', 'auto']) {
+    for (const view of ['galaxy', 'city', 'layers', 'di', 'flow', 'matrix', 'auto']) {
       await test(`${view} view draws`, async () => {
         await page.evaluate((v) => (v === 'auto' ? window.codemap.setLevel('auto') : window.codemap.setView(v)), view);
         await page.waitForFunction(() => {
@@ -75,6 +75,82 @@ try {
         assert.equal(indices.distinct, indices.count, 'every unit has its own place in the position store');
       });
     }
+
+    await test('the matrix: dependencies below the diagonal, the ones against the layers above it, cycles as blocks', async () => {
+      const info = await page.evaluate(() => {
+        const app = window.codemap;
+        app.setView('matrix');
+        app.setLevel('namespace');
+        const m = app.matrix.layout;
+        const inBlock = (c) => m.blocks.some((b) => c.row >= b.from && c.row <= b.to && c.col >= b.from && c.col <= b.to);
+        // A block is a real cycle: from its first unit every other one is reachable inside it.
+        const connected = m.blocks.every((b) => {
+          const reached = new Set([b.from]);
+          for (let grew = true; grew;) {
+            grew = false;
+            for (const c of m.cells) if (inBlock(c) && reached.has(c.row) && !reached.has(c.col) && c.row >= b.from && c.row <= b.to) reached.add(c.col), (grew = true);
+          }
+          return reached.size === b.to - b.from + 1;
+        });
+        const levels = m.levels;
+        return {
+          units: app.matrix.units.length,
+          cells: m.cells.length,
+          outsideBlocksAbove: m.cells.filter((c) => c.col > c.row && !inBlock(c)).length,
+          upward: m.cells.filter((c) => c.upward).map((c) => ({ above: c.col > c.row, inBlock: inBlock(c) })),
+          blocks: m.blocks.length,
+          connected,
+          bandsCover: levels[0]?.from === 0 && levels.at(-1)?.to === m.order.length - 1 && levels.every((l, i) => i === 0 || l.from === levels[i - 1].to + 1),
+          hud: document.getElementById('hud').textContent,
+          buttons: [...document.querySelectorAll('#level-toggle button')].filter((b) => !b.disabled).map((b) => b.dataset.level),
+        };
+      });
+      assert.ok(info.units > 5 && info.cells > 10, `units ${info.units}, cells ${info.cells}`);
+      assert.equal(info.outsideBlocksAbove, 0, 'between blocks, every dependency is below the diagonal');
+      assert.ok(info.upward.length > 0 && info.upward.every((u) => u.above && u.inBlock), `upward: ${JSON.stringify(info.upward)}`);
+      assert.ok(info.blocks > 0 && info.connected, 'the Shop sample has cycles, each one block');
+      assert.ok(info.bandsCover, 'the layer bands cover the diagonal without gaps');
+      assert.match(info.hud, /\d+ layers · \d+ against the layers \(red\) · \d+ cycles?/);
+      assert.deepEqual(info.buttons, ['project', 'namespace', 'type', 'member']);
+      const projects = await page.evaluate(() => (window.codemap.setLevel('project'), window.codemap.matrix.units.length));
+      assert.equal(projects, await page.evaluate(() => window.codemap.model.projects.length));
+      await page.evaluate(() => window.codemap.setLevel('namespace'));
+    });
+
+    await test('the matrix: a click on a dependency selects it, a click on a unit lights up its row and column', async () => {
+      await page.waitForTimeout(2300); // the columns rise
+      const at = (selectCell) =>
+        page.evaluate((cellWanted) => {
+          const app = window.codemap;
+          const v = app.matrix;
+          const rect = app.stage.canvas.getBoundingClientRect();
+          // The tallest column can't hide behind another one; nothing stands in front of the last row's tile.
+          const cell = [...v.cells].sort((a, b) => b.height - a.height)[0];
+          const unit = v.units[v.units.length - 1];
+          const Vector = v.positionOf(unit.id).constructor;
+          const point = cellWanted ? new Vector(cell.x, cell.height * 0.8, cell.z) : v.positionOf(unit.id);
+          const p = app.stage.project(point);
+          return { x: rect.left + p.x, y: rect.top + p.y + (cellWanted ? 0 : 3), source: cell.source, target: cell.target, unit: unit.id };
+        }, selectCell);
+
+      // The tile first: a selection opens the details panel, which covers the near right corner of the grid.
+      const tile = await at(false);
+      await page.mouse.click(tile.x, tile.y);
+      const selected = await page.evaluate(() => ({ id: window.codemap.selection?.nodeId, primary: window.codemap.matrix.highlight?.primary, guides: window.codemap.matrix.guides.count }));
+      assert.deepEqual(selected, { id: tile.unit, primary: tile.unit, guides: 2 });
+      await page.keyboard.press('Escape');
+      assert.equal(await page.evaluate(() => window.codemap.matrix.highlight), null);
+
+      const cell = await at(true);
+      await page.mouse.click(cell.x, cell.y);
+      const picked = await page.evaluate(() => ({ selection: window.codemap.selection, hud: document.getElementById('hud').textContent }));
+      assert.equal(picked.selection?.nodeId, cell.source);
+      assert.equal(picked.selection?.pathTo, cell.target);
+      assert.match(picked.hud, /→ .*: \d+ \w+/);
+      await page.keyboard.press('Escape');
+      // back to the plain galaxy of types for the tests that follow
+      await page.evaluate(() => (window.codemap.setView('galaxy'), window.codemap.setLevel('type')));
+    });
 
     await test('clicking a node selects it', async () => {
       await page.evaluate(() => window.codemap.setView('galaxy'));
@@ -456,7 +532,7 @@ try {
       assert.deepEqual(names, ['OrdersService.place', 'legacyTotal']);
     });
 
-    for (const view of ['galaxy', 'city', 'layers', 'di', 'auto']) {
+    for (const view of ['galaxy', 'city', 'layers', 'di', 'matrix', 'auto']) {
       await test(`a TypeScript map: ${view} view draws`, async () => {
         await settled(ts.page, 60000);
         await ts.page.evaluate((v) => (v === 'auto' ? window.codemap.setLevel('auto') : (window.codemap.setLevel('type'), window.codemap.setView(v))), view);
@@ -655,7 +731,7 @@ async function sampleTests(query) {
     }));
     assert.deepEqual(info.buttons, ['Packages', 'Folders', 'Files', 'Declarations', 'Auto']);
     assert.match(info.hud, /\d+ files · \d+ links/);
-    await views(shop, ['galaxy', 'city', 'layers', 'di']);
+    await views(shop, ['galaxy', 'city', 'layers', 'di', 'matrix']);
   });
 
   await test('samples/shop-ts: flows start at Nest handlers and Express routes and reach the implementation', async () => {
@@ -714,7 +790,7 @@ async function sampleTests(query) {
     assert.deepEqual(info.languages.sort(), ['csharp', 'typescript']);
     assert.ok(info.entries.includes('T:Shop.Api.Controllers.OrdersController'), `entries: ${info.entries}`);
     assert.ok(info.entries.includes('ts:@shop/api:src/orders/orders.controller.ts#OrdersController'), `entries: ${info.entries}`);
-    await views(mixed, ['galaxy', 'city', 'layers', 'di', 'flow']);
+    await views(mixed, ['galaxy', 'city', 'layers', 'di', 'flow', 'matrix']);
     assert.deepEqual(mixed.errors, []);
   });
   await mixed.page.close();

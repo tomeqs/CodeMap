@@ -17,12 +17,13 @@
           <span class="title">CodeMap</span>
           <span id="source-name" class="muted"></span>
         </div>
-        <div class="seg" id="view-toggle" title="View (G / C / L / D / E)">
+        <div class="seg" id="view-toggle" title="View (G / C / L / D / E / M)">
           <button data-view="galaxy" class="active" title="Force-directed graph (G)">Galaxy</button>
           <button data-view="city" title="Code city (C)">City</button>
           <button data-view="layers" title="Architecture layers: red = dependency pointing up (L)">Layers</button>
           <button data-view="di" title="Dependency injection: services on lifetime planes (D)">DI</button>
           <button data-view="flow" title="Call flow from an entry point, one plane per call depth (E)">Flow</button>
+          <button data-view="matrix" title="Dependency matrix: the row uses the column; layers along the diagonal, cycles framed, red = against the layers (M)">Matrix</button>
         </div>
         <div class="seg" id="level-toggle" title="Level of detail (1-4, Z = automatic)">
           <button data-level="project">Projects</button>
