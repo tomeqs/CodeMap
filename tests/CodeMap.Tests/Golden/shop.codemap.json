@@ -44,14 +44,14 @@
     "members": 154,
     "packages": 2,
     "externalTypes": 0,
-    "edges": 421,
+    "edges": 423,
     "files": 29,
     "lines": 809,
     "cycles": 4,
     "edges.holds": 36,
     "edges.implements": 23,
     "edges.calls": 37,
-    "edges.uses": 54,
+    "edges.uses": 56,
     "edges.accesses": 142,
     "edges.returns": 19,
     "edges.accepts": 35,
@@ -7994,6 +7994,18 @@
       "source": "T:Shop.Application.Orders.PlaceOrderHandler",
       "target": "T:Shop.Domain.Orders.IOrderRepository",
       "kind": "injects",
+      "weight": 1
+    },
+    {
+      "source": "T:Shop.Application.Orders.PlaceOrderHandler",
+      "target": "T:Shop.Application.Orders.PlaceOrderCommand",
+      "kind": "uses",
+      "weight": 1
+    },
+    {
+      "source": "T:Shop.Application.Orders.PlaceOrderHandler",
+      "target": "T:Shop.Application.Orders.PlaceOrderResult",
+      "kind": "uses",
       "weight": 1
     },
     {

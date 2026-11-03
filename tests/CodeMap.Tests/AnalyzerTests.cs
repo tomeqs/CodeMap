@@ -352,4 +352,93 @@ public class AnalyzerTests
         Assert.Contains(Tags.Test, graph.Node("T:App.OrderTests").Tags!);
         Assert.Contains(Tags.Test, graph.Node("M:App.OrderTests.Works").Tags!);
     }
+
+    [Fact]
+    public void Generic_arguments_of_base_types_and_interfaces_are_dependencies()
+    {
+        using var ws = new TestWorkspace()
+            .Project("App")
+            .File("App/Code.cs", """
+                namespace App;
+                public class Order { }
+                public class Line { }
+                public interface IRepository<T> { }
+                public abstract class Validator<T> { }
+                public interface IOrderRepository : IRepository<Order> { }
+                public class OrderValidator : Validator<Order>, IRepository<List<Line>> { }
+                public class Node : IComparable<Node> { public int CompareTo(Node? other) => 0; }
+                """);
+
+        var graph = ws.Analyze();
+
+        graph.AssertEdge("T:App.IOrderRepository", EdgeKinds.Uses, "T:App.Order");
+        graph.AssertEdge("T:App.IOrderRepository", EdgeKinds.Inherits, "T:App.IRepository`1"); // an interface extending an interface
+        graph.AssertEdge("T:App.OrderValidator", EdgeKinds.Uses, "T:App.Order");
+        graph.AssertEdge("T:App.OrderValidator", EdgeKinds.Uses, "T:App.Line");
+        graph.AssertEdge("T:App.OrderValidator", EdgeKinds.Inherits, "T:App.Validator`1");
+        graph.AssertNoEdge("T:App.Node", EdgeKinds.Uses, "T:App.Node");
+    }
+
+    [Fact]
+    public void Nameof_mentions_a_member_without_calling_it_and_property_patterns_read_properties()
+    {
+        using var ws = new TestWorkspace()
+            .Project("App")
+            .File("App/Code.cs", """
+                namespace App;
+                public enum Status { Open, Paid }
+                public class Order { internal Status Status { get; set; } }
+                public class Orders
+                {
+                    public string GetById(int id) => id.ToString();
+                    public string Create() => nameof(GetById) + nameof(Order);
+                    public bool IsPaid(Order order) => order is { Status: Status.Paid };
+                }
+                """);
+
+        var graph = ws.Analyze();
+
+        graph.AssertNoEdge("M:App.Orders.Create", EdgeKinds.Calls, "M:App.Orders.GetById(System.Int32)");
+        graph.AssertEdge("M:App.Orders.Create", EdgeKinds.Uses, "T:App.Order");
+        graph.AssertEdge("M:App.Orders.IsPaid(App.Order)", EdgeKinds.Accesses, "P:App.Order.Status");
+        Assert.DoesNotContain(Tags.Unused, graph.Node("P:App.Order.Status").Tags ?? new List<string>());
+    }
+
+    [Theory]
+    [InlineData("net8.0", "NETCOREAPP2_1_OR_GREATER")]
+    [InlineData("net8.0", "NET5_0_OR_GREATER")]
+    [InlineData("netstandard2.1", "NETSTANDARD2_0_OR_GREATER")]
+    [InlineData("netstandard2.1", "NETSTANDARD2_1")]
+    [InlineData("netcoreapp3.1", "NETCOREAPP2_2_OR_GREATER")]
+    [InlineData("net472", "NET462_OR_GREATER")]
+    [InlineData("net48", "NETFRAMEWORK")]
+    public void The_sdk_preprocessor_symbols_of_the_target_framework_are_defined(string tfm, string symbol)
+    {
+        var symbols = CodeMap.Loading.CompilationFactory.PreprocessorSymbols(new CodeMap.Loading.ProjectInfo { TargetFramework = tfm }).ToList();
+        Assert.Contains(symbol, symbols);
+    }
+
+    [Fact]
+    public void Code_under_an_or_greater_symbol_of_the_target_framework_is_analyzed()
+    {
+        using var ws = new TestWorkspace()
+            .File("Lib/Lib.csproj", """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup><TargetFramework>netstandard2.1</TargetFramework></PropertyGroup>
+                </Project>
+                """)
+            .File("Lib/Code.cs", """
+                namespace Lib;
+                #if NETSTANDARD2_0_OR_GREATER
+                public class Modern { }
+                #else
+                public class Legacy { }
+                #endif
+                """);
+
+        var graph = ws.Analyze();
+
+        Assert.Contains(graph.Nodes, n => n.Id == "T:Lib.Modern");
+        Assert.DoesNotContain(graph.Nodes, n => n.Id == "T:Lib.Legacy");
+    }
 }

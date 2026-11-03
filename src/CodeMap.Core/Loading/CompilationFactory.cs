@@ -126,33 +126,49 @@ public sealed class CompilationFactory
             }
         });
 
-    private static IEnumerable<string> PreprocessorSymbols(ProjectInfo project)
+    private static readonly string[] CoreAppVersions = { "1_0", "1_1", "2_0", "2_1", "2_2", "3_0", "3_1" };
+    private static readonly string[] StandardVersions = { "1_0", "1_1", "1_2", "1_3", "1_4", "1_5", "1_6", "2_0", "2_1" };
+    private static readonly string[] FrameworkVersions = { "20", "30", "35", "40", "45", "451", "452", "46", "461", "462", "47", "471", "472", "48", "481" };
+
+    /// <summary>The symbols the .NET SDK defines for the target framework (NET8_0, NETSTANDARD2_0_OR_GREATER, NET472...).</summary>
+    internal static IEnumerable<string> PreprocessorSymbols(ProjectInfo project)
     {
         var symbols = new HashSet<string> { "DEBUG", "TRACE" };
         var tfm = project.TargetFramework?.Trim().ToLowerInvariant() ?? "net8.0";
-        var match = Regex.Match(tfm, @"^net(?<major>\d+)\.(?<minor>\d+)");
-        if (match.Success)
+        // Every version up to and including the current one, as NAMEx_y_OR_GREATER.
+        void OrGreater(string name, string[] versions, string current)
         {
-            var major = int.Parse(match.Groups["major"].Value);
-            var minor = int.Parse(match.Groups["minor"].Value);
+            var last = Array.IndexOf(versions, current);
+            for (var i = 0; i <= (last < 0 ? versions.Length - 1 : last); i++) symbols.Add($"{name}{versions[i]}_OR_GREATER");
+        }
+
+        var modern = Regex.Match(tfm, @"^net(?<major>\d+)\.(?<minor>\d+)");
+        Match framework;
+        if (modern.Success && int.Parse(modern.Groups["major"].Value) >= 5)
+        {
+            var major = int.Parse(modern.Groups["major"].Value);
+            var minor = int.Parse(modern.Groups["minor"].Value);
             symbols.UnionWith(new[] { "NET", "NETCOREAPP", $"NET{major}_{minor}" });
             for (var v = 5; v <= major; v++) symbols.Add($"NET{v}_0_OR_GREATER");
-            symbols.UnionWith(new[] { "NETCOREAPP1_0_OR_GREATER", "NETCOREAPP2_0_OR_GREATER", "NETCOREAPP3_0_OR_GREATER", "NETCOREAPP3_1_OR_GREATER" });
+            OrGreater("NETCOREAPP", CoreAppVersions, CoreAppVersions[^1]);
         }
-        else if (tfm.StartsWith("netstandard", StringComparison.Ordinal))
+        else if (Regex.Match(tfm, @"^netstandard(?<v>\d+\.\d+)$") is { Success: true } standard)
         {
-            symbols.Add("NETSTANDARD");
-            symbols.Add(tfm.ToUpperInvariant().Replace('.', '_'));
+            var version = standard.Groups["v"].Value.Replace('.', '_');
+            symbols.UnionWith(new[] { "NETSTANDARD", "NETSTANDARD" + version });
+            OrGreater("NETSTANDARD", StandardVersions, version);
         }
-        else if (tfm.StartsWith("netcoreapp", StringComparison.Ordinal))
+        else if (Regex.Match(tfm, @"^netcoreapp(?<v>\d+\.\d+)$") is { Success: true } core)
         {
-            symbols.Add("NETCOREAPP");
-            symbols.Add(tfm.ToUpperInvariant().Replace('.', '_'));
+            var version = core.Groups["v"].Value.Replace('.', '_');
+            symbols.UnionWith(new[] { "NETCOREAPP", "NETCOREAPP" + version });
+            OrGreater("NETCOREAPP", CoreAppVersions, version);
         }
-        else if (tfm.StartsWith("net4", StringComparison.Ordinal) || tfm.StartsWith("v4", StringComparison.Ordinal))
+        else if ((framework = Regex.Match(tfm, @"^(net(?<v>\d{2,3})|v(?<v>\d(\.\d){1,2}))$")).Success)
         {
-            symbols.Add("NETFRAMEWORK");
-            symbols.Add("NET" + new string(tfm.Where(char.IsDigit).ToArray()));
+            var version = framework.Groups["v"].Value.Replace(".", "");
+            symbols.UnionWith(new[] { "NETFRAMEWORK", "NET" + version });
+            if (Array.IndexOf(FrameworkVersions, version) >= 0) OrGreater("NET", FrameworkVersions, version);
         }
 
         symbols.UnionWith(project.DefineConstants);
