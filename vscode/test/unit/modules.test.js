@@ -67,8 +67,9 @@ test('webview HTML gets a strict CSP and a nonce on the viewer script only', () 
 
 test('standalone HTML embeds the graph safely', () => {
   const viewer = '<html><head><title>CodeMap</title></head><body><script id="codemap-data" type="application/json">null</script></body></html>';
-  const doc = { source: { name: 'Shop<b>' }, nodes: [{ id: 'T:A', doc: 'ends with </script><script>alert(1)</script>' }] };
+  const doc = { source: { name: 'Shop<b>' }, nodes: [{ id: 'T:A', doc: 'ends with </script><script>alert(1)</script>' }, { id: 'T:B', doc: 'renders <!--<script> tags' }] };
   const html = standaloneHtml(viewer, doc);
+  assert.ok(!html.slice(html.indexOf('application/json">') + 18, html.lastIndexOf('</script>')).includes('<'), 'no markup inside the data script');
   assert.match(html, /<title>CodeMap · Shopb<\/title>/);
   assert.equal(html.match(/<\/script>/g).length, 1, 'no early end of the data script');
   const json = html.slice(html.indexOf('application/json">') + 18, html.lastIndexOf('</script>'));

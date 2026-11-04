@@ -79,8 +79,39 @@ export function referenceKind(ts, decl) {
   if (ts.isVariableDeclaration(decl) && decl.initializer && (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer))) return 'calls';
   if (ts.isPropertyDeclaration(decl) && decl.initializer && (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer))) return 'calls';
   if (ts.isClassDeclaration(decl) || ts.isInterfaceDeclaration(decl) || ts.isTypeAliasDeclaration(decl) || ts.isEnumDeclaration(decl) || ts.isEnumMember(decl)) return 'uses';
-  if (ts.isExportAssignment(decl) || ts.isSourceFile(decl)) return 'uses';
+  if (ts.isExportAssignment(decl)) {
+    // export default () => …, export default class {…}, export default { … }
+    const expr = decl.expression;
+    return ts.isArrowFunction(expr) || ts.isFunctionExpression(expr) ? 'calls' : ts.isClassExpression(expr) ? 'uses' : 'accesses';
+  }
+
+  if (ts.isSourceFile(decl)) return 'uses';
   return 'accesses';
+}
+
+/** The node of a file: a module, tagged test, config (vite.config.ts) or barrel (only re-exports). */
+function addModule(ctx, info, sf) {
+  const { ts, graph } = ctx;
+  const moduleTags = [...(info.isTest ? ['test'] : []), ...(isConfigFile(info.path) ? ['config'] : []), ...(sf && isBarrel(ts, sf) ? ['barrel'] : [])];
+  graph.addNode({
+    id: info.moduleId,
+    kind: 'module',
+    level: 'type',
+    name: info.name,
+    fullName: info.path,
+    parent: info.folderId,
+    project: info.projectId,
+    namespace: info.folder,
+    accessibility: 'public',
+    location: { file: info.rel, line: 1, endLine: info.lines },
+    tags: moduleTags.length ? moduleTags : undefined,
+    metrics: { loc: info.lines },
+  });
+}
+
+/** A single-file component (.vue, .svelte, .astro): its file on the map; the markup has no declarations to show. */
+export function declareComponent(ctx, info) {
+  addModule(ctx, info, null);
 }
 
 /**
@@ -98,21 +129,7 @@ export function declareModule(ctx, sf, info) {
   };
   const tags = info.isTest ? ['test'] : undefined;
   const base = { level: 'member', project: info.projectId, namespace: info.folder };
-
-  graph.addNode({
-    id: info.moduleId,
-    kind: 'module',
-    level: 'type',
-    name: info.name,
-    fullName: info.path,
-    parent: info.folderId,
-    project: info.projectId,
-    namespace: info.folder,
-    accessibility: 'public',
-    location: { file: info.rel, line: 1, endLine: info.lines },
-    tags: info.isTest ? ['test'] : undefined,
-    metrics: { loc: info.lines },
-  });
+  addModule(ctx, info, sf);
 
   /** The metrics of a declaration, with its size (lines) when it does not say. */
   const withLoc = (fresh) => (fresh.metrics?.loc === undefined ? { ...(fresh.metrics ?? {}), loc: fresh.location.endLine - fresh.location.line + 1 } : fresh.metrics);
@@ -194,8 +211,20 @@ export function declareModule(ctx, sf, info) {
           signature: signature(ts, sf, statement, isFunction ? expr.body : null),
           metrics: isFunction ? { complexity: complexity(ts, expr.body) } : undefined,
         }, statement, expr);
-      } else {
+      } else if (ts.isIdentifier(expr)) {
+        // export default name: references reach `name` itself.
         topLevel.push(statement);
+      } else {
+        // export default { Row: RowStack } / defineConfig(…): one node that importers of the default export reach.
+        const node = add(memberId(info.moduleId, 'default'), {
+          kind: 'variable',
+          name: 'default',
+          fullName: `${info.path}#default`,
+          parent: info.moduleId,
+          accessibility: 'public',
+          signature: signature(ts, sf, statement, null),
+        }, statement, expr);
+        node.runsCode = runsCode(ts, expr);
       }
     } else if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement) && !ts.isModuleDeclaration(statement) &&
         !ts.isImportEqualsDeclaration(statement) && statement.kind !== ts.SyntaxKind.EmptyStatement) {
@@ -203,11 +232,13 @@ export function declareModule(ctx, sf, info) {
     }
   }
 
-  // Code at the top of the file (bootstrap calls, app.use(…), route registrations) is one more member.
-  if (topLevel.some((s) => containsCode(ts, s))) {
+  // Code at the top of the file (bootstrap calls, app.use(…), route registrations, module.exports = {…},
+  // assignments) is one more member. Directives ('use strict', 'use client') are not code.
+  const code = topLevel.filter((s) => !(ts.isExpressionStatement(s) && ts.isStringLiteral(s.expression)));
+  if (code.some((s) => !ts.isExportAssignment(s))) {
     const id = memberId(info.moduleId, '(top-level)');
-    const first = location(topLevel[0]);
-    const last = location(topLevel[topLevel.length - 1]);
+    const first = location(code[0]);
+    const last = location(code[code.length - 1]);
     graph.addNode({
       id,
       ...base,
@@ -218,9 +249,10 @@ export function declareModule(ctx, sf, info) {
       accessibility: 'private',
       location: { file: info.rel, line: first.line, endLine: last.endLine },
       tags: tags ? [...tags] : undefined,
-      metrics: { loc: last.endLine - first.line + 1, complexity: topLevel.reduce((sum, s) => sum + complexity(ts, s) - 1, 1) },
+      metrics: { loc: last.endLine - first.line + 1, complexity: code.reduce((sum, s) => sum + complexity(ts, s) - 1, 1) },
+      runsCode: code.some((s) => runsCode(ts, s)), // a script (an entry point when nothing imports it), not only assignments
     });
-    owners.push({ id, node: sf, code: topLevel, kind: 'function', topLevel: true });
+    owners.push({ id, node: sf, code, kind: 'function', topLevel: true });
   }
 
   return owners;
@@ -268,6 +300,25 @@ function declareMembers(ctx, sf, info, owner, ownerId, ownerName, add) {
     }, member, code);
     if (isAccessor && node.hasCode && code && node.metrics) node.metrics.complexity = Math.max(node.metrics.complexity ?? 1, complexity(ts, body));
   }
+}
+
+/**
+ * A tool's configuration, which the tool loads from the package's root: vite.config.ts, jest.config.js, .eslintrc.cjs.
+ * (src/app.config.ts is the application's own code.)
+ */
+export function isConfigFile(path) {
+  return !path.includes('/') && (/\.config\.[cm]?[jt]s$/.test(path) || /^\.[\w-]+rc\.c?js$/.test(path));
+}
+
+/** A file made only of imports and exports that re-exports at least one other file: index.ts of a folder. */
+function isBarrel(ts, sf) {
+  let reexports = false;
+  for (const statement of sf.statements) {
+    if (ts.isExportDeclaration(statement)) reexports ||= !!statement.moduleSpecifier;
+    else if (!ts.isImportDeclaration(statement) && !ts.isImportEqualsDeclaration(statement)) return false;
+  }
+
+  return reexports;
 }
 
 /** Names exported by `export { a, b as c }` (not re-exports from other files). */
@@ -356,7 +407,8 @@ function doc(ts, node) {
   return first.length > 300 ? first.slice(0, 299) + '…' : first;
 }
 
-function containsCode(ts, node) {
+/** Does a statement call something, create an object or wait (code that runs), rather than only assign or export values? */
+function runsCode(ts, node) {
   let found = false;
   const visit = (n) => {
     if (found) return;

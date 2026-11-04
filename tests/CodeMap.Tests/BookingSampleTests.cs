@@ -36,6 +36,19 @@ public class BookingSampleTests
     }
 
     [NodeFact(typescript: true)]
+    public void Csharp_settings_come_from_imported_props_and_directory_build_targets()
+    {
+        // server/Directory.Build.props imports build/Common.props (framework, implicit usings); Directory.Build.targets adds
+        // a global using for every project but Contracts. Reservation.cs relies on both: Entity<> and Guid resolve.
+        var domain = Loading.ProjectLoader.ReadProject(Path.Combine(Booking, "server", "src", "Booking.Domain", "Booking.Domain.csproj"));
+        Assert.Equal(("net8.0", true), (domain.TargetFramework, domain.ImplicitUsings));
+        Assert.Contains("Booking.Domain.Common", domain.Usings);
+        Assert.DoesNotContain("Booking.Domain.Common", Loading.ProjectLoader.ReadProject(Path.Combine(Booking, "server", "src", "Booking.Contracts", "Booking.Contracts.csproj")).Usings);
+        Graph.AssertEdge($"T:{Domain}Reservations.Reservation", EdgeKinds.Inherits, $"T:{Domain}Common.Entity`1");
+        Graph.AssertEdge($"T:{Domain}Reservations.ReservationValidator", EdgeKinds.Inherits, $"T:{Domain}Common.Validator`1");
+    }
+
+    [NodeFact(typescript: true)]
     public void Csharp_edges_generic_bases_property_patterns_and_nameof()
     {
         // The generic arguments of base types are dependencies.
@@ -70,6 +83,16 @@ public class BookingSampleTests
         // Booking.Contracts.csproj: EnableDefaultItems=false, only Dto/** is compiled.
         Node("T:Booking.Contracts.Dto.ReservationDto");
         Assert.DoesNotContain(Graph.Nodes, n => n.Id == "T:Booking.Contracts.Drafts.DraftContract");
+    }
+
+    [NodeFact(typescript: true)]
+    public void Csharp_roles_need_evidence_and_explicit_implementations_are_used()
+    {
+        // RetryController is a plain class: no controller tag, not built by the container (its RetryPolicy is no issue).
+        Assert.DoesNotContain(Tags.Controller, Node($"T:{Infra}Resilience.RetryController").Tags ?? new List<string>());
+        Assert.Contains(Tags.Controller, Node("T:Booking.Api.Controllers.ReservationsController").Tags!);
+        // ReservationBook's explicit IEnumerable.GetEnumerator and IDisposable.Dispose are called through the interfaces.
+        Assert.DoesNotContain(Graph.Analysis.UnusedCandidates, id => id.StartsWith($"M:{Infra}Collections.ReservationBook", StringComparison.Ordinal));
     }
 
     [NodeFact(typescript: true)]
@@ -117,6 +140,24 @@ public class BookingSampleTests
     }
 
     [NodeFact(typescript: true)]
+    public void Csharp_closed_generics_and_a_cast_forward_resolve_as_in_the_container()
+    {
+        var di = Graph.Analysis.Di!;
+        DiDependency Dependency(string consumer) => di.Dependencies.Single(d => d.Consumer == $"T:{Infra}ReadModels.{consumer}");
+        const string repository = $"T:{Domain}Reservations.IReservationRepository", store = $"T:{Infra}Persistence.InMemoryReservationRepository";
+
+        // The cast forward registers the concrete store, so the repository's consumers keep InMemoryReservationRepository.
+        Assert.Contains(di.Registrations, r => r is { Service: store, Kind: "forward", Implementation: repository });
+        Assert.Equal(new[] { store }, di.Registrations.Where(r => r.Service == repository).Select(r => r.Implementation));
+        Assert.Equal(new[] { repository }, Dependency("ReservationReadModel").Implementations);
+
+        // IReadModel<Reservation> gets its own registration, not the scoped IReadModel<string> registered after it.
+        Assert.Equal(new[] { $"{Domain}Reservations.Reservation" }, Dependency("OccupancyReport").TypeArguments);
+        Assert.Equal(new[] { $"T:{Infra}ReadModels.ReservationReadModel" }, Dependency("OccupancyReport").Implementations);
+        Assert.Equal("singleton", Dependency("OccupancyReport").Lifetime);
+    }
+
+    [NodeFact(typescript: true)]
     public void Typescript_references_overloads_and_signatures()
     {
         foreach (var handler in new[] { "list", "create", "cancel" }) Graph.AssertEdge(Bff + "routes.ts#handlers", EdgeKinds.Calls, Bff + "routes.ts#" + handler); // { list, create, cancel }
@@ -126,11 +167,24 @@ public class BookingSampleTests
     }
 
     [NodeFact(typescript: true)]
+    public void Typescript_annotations_type_parameters_and_require_variables_are_references()
+    {
+        Graph.AssertEdge(Web + "badge.ts#Badge", EdgeKinds.Uses, Web + "badge.ts#Renderer");   // const Badge: Renderer<BadgeProps>
+        Graph.AssertEdge(Web + "badge.ts#Badge", EdgeKinds.Uses, Web + "badge.ts#BadgeProps");
+        Graph.AssertEdge(Web + "badge.ts#Renderer", EdgeKinds.Uses, Web + "badge.ts#Labelled"); // <P extends Labelled = BadgeProps>
+        Graph.AssertEdge(Web + "badge.ts#Renderer", EdgeKinds.Uses, Web + "badge.ts#BadgeProps");
+        const string script = "ts:@booking/bff:scripts/version.cjs";
+        Graph.AssertEdge(script + "#(top-level)", EdgeKinds.Accesses, script + "#pkg"); // const pkg = require(…)
+        Graph.AssertEdge(script + "#(top-level)", EdgeKinds.Accesses, script + "#path");
+        Assert.Contains("entrypoint", Node(script).Tags!); // a script nothing imports
+    }
+
+    [NodeFact(typescript: true)]
     public void Typescript_express_routes_and_their_complexity()
     {
         // A chain of verbs on a router mounted at /api, and a route on an app typed express.Express.
         var routes = Graph.Nodes.Where(n => n.Tags?.Contains("route") == true && n.Id.StartsWith("ts:", StringComparison.Ordinal)).ToList();
-        Assert.Equal(new[] { "DELETE /api/reservations", "GET /api/reservations", "GET /health", "POST /api/reservations" }, routes.Select(n => n.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(new[] { "DELETE /api/reservations", "GET /api/reservations", "GET /api/v1/rooms", "GET /health", "POST /api/reservations" }, routes.Select(n => n.Name).Order(StringComparer.Ordinal));
         var lines = File.ReadAllLines(Path.Combine(Booking, "client", "apps", "bff", "src", "routes.ts"));
         foreach (var verb in new[] { "get", "post", "delete" })
         {
@@ -142,6 +196,15 @@ public class BookingSampleTests
         Assert.Equal(3, Node(Bff + "register.ts#route:GET /health").Metric("complexity"));
         Assert.Equal(1, Node(Bff + "register.ts#register").Metric("complexity"));
         Assert.Equal(3, Node(Bff + "register.ts#(top-level)").Metric("complexity"));
+    }
+
+    [NodeFact(typescript: true)]
+    public void Typescript_package_exports_configs_and_barrels()
+    {
+        Assert.Contains("entrypoint", Node(Core + "money.ts").Tags!); // exports "./money": ./dist/esm/money.js → src/money.ts
+        Assert.Contains("entrypoint", Node(Core + "index.ts").Tags!);
+        Assert.Contains("barrel", Node(Core + "index.ts").Tags!);     // only export * from …
+        Assert.Contains("config", Node("ts:@booking/web:vite.config.ts").Tags!);
     }
 
     [NodeFact(typescript: true)]

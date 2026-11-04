@@ -19,7 +19,7 @@ JSON Schema: [`codemap.schema.json`](codemap.schema.json).
 | `version` | `"1.1"` | wersja formatu; nowe pola mogą się pojawiać bez zmiany wersji głównej (1.1 dodała `level`, `language`, `source.languages`, nowe rodzaje węzłów i `imports`) |
 | `generator` | `{ name, version }` | narzędzie, które wygenerowało plik |
 | `generatedAt` | ISO 8601 | czas analizy |
-| `source` | obiekt | `path` (analizowany plik/katalog), `root` (katalog bazowy dla ścieżek plików), `kind` (`solution`/`project`/`directory`/`file`), `name`, `languages` (języki w mapie, patrz niżej), opcjonalnie `git` (`branch`, `commit`, `commitsAnalyzed`, `since`) |
+| `source` | obiekt | `path` (analizowany plik/katalog), `root` (katalog bazowy dla ścieżek plików), `kind` (`solution`/`project`/`directory`/`file`), `name`, `languages` (języki w mapie, patrz niżej), opcjonalnie `git` (`branch`, `commit`, `commitsAnalyzed`, `since`, `shallow: true` dla płytkiego klonu, z ostrzeżeniem, bo metryki historii widzą wtedy tylko jego commity) |
 | `stats` | `{ string: int }` | liczniki: `projects`, `namespaces`, `types`, `members`, `edges`, `lines`, `files`, `cycles`, `edges.<kind>`… |
 | `nodes` | `Node[]` | węzły |
 | `edges` | `Edge[]` | krawędzie |
@@ -94,8 +94,11 @@ każdego mają swój `language`.
 | Tag | Znaczenie |
 |---|---|
 | `controller`, `dbcontext`, `repository`, `service`, `handler`, `hosted-service`, `middleware`, `hub`, `exception`, `attribute`, `options`, `dto`, `validator`, `factory`, `extensions` | rozpoznane role (dziedziczenie, interfejsy, atrybuty, konwencje nazw) |
-| `test`, `test-project` | klasa/metoda testowa, projekt testowy |
-| `entrypoint` | `Main`, top-level statements, projekt wykonywalny |
+| `page`, `component` | C#: strona Razor (`PageModel` albo code-behind pliku `.cshtml`) i komponent Blazora (`ComponentBase` albo code-behind pliku `.razor`); ich składowe nie są „nieużywane”, bo używa ich markup. `component` także dla komponentów Angulara |
+| `test`, `test-project` | klasa/metoda testowa, projekt testowy; w TypeScripcie także pliki w `test/`, `tests/`, `__tests__/`, `__fixtures__/`, `__testfixtures__/` oraz `*.test-d.ts` |
+| `entrypoint` | `Main`, top-level statements, projekt wykonywalny; w TypeScripcie pliki z `main`, `module`, `bin` i `exports` w package.json (bez warunków `types`), pliki uruchamiające kod, których nikt nie importuje, i pliki, które framework ładuje sam (Next.js, SvelteKit, SolidStart, Astro, Nuxt) |
+| `route` | trasa HTTP (Express, NestJS) albo plik trasy w routingu plikowym (`app/**/page.tsx`, `pages/**`, `+page.svelte`, `src/routes/**`, `server/api/**`) |
+| `config`, `barrel` | TypeScript: konfiguracja narzędzia w katalogu paczki (`vite.config.ts`, `.eslintrc.cjs`) i plik złożony tylko z importów i re-eksportów (`index.ts` folderu) |
 | `generated` | `[GeneratedCode]`, `[CompilerGenerated]` |
 | `positional` | właściwość z parametru pozycyjnego rekordu |
 | `in-cycle` | element należy do cyklu zależności |
@@ -119,7 +122,7 @@ każdego mają swój `language`.
 | `abstractness`, `distance` | namespace, projekt | udział typów abstrakcyjnych, odległość od main sequence `|A + I − 1|` |
 | `dit`, `noc` | klasa | głębokość dziedziczenia, liczba bezpośrednich podklas |
 | `types`, `files`, `lines` | namespace / projekt | liczba typów, plików, linii |
-| `commits`, `churn`, `authors`, `ageDays` | typ | historia gita plików typu |
+| `commits`, `churn`, `authors`, `ageDays` | typ | historia gita plików typu (`commits` liczy każdy commit raz, także gdy zmienia kilka plików typu częściowego; `churn` to suma linii) |
 | `hotspot` | typ | `sqrt(complexity/max · commits/max)` w zakresie 0..1 |
 
 ## Krawędź (`Edge`)
@@ -157,7 +160,7 @@ Krawędzie są zapisywane na najdokładniejszym możliwym poziomie: `calls` łą
 | `extends` | metoda/typ → typ | `this T` w metodach rozszerzających, bloki `extension(T)` z C# 14 |
 | `decoratedWith` | element → klasa atrybutu | `[Attr]` |
 | `changesWith` | typ → typ | historia gita: pliki obu typów zmieniały się w tych samych commitach (patrz `analysis.changeCoupling`) |
-| `imports` | plik → plik | języki z modułami (TypeScript): `import` innego pliku |
+| `imports` | plik → plik | języki z modułami (TypeScript): `import` innego pliku, także `require()` |
 
 W innych językach dziedziczenie klas to też `inherits` (np. `class A extends B` w TypeScripcie); `extends` zostaje
 dla metod rozszerzających C#. Języki mogą dodawać własne rodzaje krawędzi (camelCase).
@@ -226,8 +229,9 @@ NestJS albo Angular w TypeScripcie (pole `framework`; bez niego to kontener .NET
 
 | Pole | Opis |
 |---|---|
-| `service` | id typu usługi; dla typów frameworka pełna nazwa i `external: true` |
-| `implementation` | id implementacji (brak dla fabryk, których nie da się prześledzić) |
+| `service` | id typu usługi; dla typów frameworka pełna nazwa i `external: true`; typ, którego kompilator nie rozwiązał (pakiet nieprzywrócony), ma nazwę jak w kodzie (`IMediator`, `IRequestHandler<>`) |
+| `typeArguments` | argumenty typu zamkniętej usługi generycznej (`["Shop.Kind"]` dla `ILookup<Kind>`); brak dla otwartej (`typeof(ILookup<>)`) i niegenerycznej |
+| `implementation` | id implementacji; dla `forward` usługa, do której prowadzi (brak dla fabryk, których nie da się prześledzić) |
 | `lifetime` | `singleton`, `scoped`, `transient` (NestJS: `Scope.DEFAULT` / `REQUEST` / `TRANSIENT`; Angular: `providedIn: 'root'` i `NgModule` → singleton, providery komponentu → scoped, komponenty → transient) |
 | `effective` | czas życia, który kontener w końcu nadaje, gdy różni się od zadeklarowanego (NestJS: zasięg żądania przechodzi na zależnych) |
 | `kind` | `type` (`AddScoped<I, T>()`, `typeof`, `useClass`), `instance` (`AddSingleton(obj)`, `useValue`), `factory` (lambda, `useFactory`), `forward` (`sp => sp.GetRequiredService<T>()`, `useExisting`), `hosted` (`AddHostedService`), `dbcontext` (`AddDbContext`, `Add…DbContext` z Aspire), `httpclient` (typowany `AddHttpClient<T>`), `controller` (kontrolery NestJS), `component` (komponenty, dyrektywy i pipe’y Angulara) |
@@ -238,7 +242,10 @@ NestJS albo Angular w TypeScripcie (pole `framework`; bez niego to kontener .NET
 Rozpoznawane są też `TryAdd*`, `AddKeyed*` i deskryptory `ServiceDescriptor.Singleton/Scoped/Transient` (także `Keyed*`), np. w `services.TryAdd(...)`.
 Argumenty są rozpoznawane po nazwach parametrów (także nazwane argumenty), np. `AddSingleton(typeof(IClock), new SystemClock())` to `instance`,
 a `AddDbContext<T>(…, ServiceLifetime.Transient)` daje `transient`.
-Jak w kontenerze, wygrywa ostatnia rejestracja, a `IEnumerable<T>` dostaje wszystkie. Rejestracje są w kolejności wykonania:
+Fabryka bez argumentów typu rejestruje to, co zwraca lambda: typ wyrażenia, a w bloku typ zwracanej wartości (także przez zmienną lokalną);
+rzutowanie w przekierowaniu, `sp => (Custom)sp.GetRequiredService<Base>()`, rejestruje `Custom` jako `forward` do `Base`.
+Jak w kontenerze, wygrywa ostatnia rejestracja, a `IEnumerable<T>` dostaje wszystkie. Żądanie zamkniętego typu generycznego (`ILookup<Kind>`)
+dostaje rejestracje z tymi samymi argumentami, a gdy ich nie ma, otwarte (`typeof(ILookup<>)`); `IEnumerable<ILookup<Kind>>` dostaje jedne i drugie. Rejestracje są w kolejności wykonania:
 gdy metoda rejestrująca (np. `AddServiceDefaults()`) ma dokładnie jedno wywołanie, liczy się miejsce tego wywołania, także w innym pliku.
 `TryAdd*` usługi (z tym samym kluczem), która jest już zarejestrowana, nie działa w kontenerze i nie ma jej na liście.
 
@@ -249,6 +256,7 @@ oraz typów aktywowanych przez framework (kontrolery i huby jako `transient`, mi
 |---|---|
 | `consumer`, `consumerLifetime` | typ z konstruktorem i jego czas życia |
 | `service` | żądana usługa (id albo pełna nazwa przy `external: true`) |
+| `typeArguments` | argumenty typu zamkniętej usługi generycznej, jak w rejestracjach |
 | `many` | `IEnumerable<T>`: wstrzykiwane są wszystkie rejestracje |
 | `optional` | parametr z wartością domyślną |
 | `key` | `[FromKeyedServices(key)]`: pasują tylko rejestracje z tym kluczem; parametr bez klucza nie dostaje rejestracji z kluczem |

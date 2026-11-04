@@ -218,7 +218,7 @@ public sealed class UiServer : IAsyncDisposable
     {
         var index = viewerHtml.IndexOf(HtmlExporter.Placeholder, StringComparison.Ordinal);
         if (index < 0) throw new InvalidDataException("The viewer template does not contain the CodeMap data placeholder.");
-        var config = JsonSerializer.Serialize(new { token, startDirectory, home }, Json).Replace("</", "<\\/", StringComparison.Ordinal);
+        var config = JsonSerializer.Serialize(new { token, startDirectory, home }, Json).Replace("<", "\\u003c", StringComparison.Ordinal); // no markup inside a <script>
         return viewerHtml.Insert(index, $"<script id=\"codemap-server\" type=\"application/json\">{config}</script>");
     }
 

@@ -226,17 +226,22 @@ try {
         // The canvas is what shows at the centre and the corners of the measured box (the labels get hidden).
         const visible = (p) => [[0, 0], [-3, -3], [3, -3], [-3, 3], [3, 3]].every(([dx, dy]) =>
           document.elementsFromPoint(rect.left + p.x + dx, rect.top + p.y + dy).find((e) => !e.closest('#labels')) === app.stage.canvas);
-        const u = units.find((x) => {
-          if (h.nodes.has(x.id)) return false;
-          const p = screen(x);
-          if (!p || p.r < 3 || !visible(p)) return false;
+        // Biggest on screen, not in the world: a big node far from the camera is a few dim pixels, about as bright
+        // as the glow around it, and its dimming would not show.
+        const candidates = units
+          .filter((x) => !h.nodes.has(x.id))
+          .map((x) => ({ unit: x, p: screen(x) }))
+          .filter(({ p }) => p && p.r >= 3)
+          .sort((a, b) => b.p.r - a.p.r);
+        const found = candidates.find(({ p }) => {
+          if (!visible(p)) return false;
           if (selected && Math.hypot(p.x - selected.x, p.y - selected.y) < Math.max(80, selected.r * 2.5 + MARGIN)) return false; // halo: 1.8 r
           if (lit.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < q.r * 2.5 + MARGIN)) return false;
           return links.every(([a, b]) => toSegment(p, a, b) > MARGIN);
         });
         app.select(null);
-        if (!u) return null;
-        const p = screen(u);
+        if (!found) return null;
+        const { unit: u, p } = found;
         return { id: u.id, selected: units[0].id, x: Math.round(rect.left + p.x), y: Math.round(rect.top + p.y) };
       });
       assert.ok(other, 'an unrelated node on screen, clear of the panels, the selection and its links');

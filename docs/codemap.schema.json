@@ -48,7 +48,8 @@
             "branch": { "type": ["string", "null"] },
             "commit": { "type": ["string", "null"] },
             "commitsAnalyzed": { "type": "integer" },
-            "since": { "type": ["string", "null"] }
+            "since": { "type": ["string", "null"] },
+            "shallow": { "type": "boolean" }
           }
         }
       }
@@ -205,6 +206,7 @@
             "properties": {
               "service": { "type": "string" },
               "external": { "type": "boolean" },
+              "typeArguments": { "type": "array", "items": { "type": "string" } },
               "implementation": { "type": "string" },
               "lifetime": { "$ref": "#/$defs/lifetime" },
               "kind": { "enum": ["type", "instance", "factory", "forward", "hosted", "dbcontext", "httpclient", "controller", "component"] },
@@ -226,6 +228,7 @@
               "consumerLifetime": { "$ref": "#/$defs/lifetime" },
               "service": { "type": "string" },
               "external": { "type": "boolean" },
+              "typeArguments": { "type": "array", "items": { "type": "string" } },
               "many": { "type": "boolean" },
               "optional": { "type": "boolean" },
               "key": { "type": "string" },

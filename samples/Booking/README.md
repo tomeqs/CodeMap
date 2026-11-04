@@ -14,6 +14,8 @@ The C# compiles (`dotnet build server/Booking.sln`). Delete `bin/` and `obj/` af
 
 | Case | Where | What the map shows |
 |---|---|---|
+| Settings in an imported props file | `server/Directory.Build.props` imports `build/Common.props` (framework, `ImplicitUsings`, `Nullable`) | the projects are net8.0 with implicit usings; `Guid`, `List<T>` resolve |
+| A global using from `Directory.Build.targets` | `<Using Include="Booking.Domain.Common" />`, not for Contracts | `Reservation` and `ReservationValidator` (no `using` of their own) inherit `Entity<>` and `Validator<>` |
 | Generic argument of a base class | `Reservation : Entity<ReservationId>` | `Reservation` uses `ReservationId` |
 | Generic argument of a base interface | `IReservationRepository : IRepository<Reservation>` | `IReservationRepository` uses `Reservation` |
 | Generic base class over another type | `ReservationValidator : Validator<Reservation>` | `ReservationValidator` uses `Reservation` |
@@ -24,6 +26,8 @@ The C# compiles (`dotnet build server/Booking.sln`). Delete `bin/` and `obj/` af
 | Item group removed only for net48 | `Compat/` | `LegacyClockAdapter` is on the map |
 | Item removed for everything but net48 | `Experimental/` | `QuantumScheduler` is not on the map |
 | `EnableDefaultItems=false` | `Booking.Contracts.csproj` | the DTOs are on the map, `Drafts/Draft.cs` is not |
+| A name ending in "Controller" without ASP.NET | `Infrastructure/Resilience/RetryController.cs` | no `controller` tag, and its unregistered `RetryPolicy` is no DI issue (the container never builds it) |
+| Explicit implementations of framework interfaces | `ReservationBook`: `IEnumerable.GetEnumerator`, `IDisposable.Dispose` | not "possibly unused" |
 | `TryAdd` after `Add` | `AddBooking()`: `SystemClock`, then `TryAddSingleton<IClock, FixedClock>` | no `FixedClock` registration |
 | An override after an extension in another file | `Program.cs`: `AddBooking()`, then `AddSingleton<IClock, UtcClock>()` | the unkeyed `IClock` registrations are `SystemClock`, `UtcClock`; `PricingService` gets `UtcClock` |
 | Keyed Type overload | `AddKeyedSingleton(typeof(IClock), "utc", typeof(UtcClock))` | key `utc`, implementation `UtcClock` |
@@ -31,6 +35,8 @@ The C# compiles (`dotnet build server/Booking.sln`). Delete `bin/` and `obj/` af
 | Keyed instance | `AddKeyedSingleton<ICache>("memory", new MemoryCache())` | key `memory`, kind `instance` |
 | Instance through `typeof` | `AddSingleton(typeof(INotifier), new EmailNotifier())` | kind `instance`, implementation `EmailNotifier` |
 | Fluent chain over several lines | `.AddScoped<ReservationService>()…` | each registration on its own line |
+| A cast forward | `AddSingleton(sp => (InMemoryReservationRepository)sp.GetRequiredService<IReservationRepository>())` | a `forward` registration of `InMemoryReservationRepository` (not a second `IReservationRepository`), which `ReservationReadModel` gets |
+| Closed generics | `IReadModel<Reservation>` (singleton), then `IReadModel<string>` (scoped) | the singleton `OccupancyReport` gets `ReservationReadModel` and holds no scoped service |
 | `[FromKeyedServices]` | `ReservationService` | its `IClock` is `UtcClock` (key `utc`), its `ICache` is `RedisCache` |
 | An unkeyed request with only keyed registrations | `AvailabilityService(ICache)` | nothing injected; an `unregistered` warning that suggests `[FromKeyedServices]` (the only DI issue of the sample) |
 
@@ -43,10 +49,16 @@ The C# compiles (`dotnet build server/Booking.sln`). Delete `bin/` and `obj/` af
 | Overloads | `libs/core/src/money.ts`: `formatMoney` | its size (`loc`) is the implementation's, 5 lines |
 | A decorator with parentheses in its arguments | `@component({ template: '<button (click)="reload()">…' })` | the signature is `export class ReservationList extends HttpClient` |
 | Express route chain on a mounted router | `apiRouter.route('/reservations').get(…).post(…).delete(…)`, mounted at `/api` | `GET`, `POST` and `DELETE /api/reservations`, each on the line of its verb |
+| Unnamed routers built by chains | `const rooms = express.Router().get('/rooms', …)`, `export const v1 = express.Router().use(express.json()).use(rooms)`, `apiRouter.use('/v1', v1)` | the route `GET /api/v1/rooms` |
 | An app typed with a qualified name | `register(app: express.Express)` | the route `GET /health` |
 | A route registered inside a function | `register.ts` | `GET /health` has complexity 3, `register` 1, and the top-level code keeps its own 3 |
+| A function typed by its variable | `apps/web/src/badge.ts`: `export const Badge: Renderer<BadgeProps> = …` | `Badge` uses `Renderer` and `BadgeProps` |
+| Constraint and default of a type parameter | `type Renderer<P extends Labelled = BadgeProps>` | `Renderer` uses `Labelled` and `BadgeProps`, so neither is "possibly unused" |
+| CommonJS `require()` variables | `apps/bff/scripts/version.cjs`: `const pkg = require('../package.json')` | the script's top-level code accesses `pkg` and `path`; the script is an entry point |
 | A tsconfig path alias | `@/util/dates` (`apps/web/tsconfig.json`) | `reservation-list.ts` imports `util/dates.ts` |
 | A bundler-only alias | `~/app.config` (only `vite.config.ts` declares it) | no npm package `~` (the packages are `express`, `@types/express`, `vite`) |
+| `exports` of a package | `libs/core/package.json`: `"./money": { "default": "./dist/esm/money.js" }` | `money.ts` is an entry point (`dist/esm/money.js` → `src/money.ts`) |
+| A configuration file and a barrel | `apps/web/vite.config.ts`; `libs/core/src/index.ts` (only `export *`) | tagged `config` and `barrel` |
 | A folder inside a package | `codemap client/apps/web/src` | the package `@booking/web`, with the same ids as for the whole sample |
 
 ## Also on the map, on purpose

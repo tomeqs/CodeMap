@@ -16,6 +16,9 @@ internal static class DependencyInjectionAnalysis
 
     private sealed record Registration(ServiceRegistration Public, string Ident);
 
+    /// <summary>The namespace and containing types in a type's full name (<c>Shop.</c> in <c>Shop.Kind</c>).</summary>
+    private static readonly System.Text.RegularExpressions.Regex QualifiedPrefix = new(@"\b\w+\.", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     /// <summary>
     /// Works from what the languages put in <c>analysis.di</c> (registrations, and the services every type's
     /// constructor asks for) and replaces it with the result: who gets what with which lifetime, and the issues.
@@ -106,16 +109,35 @@ internal static class DependencyInjectionAnalysis
             .GroupBy(d => d.Consumer, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
 
-        List<Registration>? Selected(DiDependency dependency) =>
-            byService.TryGetValue((Ident(dependency.Service, dependency.External), dependency.Key), out var candidates)
-                ? dependency.Many ? candidates : new List<Registration> { candidates[^1] } // the last registration wins
-                : null;
+        List<Registration>? Selected(DiDependency dependency)
+        {
+            if (!byService.TryGetValue((Ident(dependency.Service, dependency.External), dependency.Key), out var candidates)) return null;
+            if (dependency.TypeArguments is { } arguments)
+            {
+                // ILookup<Kind>: registrations of ILookup<Kind>, else the open generic ones (typeof(ILookup<>)); never ILookup<Brand>.
+                bool Same(Registration r) => r.Public.TypeArguments is { } own && own.SequenceEqual(arguments, StringComparer.Ordinal);
+                var exact = candidates.Where(Same).ToList();
+                var open = candidates.Where(r => r.Public.TypeArguments == null).ToList();
+                candidates = dependency.Many ? candidates.Where(r => Same(r) || r.Public.TypeArguments == null).ToList()
+                    : exact.Count > 0 ? exact : open;
+                if (candidates.Count == 0) return null;
+            }
+
+            return dependency.Many ? candidates : new List<Registration> { candidates[^1] }; // the last registration wins
+        }
 
         string Unregistered(DiDependency dependency)
         {
             var ident = Ident(dependency.Service, dependency.External);
             if (dependency.Key != null)
                 return $"{Name(dependency.Consumer)} needs {Name(dependency.Service)} under the key \"{dependency.Key}\", but no registration with that key was found in the analyzed code.";
+            if (dependency.TypeArguments is { } arguments && byService.TryGetValue((ident, null), out var others))
+            {
+                string Closed(IEnumerable<string> types) => $"{Name(dependency.Service).Split('<')[0]}<{string.Join(", ", types.Select(t => QualifiedPrefix.Replace(t, "")))}>";
+                var registered = others.Where(r => r.Public.TypeArguments != null).Select(r => Closed(r.Public.TypeArguments!)).Distinct().ToList();
+                if (registered.Count > 0) return $"{Name(dependency.Consumer)} needs {Closed(arguments)}, but it is only registered as {string.Join(", ", registered)}.";
+            }
+
             var keys = byService.Keys.Where(k => k.Ident == ident && k.Key != null).Select(k => $"\"{k.Key}\"").Distinct().ToList();
             return keys.Count == 0 ? ""
                 : $"{Name(dependency.Consumer)} needs {Name(dependency.Service)}, but it is only registered under a key ({string.Join(", ", keys)}): ask for it with [FromKeyedServices].";
@@ -153,6 +175,7 @@ internal static class DependencyInjectionAnalysis
                     ConsumerLifetime = lifetime,
                     Service = serviceName,
                     External = external,
+                    TypeArguments = dependency.TypeArguments,
                     Many = dependency.Many,
                     Optional = dependency.Optional,
                     Key = dependency.Key,

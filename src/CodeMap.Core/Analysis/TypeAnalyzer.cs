@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using CodeMap.Model;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -243,23 +244,38 @@ internal sealed class TypeAnalyzer
             .Where(c => c.DeclaredAccessibility == Microsoft.CodeAnalysis.Accessibility.Public)
             .OrderByDescending(c => c.Parameters.Length)
             .FirstOrDefault();
-        if (constructor == null || constructor.Parameters.Length == 0) return;
 
         var dependencies = new List<GraphBuilder.DependencyDraft>();
-        foreach (var parameter in constructor.Parameters)
+        void Add(ITypeSymbol type, bool optional, string? serviceKey)
         {
-            var parameterType = parameter.Type;
             var many = false;
-            if (parameterType is INamedTypeSymbol { IsGenericType: true } generic
+            if (type is INamedTypeSymbol { IsGenericType: true } generic
                 && generic.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
             {
-                parameterType = generic.TypeArguments[0];
+                type = generic.TypeArguments[0];
                 many = true;
             }
 
-            if (parameterType.IsValueType) continue; // enums, numbers, structs: never container services
-            var ident = _builder.ServiceIdent(parameterType);
-            if (ident != null) dependencies.Add(new GraphBuilder.DependencyDraft(ident, many, parameter.HasExplicitDefaultValue, DiRegistrationDetector.KeyOf(parameter)));
+            if (type.IsValueType) return; // enums, numbers, structs: never container services
+            var ident = _builder.ServiceIdent(type);
+            if (ident != null) dependencies.Add(new GraphBuilder.DependencyDraft(ident, many, optional, serviceKey, GraphBuilder.TypeArgumentsOf(type)));
+        }
+
+        foreach (var parameter in constructor?.Parameters ?? ImmutableArray<IParameterSymbol>.Empty)
+        {
+            Add(parameter.Type, parameter.HasExplicitDefaultValue, DiRegistrationDetector.KeyOf(parameter));
+        }
+
+        // Blazor: [Inject] properties are filled by the renderer from the container (the key from [Inject(Key = …)]).
+        for (var current = type; current != null && current.Locations.Any(l => l.IsInSource); current = current.BaseType)
+        {
+            foreach (var property in current.GetMembers().OfType<IPropertySymbol>())
+            {
+                var inject = property.GetAttributes().FirstOrDefault(a => a.AttributeClass?.Name is "InjectAttribute" or "Inject");
+                if (inject == null) continue;
+                var serviceKey = inject.NamedArguments.FirstOrDefault(a => a.Key == "Key").Value is { Value: { } value } typed ? DiRegistrationDetector.KeyText(value, typed.Type) : null;
+                Add(property.Type, optional: false, serviceKey);
+            }
         }
 
         if (dependencies.Count > 0) _builder.SetConstructorDependencies(key, dependencies);

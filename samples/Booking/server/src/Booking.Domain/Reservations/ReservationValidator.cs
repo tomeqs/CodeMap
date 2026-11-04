@@ -1,5 +1,3 @@
-using Booking.Domain.Common;
-
 namespace Booking.Domain.Reservations;
 
 /// <summary>Edge case: a class whose base is generic over another type (Validator&lt;Reservation&gt;) depends on it.</summary>

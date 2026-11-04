@@ -1,0 +1,4 @@
+<Project>
+  <!-- Edge case: the shared settings live in an imported file (as in Polly's eng/Common.props). -->
+  <Import Project="$(MSBuildThisFileDirectory)build/Common.props" Condition="Exists('$(MSBuildThisFileDirectory)build/Common.props')" />
+</Project>

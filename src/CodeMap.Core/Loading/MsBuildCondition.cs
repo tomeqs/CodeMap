@@ -1,19 +1,22 @@
+using System.Text.RegularExpressions;
+
 namespace CodeMap.Loading;
 
 /// <summary>
-/// Evaluates the simple MSBuild conditions projects put on items and item groups:
-/// <c>'$(TargetFramework)' == 'net8.0'</c>, <c>!=</c>, <c>and</c> / <c>or</c>, <c>!</c>, parentheses, <c>true</c> / <c>false</c>.
-/// Comparisons ignore case, as in MSBuild. Anything else (functions such as Exists(), property functions,
-/// item or metadata references) is not understood: <see cref="Evaluate"/> returns null and the caller keeps
-/// its default.
+/// Evaluates the simple MSBuild conditions projects put on properties, items and imports:
+/// <c>'$(TargetFramework)' == 'net8.0'</c>, <c>!=</c>, <c>and</c> / <c>or</c>, <c>!</c>, parentheses, <c>true</c> / <c>false</c>,
+/// <c>Exists('…')</c> and <c>HasTrailingSlash('…')</c>. Comparisons ignore case, as in MSBuild. Anything else (other
+/// functions, property functions, item or metadata references) is not understood: <see cref="Evaluate"/> returns null
+/// and the caller keeps its default.
 /// </summary>
 internal static class MsBuildCondition
 {
     /// <param name="property">The value of a property ($(Name)); null or empty when it is not set.</param>
-    public static bool? Evaluate(string? condition, Func<string, string?> property)
+    /// <param name="exists">Whether a file or folder exists (for Exists()); without it, Exists() is not understood.</param>
+    public static bool? Evaluate(string? condition, Func<string, string?> property, Func<string, bool>? exists = null)
     {
         if (string.IsNullOrWhiteSpace(condition)) return true;
-        var tokens = Tokenize(condition, property);
+        var tokens = Tokenize(condition, property, exists);
         if (tokens == null) return null;
         var position = 0;
         var result = Or(tokens, ref position);
@@ -24,7 +27,7 @@ internal static class MsBuildCondition
 
     private readonly record struct Token(Kind Kind, string Value = "");
 
-    private static List<Token>? Tokenize(string text, Func<string, string?> property)
+    private static List<Token>? Tokenize(string text, Func<string, string?> property, Func<string, bool>? exists)
     {
         var tokens = new List<Token>();
         var i = 0;
@@ -63,7 +66,28 @@ internal static class MsBuildCondition
                 if (word.Equals("and", StringComparison.OrdinalIgnoreCase)) tokens.Add(new Token(Kind.And));
                 else if (word.Equals("or", StringComparison.OrdinalIgnoreCase)) tokens.Add(new Token(Kind.Or));
                 else if (word.Equals("true", StringComparison.OrdinalIgnoreCase) || word.Equals("false", StringComparison.OrdinalIgnoreCase)) tokens.Add(new Token(Kind.Text, word.ToLowerInvariant()));
-                else return null; // Exists(...), HasTrailingSlash(...)...
+                else if (word.Equals("Exists", StringComparison.OrdinalIgnoreCase) || word.Equals("HasTrailingSlash", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Exists('path') / HasTrailingSlash('value'): one quoted argument.
+                    var argument = Regex.Match(text[i..], @"^\s*\(\s*'(?<value>[^']*)'\s*\)");
+                    if (!argument.Success) return null;
+                    var value = Expand(argument.Groups["value"].Value, property);
+                    if (value == null) return null;
+                    i += argument.Length;
+                    bool result;
+                    if (word.Equals("Exists", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (exists == null) return null;
+                        result = value.Trim().Length > 0 && exists(value.Trim());
+                    }
+                    else
+                    {
+                        result = value.EndsWith('/') || value.EndsWith('\\');
+                    }
+
+                    tokens.Add(new Token(Kind.Text, result ? "true" : "false"));
+                }
+                else return null; // other functions
             }
             else
             {

@@ -57,7 +57,10 @@ export function nest(ctx, sf, info, owners) {
       if (HTTP.has(handler.name)) {
         addTag(method, 'route');
         const path = [prefix, stringOf(ts, handler.args[0]) ?? ''].filter(Boolean).join('/').replace(/\/+/g, '/');
-        method.doc ??= `${handler.name === 'All' ? 'ALL' : handler.name.toUpperCase()} /${path.replace(/^\//, '')}`;
+        // The route comes first in the handler's doc, its JSDoc after it; the global prefix is added once every file is read.
+        const route = { method, verb: handler.name === 'All' ? 'ALL' : handler.name.toUpperCase(), path, doc: method.doc, projectId: info.projectId };
+        ctx.nest.routes.push(route);
+        method.doc = routeDoc(route, '');
       }
     }
 
@@ -68,12 +71,33 @@ export function nest(ctx, sf, info, owners) {
     if (!names.has('Module')) for (const dependency of dependenciesOf(ctx, cls, nestDecorators)) ctx.di.dependencies.push({ ...dependency, framework: 'nest' });
   }
 
-  // NestFactory.create(AppModule) starts the application.
+  // NestFactory.create(AppModule) starts the application; app.setGlobalPrefix('api') prefixes every route of the package.
   const visit = (n) => {
     if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.expression.getText(sf) === 'NestFactory') addTag(file, 'entrypoint');
-    else ts.forEachChild(n, visit);
+    else {
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === 'setGlobalPrefix') {
+        const prefix = stringOf(ts, n.arguments[0]);
+        if (prefix !== null) ctx.nest.prefixes.set(info.projectId, prefix);
+      }
+
+      ts.forEachChild(n, visit);
+    }
   };
   visit(sf);
+}
+
+/** After every file: the global prefix of each package in its routes. */
+export function finishNestRoutes(ctx) {
+  for (const route of ctx.nest.routes) {
+    const prefix = ctx.nest.prefixes.get(route.projectId);
+    if (prefix) route.method.doc = routeDoc(route, prefix);
+  }
+}
+
+/** `GET /api/articles · Lists the articles.` */
+function routeDoc(route, prefix) {
+  const path = [prefix, route.path].filter(Boolean).join('/').replace(/\/+/g, '/').replace(/^\//, '');
+  return `${route.verb} /${path}` + (route.doc ? ` · ${route.doc}` : '');
 }
 
 function registerModule(ctx, sf, info, owner, metadata) {

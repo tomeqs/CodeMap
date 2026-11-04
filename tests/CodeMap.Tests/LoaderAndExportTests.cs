@@ -295,4 +295,27 @@ public class ExportTests
         Assert.DoesNotContain("</", json);
         Assert.Contains("T:App.Service", json);
     }
+
+    [Fact]
+    public void Html_data_holds_no_markup_that_a_browser_reads_inside_a_script()
+    {
+        // As in a real map: a doc comment with "<!--<script" makes the browser take the rest of the page for the data.
+        using var ws = new TestWorkspace()
+            .Project("App")
+            .File("App/Code.cs", """
+                namespace App;
+                /// <summary>Renders &lt;!--&lt;script&gt; tags and &lt;/script&gt; too.</summary>
+                public class Page { }
+                """);
+        var graph = ws.Analyze();
+
+        var html = HtmlExporter.Export(graph, "<html><head><title>CodeMap</title></head><body>" + HtmlExporter.Placeholder + "<script>boot()</script></body></html>");
+
+        var start = html.IndexOf("application/json\">", StringComparison.Ordinal) + "application/json\">".Length;
+        var json = html[start..html.IndexOf("</script>", start, StringComparison.Ordinal)];
+        Assert.DoesNotContain("<", json);
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+        Assert.Contains("<!--<script>", JsonExporter.Read(stream).Node("T:App.Page").Doc); // the same text once parsed
+        Assert.EndsWith("<script>boot()</script></body></html>", html);
+    }
 }

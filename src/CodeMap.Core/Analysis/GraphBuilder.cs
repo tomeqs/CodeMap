@@ -35,11 +35,13 @@ internal sealed class GraphBuilder
     /// <summary>A DI registration; services are identified by symbol key, or "ext:FullName" for framework types.</summary>
     /// <param name="Position">Offset of the method name in its file: orders registrations on one line.</param>
     /// <param name="IfMissing">TryAdd*: skipped when the service and key are already registered.</param>
-    internal sealed record RegistrationDraft(string ServiceIdent, string? ImplementationKey, string Lifetime, string Kind, string? Key, string? SourceKey, SourceLocation Location, int Position, bool IfMissing);
+    /// <param name="TypeArguments">Of a closed generic service (<c>ILookup&lt;Kind&gt;</c>); null for an open or non-generic one.</param>
+    internal sealed record RegistrationDraft(string ServiceIdent, string? ImplementationKey, string Lifetime, string Kind, string? Key, string? SourceKey, SourceLocation Location, int Position, bool IfMissing, IReadOnlyList<string>? TypeArguments = null);
 
     /// <summary>One constructor parameter of a type, as a DI container would see it.</summary>
     /// <param name="Key">[FromKeyedServices(key)]: only a registration under that key matches.</param>
-    internal sealed record DependencyDraft(string ServiceIdent, bool Many, bool Optional, string? Key = null)
+    /// <param name="TypeArguments">Of a closed generic service; registrations with the same ones match first.</param>
+    internal sealed record DependencyDraft(string ServiceIdent, bool Many, bool Optional, string? Key = null, IReadOnlyList<string>? TypeArguments = null)
     {
         public bool External => ServiceIdent.StartsWith("ext:", StringComparison.Ordinal);
     }
@@ -47,14 +49,45 @@ internal sealed class GraphBuilder
     public IReadOnlyCollection<RegistrationDraft> Registrations => _registrations;
     public IReadOnlyDictionary<string, List<DependencyDraft>> ConstructorDependencies => _constructorDependencies;
 
-    /// <summary>Identity of a service type for DI matching (generic types match on their definition).</summary>
+    /// <summary>
+    /// Identity of a service type for DI matching. Generic types match on their definition (their arguments are
+    /// <see cref="TypeArgumentsOf"/>). A type the compiler could not resolve (a package that was never restored) is
+    /// known by its name as written, so a registration and a constructor parameter of it still match.
+    /// </summary>
     public string? ServiceIdent(ITypeSymbol? type, string? fallbackName = null)
     {
         if (type == null) return fallbackName != null ? "ext:" + fallbackName : null;
-        if (type is not INamedTypeSymbol named || named.TypeKind is TypeKind.Error or TypeKind.TypeParameter) return null;
+        if (type is not INamedTypeSymbol named || named.TypeKind == TypeKind.TypeParameter) return null;
+        if (named.TypeKind == TypeKind.Error) return named.Name.Length == 0 ? null : "ext:" + ErrorTypeName(named);
         if (named.OriginalDefinition.SpecialType != SpecialType.None) return null;
         var definition = (INamedTypeSymbol)named.OriginalDefinition;
         return IsInternal(definition) ? SymbolKey(definition) : "ext:" + definition.ToDisplayString(SymbolFormats.FullType);
+    }
+
+    /// <summary>An unresolved type's name as written, with its arity in place of its arguments: <c>MediatR.IRequestHandler&lt;,&gt;</c>.</summary>
+    private static string ErrorTypeName(INamedTypeSymbol type)
+    {
+        var ns = type.ContainingType != null ? ErrorTypeName(type.ContainingType) + "."
+            : type.ContainingNamespace is { IsGlobalNamespace: false } containing ? containing.ToDisplayString() + "." : "";
+        return ns + type.Name + (type.Arity > 0 ? "<" + new string(',', type.Arity - 1) + ">" : "");
+    }
+
+    /// <summary>
+    /// The type arguments of a closed generic service as text, the same for a registration and a request
+    /// (<c>["Shop.Kind"]</c> for <c>ILookup&lt;Kind&gt;</c>); null for a non-generic service and an open one
+    /// (<c>typeof(IRepository&lt;&gt;)</c>, or a type parameter of the consumer).
+    /// </summary>
+    public static IReadOnlyList<string>? TypeArgumentsOf(ITypeSymbol? type)
+    {
+        if (type is not INamedTypeSymbol { IsGenericType: true } named || named.IsUnboundGenericType) return null;
+        static bool Open(ITypeSymbol t) => t switch
+        {
+            ITypeParameterSymbol => true,
+            IArrayTypeSymbol array => Open(array.ElementType),
+            INamedTypeSymbol generic => generic.TypeArguments.Any(Open),
+            _ => false,
+        };
+        return named.TypeArguments.Any(Open) ? null : named.TypeArguments.Select(t => t.ToDisplayString(SymbolFormats.FullType)).ToArray();
     }
 
     public void AddRegistration(RegistrationCandidate candidate, string? sourceKey, SourceLocation location, int position)
@@ -67,7 +100,7 @@ internal sealed class GraphBuilder
             implementation = SymbolKey(impl.OriginalDefinition);
         }
 
-        _registrations.Add(new RegistrationDraft(service, implementation, candidate.Lifetime, candidate.Kind, candidate.Key, sourceKey, location, position, candidate.IfMissing));
+        _registrations.Add(new RegistrationDraft(service, implementation, candidate.Lifetime, candidate.Kind, candidate.Key, sourceKey, location, position, candidate.IfMissing, TypeArgumentsOf(candidate.Service)));
     }
 
     public void SetConstructorDependencies(string typeKey, List<DependencyDraft> dependencies) => _constructorDependencies[typeKey] = dependencies;
