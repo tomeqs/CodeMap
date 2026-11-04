@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Booking.Domain\Booking.Domain.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Edge cases of Compile items, applied in document order as MSBuild does. -->
+  <ItemGroup>
+    <!-- Remove the whole folder, then include one file again: RoomImporter.cs stays, OldBilling.cs is gone. -->
+    <Compile Remove="Legacy/**" />
+    <Compile Include="Legacy/RoomImporter.cs" />
+  </ItemGroup>
+  <!-- Removed only for .NET Framework: on net8.0 Compat/ stays. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Compile Remove="Compat/**" />
+  </ItemGroup>
+  <!-- Removed everywhere but .NET Framework: on net8.0 Experimental/ is gone. -->
+  <ItemGroup>
+    <Compile Remove="Experimental/**" Condition="'$(TargetFramework)' != 'net48'" />
+  </ItemGroup>
+</Project>

@@ -63,10 +63,12 @@ public class SampleTests
         var graph = CodeMapAnalyzer.Analyze(Samples, Registry, NoGit);
         Assert.Equal(new[] { "csharp", "typescript" }, graph.Source.Languages!.Select(l => l.Id));
         var projects = graph.Nodes.Where(n => n.Kind == NodeKinds.Project).ToList();
-        Assert.Equal(5, projects.Count(p => p.Language == "csharp"));
-        Assert.Equal(4, projects.Count(p => p.Language == "typescript"));
+        Assert.Equal(9, projects.Count(p => p.Language == "csharp"));     // Shop 5, Booking 4
+        Assert.Equal(7, projects.Count(p => p.Language == "typescript")); // shop-ts 4, Booking 3
         Assert.Contains(graph.Nodes, n => n.Id == "T:Shop.Domain.Orders.Order");
         Assert.Contains(graph.Nodes, n => n.Id == "ts:@shop/domain:src/orders/order.ts#Order");
+        Assert.Contains(graph.Nodes, n => n.Id == "T:Booking.Domain.Reservations.Reservation");
+        Assert.Contains(graph.Nodes, n => n.Id == "ts:@booking/core:src/http-client.ts#HttpClient");
         Assert.Empty(graph.Analysis.Warnings);
     }
 }

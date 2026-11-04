@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Edge case: no default items. Only the files listed below are compiled; Drafts/ is not part of the project. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultItems>false</EnableDefaultItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Dto/**/*.cs" />
+  </ItemGroup>
+</Project>
