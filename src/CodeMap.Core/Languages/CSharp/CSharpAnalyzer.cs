@@ -141,7 +141,7 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
         string? Resolve(string ident) => ident.StartsWith("ext:", StringComparison.Ordinal) ? ident : builder.IdOf(ident);
 
         var di = new DiAnalysis();
-        var registered = new HashSet<(string Service, string? Key)>();
+        var registered = new HashSet<(string Service, string? Key, string? TypeArguments)>();
         var pathOf = RegistrationPath(builder, graph);
         foreach (var draft in builder.Registrations
                      .Select(r => (Draft: r, Path: pathOf(r)))
@@ -152,12 +152,14 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
         {
             var service = Resolve(draft.ServiceIdent);
             if (service == null) continue;
-            if (!registered.Add((service, draft.Key)) && draft.IfMissing) continue;
+            var typeArguments = draft.TypeArguments == null ? null : string.Join(",", draft.TypeArguments);
+            if (!registered.Add((service, draft.Key, typeArguments)) && draft.IfMissing) continue;
             var external = service.StartsWith("ext:", StringComparison.Ordinal);
             di.Registrations.Add(new ServiceRegistration
             {
                 Service = external ? service[4..] : service,
                 External = external,
+                TypeArguments = draft.TypeArguments?.ToList(),
                 Implementation = builder.IdOf(draft.ImplementationKey),
                 Lifetime = draft.Lifetime,
                 Kind = draft.Kind,
@@ -179,6 +181,7 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
                     Consumer = consumer,
                     Service = dependency.External ? service[4..] : service,
                     External = dependency.External,
+                    TypeArguments = dependency.TypeArguments?.ToList(),
                     Many = dependency.Many,
                     Optional = dependency.Optional,
                     Key = dependency.Key,

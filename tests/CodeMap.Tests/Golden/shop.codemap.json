@@ -8687,6 +8687,10 @@
         },
         {
           "service": "T:Shop.Application.Abstractions.ICommandHandler`2",
+          "typeArguments": [
+            "Shop.Application.Orders.PlaceOrderCommand",
+            "Shop.Application.Orders.PlaceOrderResult"
+          ],
           "implementation": "T:Shop.Application.Orders.PlaceOrderHandler",
           "lifetime": "scoped",
           "kind": "type",
@@ -8740,6 +8744,10 @@
           "consumerLifetime": "transient",
           "service": "T:Shop.Application.Abstractions.ICommandHandler`2",
           "external": false,
+          "typeArguments": [
+            "Shop.Application.Orders.PlaceOrderCommand",
+            "Shop.Application.Orders.PlaceOrderResult"
+          ],
           "many": false,
           "optional": false,
           "implementations": [
@@ -8764,6 +8772,9 @@
           "consumerLifetime": "singleton",
           "service": "Microsoft.Extensions.Logging.ILogger<TCategoryName>",
           "external": true,
+          "typeArguments": [
+            "Shop.Api.RequestTimingMiddleware"
+          ],
           "many": false,
           "optional": false,
           "implementations": [],
@@ -8896,6 +8907,9 @@
           "consumerLifetime": "singleton",
           "service": "Microsoft.Extensions.Logging.ILogger<TCategoryName>",
           "external": true,
+          "typeArguments": [
+            "Shop.Infrastructure.Payments.FakePaymentGateway"
+          ],
           "many": false,
           "optional": false,
           "implementations": [],

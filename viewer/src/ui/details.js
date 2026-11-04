@@ -171,6 +171,11 @@ export class DetailsPanel {
     if (!di || node.level !== 'type') return;
     const model = this.app.model;
     const name = (id) => (model.get(id) ? shortName(model.get(id)) : String(id).split('<')[0].split('.').pop());
+    // A service as written: ILookup<Kind> for a closed generic one.
+    const serviceName = (s) => {
+      const base = s.external ? s.service.split('<')[0].split('.').pop() : name(s.service);
+      return s.typeArguments ? `${base.split('<')[0]}<${s.typeArguments.map((t) => t.replace(/\b\w+\./g, '')).join(', ')}>` : base;
+    };
     const registrations = di.registrations.filter((r) => r.implementation === node.id || r.service === node.id);
     const dependencies = di.dependencies.filter((d) => d.consumer === node.id);
     const issues = di.issues.filter((i) => i.consumer === node.id);
@@ -183,7 +188,7 @@ export class DetailsPanel {
       const asService = r.service === node.id && r.implementation && r.implementation !== node.id;
       const text = asService
         ? `implemented by ${name(r.implementation)}`
-        : r.service === node.id || !r.service ? 'registered as itself' : `registered for ${r.external ? r.service.split('.').pop() : name(r.service)}`;
+        : r.service === node.id || !r.service ? 'registered as itself' : `registered for ${serviceName(r)}`;
       const where = r.registeredIn ? ` · in ${name(r.registeredIn)}` : '';
       const target = r.registeredIn ?? (asService ? r.implementation : null);
       section.append(
@@ -204,7 +209,7 @@ export class DetailsPanel {
         section.append(
           h('div', { class: 'di-row', onClick: () => !d.external && this.app.reveal(d.implementations[0] ?? d.service) },
             h('span', { class: 'life', style: { color: LIFETIME_COLORS[d.lifetime] ?? 'var(--faint)' } }, d.lifetime ?? (d.external ? 'framework' : '–')),
-            h('span', {}, (d.many ? 'all ' : '') + (d.external ? d.service.split('<')[0].split('.').pop() : name(d.service))),
+            h('span', {}, (d.many ? 'all ' : '') + serviceName(d)),
             implementations && implementations !== name(d.service) ? h('span', { class: 'faint' }, '→ ' + implementations) : null,
             issue ? h('span', { class: 'chip ' + (issue.severity === 'error' ? 'danger' : 'warn') }, issue.kind.replace('-', ' ')) : null,
           ),

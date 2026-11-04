@@ -148,8 +148,8 @@ internal static class DiRegistrationDetector
 
         if (arguments.Factory != null)
         {
-            var (implementation, factoryKind) = factory != null ? AnalyzeFactory(factory, model) : (null, "factory");
-            service ??= implementation;
+            var (result, implementation, factoryKind) = factory != null ? AnalyzeFactory(factory, model) : (null, null, "factory");
+            service ??= result ?? implementation; // AddX(sp => ...) registers what the lambda returns
             return service == null ? null : Candidate(service, implementation, factoryKind);
         }
 
@@ -288,20 +288,29 @@ internal static class DiRegistrationDetector
         return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    /// <summary>sp => new X(...) is a factory for X; sp => sp.GetRequiredService&lt;X&gt;() forwards to X's registration.</summary>
-    private static (ITypeSymbol? Implementation, string Kind) AnalyzeFactory(AnonymousFunctionExpressionSyntax lambda, SemanticModel model)
+    /// <summary>
+    /// What a factory lambda builds. <c>Result</c> is the type it returns, the service when the call names none:
+    /// the body's type, or for a block the type of what it returns. <c>sp => new X(...)</c> builds X (also through a
+    /// local: <c>var x = new X(); return x;</c>); <c>sp => sp.GetRequiredService&lt;X&gt;()</c> forwards to X's registration,
+    /// also through a cast: <c>sp => (Custom)sp.GetRequiredService&lt;Base&gt;()</c> registers Custom as a forward to Base.
+    /// </summary>
+    private static (ITypeSymbol? Result, ITypeSymbol? Implementation, string Kind) AnalyzeFactory(AnonymousFunctionExpressionSyntax lambda, SemanticModel model)
     {
-        var body = lambda.ExpressionBody
-                   ?? lambda.Block?.DescendantNodes().OfType<ReturnStatementSyntax>().FirstOrDefault()?.Expression;
-        while (body is ParenthesizedExpressionSyntax or CastExpressionSyntax)
+        var body = lambda.ExpressionBody ?? ReturnedExpression(lambda.Block);
+        if (body == null) return (null, null, "factory");
+        var result = model.GetTypeInfo(body).Type is { TypeKind: not TypeKind.Error } type ? type : null;
+
+        var inner = Unwrap(body);
+        if (inner is IdentifierNameSyntax identifier && model.GetSymbolInfo(identifier).Symbol is ILocalSymbol local
+            && local.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() is VariableDeclaratorSyntax { Initializer.Value: var initializer })
         {
-            body = body is ParenthesizedExpressionSyntax p ? p.Expression : ((CastExpressionSyntax)body).Expression;
+            inner = Unwrap(initializer);
         }
 
-        switch (body)
+        switch (inner)
         {
             case BaseObjectCreationExpressionSyntax creation:
-                return (model.GetTypeInfo(creation).Type, "factory");
+                return (result, model.GetTypeInfo(creation).Type, "factory");
             case InvocationExpressionSyntax invocation:
                 var name = invocation.Expression switch
                 {
@@ -312,14 +321,31 @@ internal static class DiRegistrationDetector
                 if (name is GenericNameSyntax generic
                     && generic.Identifier.ValueText is "GetRequiredService" or "GetService" or "GetRequiredKeyedService" or "GetKeyedService")
                 {
-                    return (model.GetTypeInfo(generic.TypeArgumentList.Arguments[0]).Type, "forward");
+                    return (result, model.GetTypeInfo(generic.TypeArgumentList.Arguments[0]).Type, "forward");
                 }
 
-                return (null, "factory");
+                return (result, null, "factory");
             default:
-                return (null, "factory");
+                return (result, null, "factory");
+        }
+
+        static ExpressionSyntax Unwrap(ExpressionSyntax expression)
+        {
+            while (expression is ParenthesizedExpressionSyntax or CastExpressionSyntax)
+            {
+                expression = expression is ParenthesizedExpressionSyntax p ? p.Expression : ((CastExpressionSyntax)expression).Expression;
+            }
+
+            return expression;
         }
     }
+
+    /// <summary>The first value a block returns, not counting the lambdas and local functions inside it, nor <c>return null</c>.</summary>
+    private static ExpressionSyntax? ReturnedExpression(BlockSyntax? block) =>
+        block?.DescendantNodes(n => n is not (AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax))
+            .OfType<ReturnStatementSyntax>()
+            .Select(r => r.Expression)
+            .FirstOrDefault(e => e != null && !e.IsKind(SyntaxKind.NullLiteralExpression));
 
     public static int Rank(string? lifetime) => lifetime switch
     {

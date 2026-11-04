@@ -257,6 +257,10 @@ public sealed class ServiceRegistration
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool External { get; set; }
 
+    /// <summary>Type arguments of a closed generic service (["Shop.Kind"] for ILookup&lt;Kind&gt;); left out for an open or non-generic one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? TypeArguments { get; set; }
+
     /// <summary>Node id of the implementation; null for factories we cannot see through.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Implementation { get; set; }
@@ -299,6 +303,10 @@ public sealed class DiDependency
     public string Service { get; set; } = "";
 
     public bool External { get; set; }
+
+    /// <summary>Type arguments of a closed generic service: registrations with the same ones serve it first, then open generic ones.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? TypeArguments { get; set; }
 
     /// <summary>IEnumerable&lt;T&gt;: every registration is injected.</summary>
     public bool Many { get; set; }

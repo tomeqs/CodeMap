@@ -325,4 +325,163 @@ public class DependencyInjectionTests
         Assert.Equal(new[] { "T:App.SystemClock", "T:App.FakeClock" }, di.Registrations.Where(r => r.Service == "T:App.IClock").Select(r => r.Implementation));
         Assert.Equal(new[] { "T:App.FakeClock" }, di.Dependencies.Single(d => d.Consumer == "T:App.Uses").Implementations);
     }
+
+    [Fact]
+    public void A_closed_generic_request_gets_the_registration_of_its_own_type_arguments()
+    {
+        using var ws = new TestWorkspace()
+            .Project("App", sdk: "Microsoft.NET.Sdk.Web")
+            .File("App/Setup.cs", """
+                using Microsoft.Extensions.DependencyInjection;
+                namespace App;
+                public interface ILookup<T> { }
+                public class Brand { } public class Kind { } public class Color { } public class Size { }
+                public class BrandLookup : ILookup<Brand> { }
+                public class KindLookup : ILookup<Kind> { }
+                public class AnyLookup<T> : ILookup<T> { }
+                public class Kinds(ILookup<Kind> kinds);
+                public class Colors(ILookup<Color> colors);
+                public class AllKinds(IEnumerable<ILookup<Kind>> all);
+                public class Sizes(ILookup<Size> sizes);
+                public static class Setup
+                {
+                    public static void Configure(IServiceCollection services)
+                    {
+                        services.AddSingleton<ILookup<Kind>, KindLookup>();
+                        services.AddScoped<ILookup<Brand>, BrandLookup>();
+                        services.AddSingleton<Kinds>();
+                        services.AddSingleton<AllKinds>();
+                        services.AddSingleton<Sizes>();
+                    }
+                    public static void ConfigureOpen(IServiceCollection services)
+                    {
+                        services.AddSingleton(typeof(ILookup<>), typeof(AnyLookup<>));
+                        services.AddSingleton<Colors>();
+                    }
+                }
+                """);
+
+        var di = ws.Analyze().Analysis.Di!;
+        DiDependency Dependency(string consumer) => di.Dependencies.Single(d => d.Consumer == consumer);
+
+        Assert.Equal(new[] { "App.Kind" }, di.Registrations.Single(r => r.Implementation == "T:App.KindLookup").TypeArguments);
+        Assert.Null(di.Registrations.Single(r => r.Implementation == "T:App.AnyLookup`1").TypeArguments); // typeof(ILookup<>) is open
+        Assert.Equal(new[] { "App.Kind" }, Dependency("T:App.Kinds").TypeArguments);
+        Assert.Equal(new[] { "T:App.KindLookup" }, Dependency("T:App.Kinds").Implementations); // not the later BrandLookup
+        Assert.Equal(new[] { "T:App.AnyLookup`1" }, Dependency("T:App.Colors").Implementations); // no ILookup<Color>: the open one
+        Assert.Equal(new[] { "T:App.KindLookup", "T:App.AnyLookup`1" }, Dependency("T:App.AllKinds").Implementations); // IEnumerable: both
+        Assert.DoesNotContain(di.Issues, i => i.Consumer == "T:App.Kinds"); // the scoped BrandLookup is not captive in it
+        Assert.DoesNotContain(di.Issues, i => i.Consumer == "T:App.Sizes"); // the open registration serves ILookup<Size> too
+    }
+
+    [Fact]
+    public void A_closed_generic_request_with_only_other_arguments_registered_is_unregistered()
+    {
+        using var ws = new TestWorkspace()
+            .Project("App", sdk: "Microsoft.NET.Sdk.Web")
+            .File("App/Setup.cs", """
+                using Microsoft.Extensions.DependencyInjection;
+                namespace App;
+                public interface ILookup<T> { }
+                public class Brand { } public class Kind { }
+                public class BrandLookup : ILookup<Brand> { }
+                public class Kinds(ILookup<Kind> kinds);
+                public static class Setup
+                {
+                    public static void Configure(IServiceCollection services)
+                    {
+                        services.AddScoped<ILookup<Brand>, BrandLookup>();
+                        services.AddSingleton<Kinds>();
+                    }
+                }
+                """);
+
+        var issue = Assert.Single(ws.Analyze().Analysis.Di!.Issues);
+        Assert.Equal(("unregistered", "T:App.Kinds"), (issue.Kind, issue.Consumer));
+        Assert.Equal("Kinds needs ILookup<Kind>, but it is only registered as ILookup<Brand>.", issue.Message);
+    }
+
+    [Fact]
+    public void A_factory_registers_what_it_returns_a_cast_forward_its_cast_type()
+    {
+        using var ws = new TestWorkspace()
+            .Project("App", sdk: "Microsoft.NET.Sdk.Web")
+            .File("App/Setup.cs", """
+                using Microsoft.Extensions.DependencyInjection;
+                namespace App;
+                public class Base { }
+                public class Derived : Base { }
+                public class Registry { }
+                public interface ISession { }
+                public class Session : ISession { }
+                public interface IFactory { ISession Open(); }
+                public class Factory : IFactory { public ISession Open() => new Session(); }
+                public class UsesDerived(Derived derived);
+                public class UsesBase(Base b);
+                public class UsesRegistry(Registry registry);
+                public class UsesSession(ISession session);
+                public static class Setup
+                {
+                    public static void Configure(IServiceCollection services, bool fresh)
+                    {
+                        services.AddScoped<Base, Derived>();
+                        services.AddScoped(sp => (Derived)sp.GetRequiredService<Base>());
+                        services.AddSingleton(sp =>
+                        {
+                            var registry = new Registry();
+                            return registry;
+                        });
+                        services.AddSingleton<IFactory, Factory>();
+                        services.AddScoped(sp => sp.GetRequiredService<IFactory>().Open());
+                        services.AddTransient<UsesDerived>();
+                        services.AddTransient<UsesBase>();
+                        services.AddTransient<UsesRegistry>();
+                        services.AddTransient<UsesSession>();
+                    }
+                }
+                """);
+
+        var di = ws.Analyze().Analysis.Di!;
+        ServiceRegistration Reg(string service) => di.Registrations.Single(r => r.Service == service);
+
+        Assert.Equal(("forward", "T:App.Base"), (Reg("T:App.Derived").Kind, Reg("T:App.Derived").Implementation)); // not a second Base
+        Assert.Equal("T:App.Derived", Reg("T:App.Base").Implementation);
+        Assert.Equal(new[] { "T:App.Derived" }, di.Dependencies.Single(d => d.Consumer == "T:App.UsesBase").Implementations);
+        Assert.Equal(("factory", "T:App.Registry"), (Reg("T:App.Registry").Kind, Reg("T:App.Registry").Implementation)); // a block body, through a local
+        Assert.Equal(("factory", null), (Reg("T:App.ISession").Kind, Reg("T:App.ISession").Implementation)); // the result of a call
+        Assert.Empty(di.Issues);
+    }
+
+    [Fact]
+    public void Unresolved_service_types_match_by_the_name_they_are_written_with()
+    {
+        // MediatR was never restored: neither IMediator nor its implementation resolves, yet the registration serves the request.
+        using var ws = new TestWorkspace()
+            .Project("App", sdk: "Microsoft.NET.Sdk.Web")
+            .File("App/Setup.cs", """
+                using MediatR;
+                using Microsoft.Extensions.DependencyInjection;
+                namespace App;
+                public class Orders(IMediator mediator, IRequestHandler<Order> handler);
+                public class Order { }
+                public static class Setup
+                {
+                    public static void Configure(IServiceCollection services)
+                    {
+                        services.AddScoped<IMediator, Mediator>();
+                        services.AddSingleton<Orders>();
+                    }
+                }
+                """);
+
+        var di = ws.Analyze().Analysis.Di!;
+        Assert.Contains(di.Registrations, r => r is { Service: "IMediator", External: true, Lifetime: "scoped" });
+        var mediator = di.Dependencies.Single(d => d.Service == "IMediator");
+        Assert.True(mediator.External);
+        Assert.Equal("scoped", mediator.Lifetime);
+        Assert.Contains(di.Issues, i => i is { Kind: "captive", Consumer: "T:App.Orders", Service: "IMediator" }); // a singleton holds it
+        var handler = di.Dependencies.Single(d => d.Service.StartsWith("IRequestHandler", StringComparison.Ordinal));
+        Assert.Equal("IRequestHandler<>", handler.Service);
+        Assert.Equal(new[] { "App.Order" }, handler.TypeArguments);
+    }
 }

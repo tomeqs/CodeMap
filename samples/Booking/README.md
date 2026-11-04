@@ -35,6 +35,8 @@ The C# compiles (`dotnet build server/Booking.sln`). Delete `bin/` and `obj/` af
 | Keyed instance | `AddKeyedSingleton<ICache>("memory", new MemoryCache())` | key `memory`, kind `instance` |
 | Instance through `typeof` | `AddSingleton(typeof(INotifier), new EmailNotifier())` | kind `instance`, implementation `EmailNotifier` |
 | Fluent chain over several lines | `.AddScoped<ReservationService>()…` | each registration on its own line |
+| A cast forward | `AddSingleton(sp => (InMemoryReservationRepository)sp.GetRequiredService<IReservationRepository>())` | a `forward` registration of `InMemoryReservationRepository` (not a second `IReservationRepository`), which `ReservationReadModel` gets |
+| Closed generics | `IReadModel<Reservation>` (singleton), then `IReadModel<string>` (scoped) | the singleton `OccupancyReport` gets `ReservationReadModel` and holds no scoped service |
 | `[FromKeyedServices]` | `ReservationService` | its `IClock` is `UtcClock` (key `utc`), its `ICache` is `RedisCache` |
 | An unkeyed request with only keyed registrations | `AvailabilityService(ICache)` | nothing injected; an `unregistered` warning that suggests `[FromKeyedServices]` (the only DI issue of the sample) |
 

@@ -140,6 +140,24 @@ public class BookingSampleTests
     }
 
     [NodeFact(typescript: true)]
+    public void Csharp_closed_generics_and_a_cast_forward_resolve_as_in_the_container()
+    {
+        var di = Graph.Analysis.Di!;
+        DiDependency Dependency(string consumer) => di.Dependencies.Single(d => d.Consumer == $"T:{Infra}ReadModels.{consumer}");
+        const string repository = $"T:{Domain}Reservations.IReservationRepository", store = $"T:{Infra}Persistence.InMemoryReservationRepository";
+
+        // The cast forward registers the concrete store, so the repository's consumers keep InMemoryReservationRepository.
+        Assert.Contains(di.Registrations, r => r is { Service: store, Kind: "forward", Implementation: repository });
+        Assert.Equal(new[] { store }, di.Registrations.Where(r => r.Service == repository).Select(r => r.Implementation));
+        Assert.Equal(new[] { repository }, Dependency("ReservationReadModel").Implementations);
+
+        // IReadModel<Reservation> gets its own registration, not the scoped IReadModel<string> registered after it.
+        Assert.Equal(new[] { $"{Domain}Reservations.Reservation" }, Dependency("OccupancyReport").TypeArguments);
+        Assert.Equal(new[] { $"T:{Infra}ReadModels.ReservationReadModel" }, Dependency("OccupancyReport").Implementations);
+        Assert.Equal("singleton", Dependency("OccupancyReport").Lifetime);
+    }
+
+    [NodeFact(typescript: true)]
     public void Typescript_references_overloads_and_signatures()
     {
         foreach (var handler in new[] { "list", "create", "cancel" }) Graph.AssertEdge(Bff + "routes.ts#handlers", EdgeKinds.Calls, Bff + "routes.ts#" + handler); // { list, create, cancel }

@@ -226,8 +226,9 @@ NestJS albo Angular w TypeScripcie (pole `framework`; bez niego to kontener .NET
 
 | Pole | Opis |
 |---|---|
-| `service` | id typu usługi; dla typów frameworka pełna nazwa i `external: true` |
-| `implementation` | id implementacji (brak dla fabryk, których nie da się prześledzić) |
+| `service` | id typu usługi; dla typów frameworka pełna nazwa i `external: true`; typ, którego kompilator nie rozwiązał (pakiet nieprzywrócony), ma nazwę jak w kodzie (`IMediator`, `IRequestHandler<>`) |
+| `typeArguments` | argumenty typu zamkniętej usługi generycznej (`["Shop.Kind"]` dla `ILookup<Kind>`); brak dla otwartej (`typeof(ILookup<>)`) i niegenerycznej |
+| `implementation` | id implementacji; dla `forward` usługa, do której prowadzi (brak dla fabryk, których nie da się prześledzić) |
 | `lifetime` | `singleton`, `scoped`, `transient` (NestJS: `Scope.DEFAULT` / `REQUEST` / `TRANSIENT`; Angular: `providedIn: 'root'` i `NgModule` → singleton, providery komponentu → scoped, komponenty → transient) |
 | `effective` | czas życia, który kontener w końcu nadaje, gdy różni się od zadeklarowanego (NestJS: zasięg żądania przechodzi na zależnych) |
 | `kind` | `type` (`AddScoped<I, T>()`, `typeof`, `useClass`), `instance` (`AddSingleton(obj)`, `useValue`), `factory` (lambda, `useFactory`), `forward` (`sp => sp.GetRequiredService<T>()`, `useExisting`), `hosted` (`AddHostedService`), `dbcontext` (`AddDbContext`, `Add…DbContext` z Aspire), `httpclient` (typowany `AddHttpClient<T>`), `controller` (kontrolery NestJS), `component` (komponenty, dyrektywy i pipe’y Angulara) |
@@ -238,7 +239,10 @@ NestJS albo Angular w TypeScripcie (pole `framework`; bez niego to kontener .NET
 Rozpoznawane są też `TryAdd*`, `AddKeyed*` i deskryptory `ServiceDescriptor.Singleton/Scoped/Transient` (także `Keyed*`), np. w `services.TryAdd(...)`.
 Argumenty są rozpoznawane po nazwach parametrów (także nazwane argumenty), np. `AddSingleton(typeof(IClock), new SystemClock())` to `instance`,
 a `AddDbContext<T>(…, ServiceLifetime.Transient)` daje `transient`.
-Jak w kontenerze, wygrywa ostatnia rejestracja, a `IEnumerable<T>` dostaje wszystkie. Rejestracje są w kolejności wykonania:
+Fabryka bez argumentów typu rejestruje to, co zwraca lambda: typ wyrażenia, a w bloku typ zwracanej wartości (także przez zmienną lokalną);
+rzutowanie w przekierowaniu, `sp => (Custom)sp.GetRequiredService<Base>()`, rejestruje `Custom` jako `forward` do `Base`.
+Jak w kontenerze, wygrywa ostatnia rejestracja, a `IEnumerable<T>` dostaje wszystkie. Żądanie zamkniętego typu generycznego (`ILookup<Kind>`)
+dostaje rejestracje z tymi samymi argumentami, a gdy ich nie ma, otwarte (`typeof(ILookup<>)`); `IEnumerable<ILookup<Kind>>` dostaje jedne i drugie. Rejestracje są w kolejności wykonania:
 gdy metoda rejestrująca (np. `AddServiceDefaults()`) ma dokładnie jedno wywołanie, liczy się miejsce tego wywołania, także w innym pliku.
 `TryAdd*` usługi (z tym samym kluczem), która jest już zarejestrowana, nie działa w kontenerze i nie ma jej na liście.
 
@@ -249,6 +253,7 @@ oraz typów aktywowanych przez framework (kontrolery i huby jako `transient`, mi
 |---|---|
 | `consumer`, `consumerLifetime` | typ z konstruktorem i jego czas życia |
 | `service` | żądana usługa (id albo pełna nazwa przy `external: true`) |
+| `typeArguments` | argumenty typu zamkniętej usługi generycznej, jak w rejestracjach |
 | `many` | `IEnumerable<T>`: wstrzykiwane są wszystkie rejestracje |
 | `optional` | parametr z wartością domyślną |
 | `key` | `[FromKeyedServices(key)]`: pasują tylko rejestracje z tym kluczem; parametr bez klucza nie dostaje rejestracji z kluczem |

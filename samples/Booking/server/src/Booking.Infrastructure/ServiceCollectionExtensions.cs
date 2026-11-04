@@ -3,6 +3,7 @@ using Booking.Domain.Time;
 using Booking.Infrastructure.Caching;
 using Booking.Infrastructure.Notifications;
 using Booking.Infrastructure.Persistence;
+using Booking.Infrastructure.ReadModels;
 using Booking.Infrastructure.Services;
 using Booking.Infrastructure.Time;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +31,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(typeof(INotifier), new EmailNotifier());
 
         services.AddSingleton<IReservationRepository, InMemoryReservationRepository>();
+
+        // A cast forward: registers the concrete store (not a second IReservationRepository), resolved through its interface.
+        services.AddSingleton(sp => (InMemoryReservationRepository)sp.GetRequiredService<IReservationRepository>());
+
+        // Closed generics: OccupancyReport asks for IReadModel<Reservation> and gets ReservationReadModel, not RoomNumbers.
+        services.AddSingleton<IReadModel<Reservation>, ReservationReadModel>();
+        services.AddScoped<IReadModel<string>, RoomNumbers>();
+        services.AddSingleton<OccupancyReport>();
 
         // A fluent chain: each registration is on its own line.
         services
