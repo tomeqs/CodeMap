@@ -26,6 +26,8 @@ The C# compiles (`dotnet build server/Booking.sln`). Delete `bin/` and `obj/` af
 | Item group removed only for net48 | `Compat/` | `LegacyClockAdapter` is on the map |
 | Item removed for everything but net48 | `Experimental/` | `QuantumScheduler` is not on the map |
 | `EnableDefaultItems=false` | `Booking.Contracts.csproj` | the DTOs are on the map, `Drafts/Draft.cs` is not |
+| A name ending in "Controller" without ASP.NET | `Infrastructure/Resilience/RetryController.cs` | no `controller` tag, and its unregistered `RetryPolicy` is no DI issue (the container never builds it) |
+| Explicit implementations of framework interfaces | `ReservationBook`: `IEnumerable.GetEnumerator`, `IDisposable.Dispose` | not "possibly unused" |
 | `TryAdd` after `Add` | `AddBooking()`: `SystemClock`, then `TryAddSingleton<IClock, FixedClock>` | no `FixedClock` registration |
 | An override after an extension in another file | `Program.cs`: `AddBooking()`, then `AddSingleton<IClock, UtcClock>()` | the unkeyed `IClock` registrations are `SystemClock`, `UtcClock`; `PricingService` gets `UtcClock` |
 | Keyed Type overload | `AddKeyedSingleton(typeof(IClock), "utc", typeof(UtcClock))` | key `utc`, implementation `UtcClock` |

@@ -186,10 +186,67 @@ internal sealed class ReferenceWalker : CSharpSyntaxWalker
 
     // ------------------------------------------------------------------ helpers
 
-    private ISymbol? GetSymbol(SyntaxNode node)
+    private ISymbol? GetSymbol(SyntaxNode node) => Choose(_model.GetSymbolInfo(node), node);
+
+    /// <summary>
+    /// The symbol a name stands for. When the compiler could not decide (overload resolution failed, often because a
+    /// type in the arguments is unresolved), only the overloads that can take the call's arguments count (their number,
+    /// and the parameters of each lambda): the first of them, or nothing when none fits – an overload that cannot take
+    /// the arguments is never the one called.
+    /// </summary>
+    internal static ISymbol? Choose(SymbolInfo info, SyntaxNode node)
     {
-        var info = _model.GetSymbolInfo(node);
-        return info.Symbol ?? (info.CandidateSymbols.Length > 0 ? info.CandidateSymbols[0] : null);
+        if (info.Symbol != null) return info.Symbol;
+        var candidates = info.CandidateSymbols;
+        if (candidates.Length <= 1) return candidates.FirstOrDefault();
+        if (!candidates.All(c => c is IMethodSymbol) || ArgumentsOf(node) is not { } arguments) return candidates[0];
+        return candidates.Cast<IMethodSymbol>().FirstOrDefault(m => Accepts(m, arguments));
+    }
+
+    /// <summary>Whether a method takes this many arguments, and each lambda argument goes to a delegate with as many parameters.</summary>
+    private static bool Accepts(IMethodSymbol method, IReadOnlyList<ArgumentSyntax> arguments)
+    {
+        var parameters = method.Parameters;
+        var required = parameters.Count(p => !p.IsOptional && !p.IsParams);
+        if (arguments.Count < required || (arguments.Count > parameters.Length && !parameters.Any(p => p.IsParams))) return false;
+        for (var i = 0; i < arguments.Count && i < parameters.Length; i++)
+        {
+            if (arguments[i].NameColon != null) break; // named arguments: positions no longer line up
+            var lambdaParameters = arguments[i].Expression switch
+            {
+                SimpleLambdaExpressionSyntax => 1,
+                ParenthesizedLambdaExpressionSyntax lambda => lambda.ParameterList.Parameters.Count,
+                _ => -1,
+            };
+            if (lambdaParameters >= 0 && DelegateArity(parameters[i].Type) is { } arity && arity != lambdaParameters) return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>How many parameters a delegate type takes; Action&lt;…&gt; and Func&lt;…&gt; are counted by name when they do not resolve.</summary>
+    private static int? DelegateArity(ITypeSymbol type) => type switch
+    {
+        INamedTypeSymbol { DelegateInvokeMethod: { } invoke } => invoke.Parameters.Length,
+        INamedTypeSymbol { Name: "Action" } named => named.TypeArguments.Length,
+        INamedTypeSymbol { Name: "Func", TypeArguments.Length: > 0 } named => named.TypeArguments.Length - 1,
+        _ => null,
+    };
+
+    /// <summary>The arguments of the call or creation a name belongs to; null if it belongs to none.</summary>
+    private static IReadOnlyList<ArgumentSyntax>? ArgumentsOf(SyntaxNode node)
+    {
+        var expression = node.Parent is MemberAccessExpressionSyntax access && access.Name == node ? access : node;
+        return expression.Parent switch
+        {
+            InvocationExpressionSyntax invocation when invocation.Expression == expression => invocation.ArgumentList.Arguments,
+            _ => node switch
+            {
+                InvocationExpressionSyntax invocation => invocation.ArgumentList.Arguments,
+                BaseObjectCreationExpressionSyntax creation => (IReadOnlyList<ArgumentSyntax>?)creation.ArgumentList?.Arguments ?? Array.Empty<ArgumentSyntax>(),
+                _ => null,
+            },
+        };
     }
 
     /// <summary>True when the name is the type of a <c>new</c>, an attribute or a catch clause – those are recorded elsewhere.</summary>

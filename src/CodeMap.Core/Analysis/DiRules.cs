@@ -77,13 +77,16 @@ internal sealed class MicrosoftDiRules : DiRules
 
     public override string? KnownLifetime(string service) => FrameworkLifetimes.GetValueOrDefault(service);
 
-    /// <summary>ASP.NET Core creates controllers and hubs per request and convention middleware once – in C# code only.</summary>
+    /// <summary>
+    /// ASP.NET Core creates controllers, hubs, Razor pages and Blazor components per request (or render) and convention
+    /// middleware once – classes only, in C# code only.
+    /// </summary>
     public override IEnumerable<(string Id, string Lifetime)> ImplicitConsumers(CodeGraph graph, Func<GraphNode, string?> languageOf)
     {
-        foreach (var node in graph.Nodes.Where(n => NodeLevels.IsType(n) && !n.External && n.Modifiers?.Contains("abstract") != true))
+        foreach (var node in graph.Nodes.Where(n => NodeLevels.IsType(n) && !n.External && n.Kind is NodeKinds.Class or NodeKinds.Record && n.Modifiers?.Contains("abstract") != true))
         {
             if (languageOf(node) is not (null or "csharp")) continue;
-            if (node.HasTag(Tags.Controller) || node.HasTag(Tags.Hub)) yield return (node.Id, Transient); // one per request
+            if (node.HasTag(Tags.Controller) || node.HasTag(Tags.Hub) || node.HasTag(Tags.Page) || node.HasTag(Tags.Component)) yield return (node.Id, Transient); // one per request
             else if (node.HasTag(Tags.Middleware)) yield return (node.Id, Singleton); // convention middleware is created once
         }
     }

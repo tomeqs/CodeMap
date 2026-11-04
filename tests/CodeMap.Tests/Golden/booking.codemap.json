@@ -62,25 +62,25 @@
   },
   "stats": {
     "projects": 7,
-    "namespaces": 18,
-    "types": 48,
-    "members": 124,
+    "namespaces": 20,
+    "types": 51,
+    "members": 131,
     "packages": 3,
     "externalTypes": 0,
-    "edges": 242,
-    "files": 41,
-    "lines": 658,
+    "edges": 253,
+    "files": 43,
+    "lines": 691,
     "cycles": 1,
-    "edges.holds": 4,
-    "edges.calls": 50,
-    "edges.instantiates": 11,
+    "edges.holds": 5,
+    "edges.calls": 51,
+    "edges.instantiates": 12,
     "edges.accepts": 12,
-    "edges.accesses": 59,
-    "edges.returns": 14,
-    "edges.uses": 33,
+    "edges.accesses": 63,
+    "edges.returns": 16,
+    "edges.uses": 34,
     "edges.overrides": 1,
     "edges.implements": 21,
-    "edges.injects": 12,
+    "edges.injects": 13,
     "edges.inherits": 5,
     "edges.projectReference": 5,
     "edges.imports": 11,
@@ -183,16 +183,16 @@
         "endLine": 1
       },
       "metrics": {
-        "abstractness": 0.125,
+        "abstractness": 0.105,
         "ca": 1,
         "ce": 1,
-        "complexity": 22,
-        "distance": 0.375,
-        "files": 10,
+        "complexity": 27,
+        "distance": 0.395,
+        "files": 12,
         "instability": 0.5,
-        "lines": 227,
-        "loc": 145,
-        "types": 16
+        "lines": 260,
+        "loc": 162,
+        "types": 19
       }
     },
     {
@@ -359,11 +359,11 @@
       "namespace": "Booking.Domain.Reservations",
       "metrics": {
         "abstractness": 0.167,
-        "ca": 4,
+        "ca": 5,
         "ce": 1,
         "complexity": 14,
-        "distance": 0.633,
-        "instability": 0.2,
+        "distance": 0.667,
+        "instability": 0.167,
         "loc": 69,
         "types": 6
       }
@@ -423,6 +423,25 @@
         "instability": 0,
         "loc": 27,
         "types": 4
+      }
+    },
+    {
+      "id": "namespace:Booking.Infrastructure/Booking.Infrastructure.Collections",
+      "kind": "namespace",
+      "name": "Booking.Infrastructure.Collections",
+      "fullName": "Booking.Infrastructure.Collections",
+      "parent": "project:Booking.Infrastructure",
+      "project": "project:Booking.Infrastructure",
+      "namespace": "Booking.Infrastructure.Collections",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 1,
+        "ce": 1,
+        "complexity": 3,
+        "distance": 0.5,
+        "instability": 0.5,
+        "loc": 10,
+        "types": 1
       }
     },
     {
@@ -493,12 +512,31 @@
       "metrics": {
         "abstractness": 0,
         "ca": 1,
-        "ce": 2,
-        "complexity": 4,
-        "distance": 0.333,
-        "instability": 0.667,
-        "loc": 12,
+        "ce": 3,
+        "complexity": 5,
+        "distance": 0.25,
+        "instability": 0.75,
+        "loc": 14,
         "types": 1
+      }
+    },
+    {
+      "id": "namespace:Booking.Infrastructure/Booking.Infrastructure.Resilience",
+      "kind": "namespace",
+      "name": "Booking.Infrastructure.Resilience",
+      "fullName": "Booking.Infrastructure.Resilience",
+      "parent": "project:Booking.Infrastructure",
+      "project": "project:Booking.Infrastructure",
+      "namespace": "Booking.Infrastructure.Resilience",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 0,
+        "complexity": 1,
+        "distance": 1,
+        "instability": 0,
+        "loc": 5,
+        "types": 2
       }
     },
     {
@@ -972,12 +1010,12 @@
       ],
       "doc": "A room booked by a guest for some nights. Edge case: the generic argument of the base (ReservationId) is a dependency.",
       "metrics": {
-        "ca": 7,
+        "ca": 8,
         "ce": 4,
         "complexity": 5,
         "constructors": 1,
         "dit": 2,
-        "instability": 0.364,
+        "instability": 0.333,
         "loc": 30,
         "maxComplexity": 2,
         "members": 7,
@@ -1292,6 +1330,38 @@
       }
     },
     {
+      "id": "T:Booking.Infrastructure.Collections.ReservationBook",
+      "kind": "class",
+      "name": "ReservationBook",
+      "fullName": "Booking.Infrastructure.Collections.ReservationBook",
+      "parent": "namespace:Booking.Infrastructure/Booking.Infrastructure.Collections",
+      "project": "project:Booking.Infrastructure",
+      "namespace": "Booking.Infrastructure.Collections",
+      "accessibility": "public",
+      "modifiers": [
+        "sealed"
+      ],
+      "signature": "public sealed class ReservationBook : IEnumerable<Reservation>, IDisposable",
+      "location": {
+        "file": "server/src/Booking.Infrastructure/Collections/ReservationBook.cs",
+        "line": 7,
+        "endLine": 16
+      },
+      "doc": "Edge case: explicit implementations of framework interfaces are called through them, never \"unused\".",
+      "metrics": {
+        "ca": 1,
+        "ce": 1,
+        "complexity": 3,
+        "dit": 1,
+        "fields": 1,
+        "instability": 0.5,
+        "loc": 10,
+        "maxComplexity": 1,
+        "members": 4,
+        "methods": 3
+      }
+    },
+    {
       "id": "T:Booking.Infrastructure.Compat.LegacyClockAdapter",
       "kind": "class",
       "name": "LegacyClockAdapter",
@@ -1432,8 +1502,8 @@
       "signature": "public sealed class InMemoryReservationRepository : IReservationRepository",
       "location": {
         "file": "server/src/Booking.Infrastructure/Persistence/InMemoryReservationRepository.cs",
-        "line": 6,
-        "endLine": 17
+        "line": 7,
+        "endLine": 20
       },
       "tags": [
         "repository",
@@ -1441,15 +1511,76 @@
       ],
       "metrics": {
         "ca": 1,
-        "ce": 5,
-        "complexity": 4,
+        "ce": 6,
+        "complexity": 5,
         "dit": 1,
         "fields": 1,
-        "instability": 0.833,
-        "loc": 12,
+        "instability": 0.857,
+        "loc": 14,
         "maxComplexity": 1,
-        "members": 5,
-        "methods": 4
+        "members": 6,
+        "methods": 5
+      }
+    },
+    {
+      "id": "T:Booking.Infrastructure.Resilience.RetryController",
+      "kind": "class",
+      "name": "RetryController",
+      "fullName": "Booking.Infrastructure.Resilience.RetryController",
+      "parent": "namespace:Booking.Infrastructure/Booking.Infrastructure.Resilience",
+      "project": "project:Booking.Infrastructure",
+      "namespace": "Booking.Infrastructure.Resilience",
+      "accessibility": "public",
+      "modifiers": [
+        "sealed"
+      ],
+      "signature": "public sealed class RetryController",
+      "location": {
+        "file": "server/src/Booking.Infrastructure/Resilience/RetryController.cs",
+        "line": 9,
+        "endLine": 12
+      },
+      "doc": "Edge case: named \"…Controller\" but not an ASP.NET controller (no ControllerBase, no [ApiController]). It is not tagged controller and the container does not build it, so its unregistered RetryPolicy is not reported.",
+      "metrics": {
+        "ca": 0,
+        "ce": 1,
+        "complexity": 1,
+        "dit": 1,
+        "instability": 1,
+        "loc": 4,
+        "maxComplexity": 1,
+        "members": 1,
+        "methods": 1
+      }
+    },
+    {
+      "id": "T:Booking.Infrastructure.Resilience.RetryPolicy",
+      "kind": "record",
+      "name": "RetryPolicy",
+      "fullName": "Booking.Infrastructure.Resilience.RetryPolicy",
+      "parent": "namespace:Booking.Infrastructure/Booking.Infrastructure.Resilience",
+      "project": "project:Booking.Infrastructure",
+      "namespace": "Booking.Infrastructure.Resilience",
+      "accessibility": "public",
+      "modifiers": [
+        "sealed"
+      ],
+      "signature": "public sealed record RetryPolicy : IEquatable<RetryPolicy>",
+      "location": {
+        "file": "server/src/Booking.Infrastructure/Resilience/RetryController.cs",
+        "line": 3,
+        "endLine": 3
+      },
+      "metrics": {
+        "ca": 1,
+        "ce": 0,
+        "complexity": 0,
+        "dit": 1,
+        "instability": 0,
+        "loc": 1,
+        "maxComplexity": 0,
+        "members": 1,
+        "properties": 1
       }
     },
     {
@@ -2173,6 +2304,28 @@
       }
     },
     {
+      "id": "F:Booking.Infrastructure.Collections.ReservationBook._items",
+      "kind": "field",
+      "name": "_items",
+      "fullName": "Booking.Infrastructure.Collections.ReservationBook._items",
+      "parent": "T:Booking.Infrastructure.Collections.ReservationBook",
+      "project": "project:Booking.Infrastructure",
+      "namespace": "Booking.Infrastructure.Collections",
+      "accessibility": "private",
+      "modifiers": [
+        "readonly"
+      ],
+      "signature": "private readonly List<Reservation> _items",
+      "location": {
+        "file": "server/src/Booking.Infrastructure/Collections/ReservationBook.cs",
+        "line": 9,
+        "endLine": 9
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
       "id": "F:Booking.Infrastructure.Persistence.InMemoryReservationRepository._reservations",
       "kind": "field",
       "name": "_reservations",
@@ -2187,8 +2340,8 @@
       "signature": "private readonly ConcurrentDictionary<ReservationId, Reservation> _reservations",
       "location": {
         "file": "server/src/Booking.Infrastructure/Persistence/InMemoryReservationRepository.cs",
-        "line": 8,
-        "endLine": 8
+        "line": 9,
+        "endLine": 9
       },
       "metrics": {
         "loc": 1
@@ -2910,6 +3063,68 @@
       }
     },
     {
+      "id": "M:Booking.Infrastructure.Collections.ReservationBook.GetEnumerator",
+      "kind": "method",
+      "name": "GetEnumerator",
+      "fullName": "Booking.Infrastructure.Collections.ReservationBook.GetEnumerator",
+      "parent": "T:Booking.Infrastructure.Collections.ReservationBook",
+      "project": "project:Booking.Infrastructure",
+      "namespace": "Booking.Infrastructure.Collections",
+      "accessibility": "public",
+      "signature": "public IEnumerator<Reservation> GetEnumerator()",
+      "location": {
+        "file": "server/src/Booking.Infrastructure/Collections/ReservationBook.cs",
+        "line": 11,
+        "endLine": 11
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "loc": 1
+      }
+    },
+    {
+      "id": "M:Booking.Infrastructure.Collections.ReservationBook.System#Collections#IEnumerable#GetEnumerator",
+      "kind": "method",
+      "name": "IEnumerable.GetEnumerator",
+      "fullName": "Booking.Infrastructure.Collections.ReservationBook.IEnumerable.GetEnumerator",
+      "parent": "T:Booking.Infrastructure.Collections.ReservationBook",
+      "project": "project:Booking.Infrastructure",
+      "namespace": "Booking.Infrastructure.Collections",
+      "accessibility": "private",
+      "signature": "private IEnumerator IEnumerable.GetEnumerator()",
+      "location": {
+        "file": "server/src/Booking.Infrastructure/Collections/ReservationBook.cs",
+        "line": 13,
+        "endLine": 13
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 1,
+        "loc": 1
+      }
+    },
+    {
+      "id": "M:Booking.Infrastructure.Collections.ReservationBook.System#IDisposable#Dispose",
+      "kind": "method",
+      "name": "IDisposable.Dispose",
+      "fullName": "Booking.Infrastructure.Collections.ReservationBook.IDisposable.Dispose",
+      "parent": "T:Booking.Infrastructure.Collections.ReservationBook",
+      "project": "project:Booking.Infrastructure",
+      "namespace": "Booking.Infrastructure.Collections",
+      "accessibility": "private",
+      "signature": "private void IDisposable.Dispose()",
+      "location": {
+        "file": "server/src/Booking.Infrastructure/Collections/ReservationBook.cs",
+        "line": 15,
+        "endLine": 15
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 1
+      }
+    },
+    {
       "id": "M:Booking.Infrastructure.Legacy.RoomImporter.Parse(System.String)",
       "kind": "method",
       "name": "Parse",
@@ -2985,8 +3200,28 @@
       "signature": "public IReadOnlyList<Reservation> All()",
       "location": {
         "file": "server/src/Booking.Infrastructure/Persistence/InMemoryReservationRepository.cs",
-        "line": 10,
-        "endLine": 10
+        "line": 11,
+        "endLine": 11
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 1
+      }
+    },
+    {
+      "id": "M:Booking.Infrastructure.Persistence.InMemoryReservationRepository.Book",
+      "kind": "method",
+      "name": "Book",
+      "fullName": "Booking.Infrastructure.Persistence.InMemoryReservationRepository.Book",
+      "parent": "T:Booking.Infrastructure.Persistence.InMemoryReservationRepository",
+      "project": "project:Booking.Infrastructure",
+      "namespace": "Booking.Infrastructure.Persistence",
+      "accessibility": "public",
+      "signature": "public ReservationBook Book()",
+      "location": {
+        "file": "server/src/Booking.Infrastructure/Persistence/InMemoryReservationRepository.cs",
+        "line": 19,
+        "endLine": 19
       },
       "metrics": {
         "complexity": 1,
@@ -3005,8 +3240,8 @@
       "signature": "public Reservation? Find(ReservationId id)",
       "location": {
         "file": "server/src/Booking.Infrastructure/Persistence/InMemoryReservationRepository.cs",
-        "line": 14,
-        "endLine": 14
+        "line": 15,
+        "endLine": 15
       },
       "metrics": {
         "complexity": 1,
@@ -3026,8 +3261,8 @@
       "signature": "public IReadOnlyList<Reservation> ForRoom(string roomNumber)",
       "location": {
         "file": "server/src/Booking.Infrastructure/Persistence/InMemoryReservationRepository.cs",
-        "line": 16,
-        "endLine": 16
+        "line": 17,
+        "endLine": 17
       },
       "metrics": {
         "complexity": 1,
@@ -3047,8 +3282,29 @@
       "signature": "public void Save(Reservation item)",
       "location": {
         "file": "server/src/Booking.Infrastructure/Persistence/InMemoryReservationRepository.cs",
-        "line": 12,
-        "endLine": 12
+        "line": 13,
+        "endLine": 13
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "M:Booking.Infrastructure.Resilience.RetryController.ShouldRetry(System.Int32)",
+      "kind": "method",
+      "name": "ShouldRetry",
+      "fullName": "Booking.Infrastructure.Resilience.RetryController.ShouldRetry",
+      "parent": "T:Booking.Infrastructure.Resilience.RetryController",
+      "project": "project:Booking.Infrastructure",
+      "namespace": "Booking.Infrastructure.Resilience",
+      "accessibility": "public",
+      "signature": "public bool ShouldRetry(int attempt)",
+      "location": {
+        "file": "server/src/Booking.Infrastructure/Resilience/RetryController.cs",
+        "line": 11,
+        "endLine": 11
       },
       "metrics": {
         "complexity": 1,
@@ -3671,6 +3927,31 @@
         "line": 11,
         "endLine": 11
       },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "P:Booking.Infrastructure.Resilience.RetryPolicy.Attempts",
+      "kind": "property",
+      "name": "Attempts",
+      "fullName": "Booking.Infrastructure.Resilience.RetryPolicy.Attempts",
+      "parent": "T:Booking.Infrastructure.Resilience.RetryPolicy",
+      "project": "project:Booking.Infrastructure",
+      "namespace": "Booking.Infrastructure.Resilience",
+      "accessibility": "public",
+      "modifiers": [
+        "init"
+      ],
+      "signature": "public int Attempts { get; init; }",
+      "location": {
+        "file": "server/src/Booking.Infrastructure/Resilience/RetryController.cs",
+        "line": 3,
+        "endLine": 3
+      },
+      "tags": [
+        "positional"
+      ],
       "metrics": {
         "loc": 1
       }
@@ -5017,6 +5298,12 @@
   ],
   "edges": [
     {
+      "source": "F:Booking.Infrastructure.Collections.ReservationBook._items",
+      "target": "T:Booking.Domain.Reservations.Reservation",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
       "source": "F:Booking.Infrastructure.Persistence.InMemoryReservationRepository._reservations",
       "target": "T:Booking.Domain.Reservations.Reservation",
       "kind": "holds",
@@ -5485,6 +5772,31 @@
       "weight": 1
     },
     {
+      "source": "M:Booking.Infrastructure.Collections.ReservationBook.GetEnumerator",
+      "target": "F:Booking.Infrastructure.Collections.ReservationBook._items",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "M:Booking.Infrastructure.Collections.ReservationBook.GetEnumerator",
+      "target": "T:Booking.Domain.Reservations.Reservation",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "M:Booking.Infrastructure.Collections.ReservationBook.System#Collections#IEnumerable#GetEnumerator",
+      "target": "M:Booking.Infrastructure.Collections.ReservationBook.GetEnumerator",
+      "kind": "calls",
+      "weight": 1,
+      "line": 13
+    },
+    {
+      "source": "M:Booking.Infrastructure.Collections.ReservationBook.System#IDisposable#Dispose",
+      "target": "F:Booking.Infrastructure.Collections.ReservationBook._items",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
       "source": "M:Booking.Infrastructure.Notifications.EmailNotifier.Notify(System.String,System.String)",
       "target": "P:Booking.Infrastructure.Notifications.EmailNotifier.Sent",
       "kind": "accesses",
@@ -5511,6 +5823,25 @@
     {
       "source": "M:Booking.Infrastructure.Persistence.InMemoryReservationRepository.All",
       "target": "T:Booking.Domain.Reservations.Reservation",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "M:Booking.Infrastructure.Persistence.InMemoryReservationRepository.Book",
+      "target": "F:Booking.Infrastructure.Persistence.InMemoryReservationRepository._reservations",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "M:Booking.Infrastructure.Persistence.InMemoryReservationRepository.Book",
+      "target": "T:Booking.Infrastructure.Collections.ReservationBook",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 19
+    },
+    {
+      "source": "M:Booking.Infrastructure.Persistence.InMemoryReservationRepository.Book",
+      "target": "T:Booking.Infrastructure.Collections.ReservationBook",
       "kind": "returns",
       "weight": 1
     },
@@ -5584,6 +5915,12 @@
       "source": "M:Booking.Infrastructure.Persistence.InMemoryReservationRepository.Save(Booking.Domain.Reservations.Reservation)",
       "target": "M:Booking.Domain.Common.IRepository`1.Save(`0)",
       "kind": "implements",
+      "weight": 1
+    },
+    {
+      "source": "M:Booking.Infrastructure.Resilience.RetryController.ShouldRetry(System.Int32)",
+      "target": "P:Booking.Infrastructure.Resilience.RetryPolicy.Attempts",
+      "kind": "accesses",
       "weight": 1
     },
     {
@@ -5990,6 +6327,12 @@
       "weight": 1
     },
     {
+      "source": "T:Booking.Infrastructure.Collections.ReservationBook",
+      "target": "T:Booking.Domain.Reservations.Reservation",
+      "kind": "uses",
+      "weight": 2
+    },
+    {
       "source": "T:Booking.Infrastructure.Compat.LegacyClockAdapter",
       "target": "T:Booking.Domain.Time.IClock",
       "kind": "implements",
@@ -6005,6 +6348,12 @@
       "source": "T:Booking.Infrastructure.Persistence.InMemoryReservationRepository",
       "target": "T:Booking.Domain.Reservations.IReservationRepository",
       "kind": "implements",
+      "weight": 1
+    },
+    {
+      "source": "T:Booking.Infrastructure.Resilience.RetryController",
+      "target": "T:Booking.Infrastructure.Resilience.RetryPolicy",
+      "kind": "injects",
       "weight": 1
     },
     {
@@ -6568,7 +6917,7 @@
       },
       {
         "id": "T:Booking.Infrastructure.Persistence.InMemoryReservationRepository",
-        "score": 4
+        "score": 5
       },
       {
         "id": "ts:@booking/bff:src/reservations-api.ts",
@@ -6577,6 +6926,10 @@
       {
         "id": "ts:@booking/web:src/reservation-list.ts",
         "score": 4
+      },
+      {
+        "id": "T:Booking.Infrastructure.Collections.ReservationBook",
+        "score": 3
       },
       {
         "id": "T:Booking.Infrastructure.Services.PricingService",
@@ -6637,10 +6990,6 @@
       {
         "id": "ts:@booking/web:src/util/dates.ts",
         "score": 2
-      },
-      {
-        "id": "T:Booking.Domain.Common.Validator`1",
-        "score": 1
       }
     ],
     "mostDepended": [
@@ -6650,7 +6999,7 @@
       },
       {
         "id": "T:Booking.Domain.Reservations.Reservation",
-        "score": 7
+        "score": 8
       },
       {
         "id": "T:Booking.Domain.Reservations.IReservationRepository",
@@ -6774,6 +7123,7 @@
           [
             "namespace:Booking.Domain/Booking.Domain.Common",
             "namespace:Booking.Domain/Booking.Domain.Time",
+            "namespace:Booking.Infrastructure/Booking.Infrastructure.Resilience",
             "ts:ns:@booking/core/(root)",
             "ts:ns:@booking/web/util"
           ],
@@ -6787,13 +7137,16 @@
           ],
           [
             "namespace:Booking.Contracts/Booking.Contracts.Dto",
+            "namespace:Booking.Infrastructure/Booking.Infrastructure.Collections",
             "namespace:Booking.Infrastructure/Booking.Infrastructure.Legacy",
-            "namespace:Booking.Infrastructure/Booking.Infrastructure.Persistence",
-            "namespace:Booking.Infrastructure/Booking.Infrastructure.Services",
-            "namespace:Booking.Infrastructure/Booking.Infrastructure.Time"
+            "namespace:Booking.Infrastructure/Booking.Infrastructure.Services"
           ],
           [
             "namespace:Booking.Api/Booking.Api.Controllers",
+            "namespace:Booking.Infrastructure/Booking.Infrastructure.Persistence",
+            "namespace:Booking.Infrastructure/Booking.Infrastructure.Time"
+          ],
+          [
             "namespace:Booking.Infrastructure/Booking.Infrastructure"
           ],
           [

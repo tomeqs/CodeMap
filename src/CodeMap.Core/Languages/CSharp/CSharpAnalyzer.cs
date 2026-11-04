@@ -29,10 +29,12 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
             SkipMemberKinds = new HashSet<string> { NodeKinds.Constructor },
             SkipModifiers = new HashSet<string> { "override" },
             SkipNames = new HashSet<string> { "Dispose", "DisposeAsync", "ToString", "Equals", "GetHashCode", "Main" },
-            SkipNamePattern = new Regex("^operator| operator ", RegexOptions.CultureInvariant),
+            // Operators, and explicit interface implementations (named "IFace.Member"): called through the interface.
+            SkipNamePattern = new Regex(@"^operator| operator |\.", RegexOptions.CultureInvariant),
             SkipParentKinds = new HashSet<string> { NodeKinds.Interface },
-            SkipParentTags = new HashSet<string> { Tags.Test },
-            SkipTypeTags = new HashSet<string> { Tags.Controller, Tags.HostedService, Tags.Middleware, Tags.Generated },
+            // Members of pages and components are used from their markup (.cshtml, .razor, .xaml), which is not read.
+            SkipParentTags = new HashSet<string> { Tags.Test, Tags.Page, Tags.Component },
+            SkipTypeTags = new HashSet<string> { Tags.Controller, Tags.HostedService, Tags.Middleware, Tags.Generated, Tags.Page, Tags.Component },
         },
     };
 

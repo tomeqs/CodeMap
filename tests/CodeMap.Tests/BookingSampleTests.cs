@@ -86,6 +86,16 @@ public class BookingSampleTests
     }
 
     [NodeFact(typescript: true)]
+    public void Csharp_roles_need_evidence_and_explicit_implementations_are_used()
+    {
+        // RetryController is a plain class: no controller tag, not built by the container (its RetryPolicy is no issue).
+        Assert.DoesNotContain(Tags.Controller, Node($"T:{Infra}Resilience.RetryController").Tags ?? new List<string>());
+        Assert.Contains(Tags.Controller, Node("T:Booking.Api.Controllers.ReservationsController").Tags!);
+        // ReservationBook's explicit IEnumerable.GetEnumerator and IDisposable.Dispose are called through the interfaces.
+        Assert.DoesNotContain(Graph.Analysis.UnusedCandidates, id => id.StartsWith($"M:{Infra}Collections.ReservationBook", StringComparison.Ordinal));
+    }
+
+    [NodeFact(typescript: true)]
     public void Csharp_registrations_are_read_as_the_container_reads_them()
     {
         var registrations = Graph.Analysis.Di!.Registrations;

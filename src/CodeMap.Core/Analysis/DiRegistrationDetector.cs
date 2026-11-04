@@ -99,8 +99,7 @@ internal static class DiRegistrationDetector
                         || (kind == "type" && !Methods.ContainsKey(methodName)
                             && node.Parent is ArgumentSyntax { Parent: ArgumentListSyntax { Parent: InvocationExpressionSyntax outer } }
                             && MethodName(outer)?.Identifier.ValueText == "TryAdd");
-        var info = model.GetSymbolInfo(node);
-        var method = (info.Symbol ?? info.CandidateSymbols.FirstOrDefault()) as IMethodSymbol;
+        var method = ReferenceWalker.Choose(model.GetSymbolInfo(node), node) as IMethodSymbol;
 
         List<ITypeSymbol?> typeArguments;
         Arguments arguments;
@@ -277,7 +276,7 @@ internal static class DiRegistrationDetector
         return argument.Kind == TypedConstantKind.Array ? null : KeyText(argument.Value, argument.Type);
     }
 
-    private static string? KeyText(object? value, ITypeSymbol? type)
+    internal static string? KeyText(object? value, ITypeSymbol? type)
     {
         if (value == null) return null;
         if (type is INamedTypeSymbol { TypeKind: TypeKind.Enum } enumType)

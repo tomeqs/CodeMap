@@ -99,6 +99,10 @@ public static class Tags
     public const string HostedService = "hosted-service";
     public const string Middleware = "middleware";
     public const string Hub = "hub";
+    /// <summary>A Razor page model (PageModel, or the code-behind of a .cshtml).</summary>
+    public const string Page = "page";
+    /// <summary>A UI component: Blazor (ComponentBase, or the code-behind of a .razor), XAML code-behind; Angular components in TypeScript.</summary>
+    public const string Component = "component";
     public const string Handler = "handler";
     public const string Extensions = "extensions";
     public const string Repository = "repository";

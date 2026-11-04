@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Booking.Domain.Reservations;
+using Booking.Infrastructure.Collections;
 
 namespace Booking.Infrastructure.Persistence;
 
@@ -14,4 +15,6 @@ public sealed class InMemoryReservationRepository : IReservationRepository
     public Reservation? Find(ReservationId id) => _reservations.GetValueOrDefault(id);
 
     public IReadOnlyList<Reservation> ForRoom(string roomNumber) => _reservations.Values.Where(r => r.RoomNumber == roomNumber).ToList();
+
+    public ReservationBook Book() => new(_reservations.Values);
 }

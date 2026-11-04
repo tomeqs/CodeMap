@@ -28,9 +28,11 @@ internal static class Tagger
         ("Dto", Tags.Dto), ("DTO", Tags.Dto), ("Request", Tags.Dto), ("Response", Tags.Dto), ("ViewModel", Tags.Dto), ("Model", Tags.Dto),
         ("Validator", Tags.Validator),
         ("Handler", Tags.Handler),
-        ("Middleware", Tags.Middleware),
-        ("Controller", Tags.Controller),
+        // Not by name alone: controller and middleware make a type framework-activated (a DI consumer), which needs
+        // evidence (a base class, an attribute, the middleware shape) – a CircuitController in a library is neither.
     };
+
+    private static readonly string[] ComponentBases = { "ComponentBase", "LayoutComponentBase", "OwningComponentBase" };
 
     public static void TagType(INamedTypeSymbol type, GraphNode node, bool isTestProject)
     {
@@ -39,7 +41,10 @@ internal static class Tagger
         var interfaceNames = type.AllInterfaces.Select(i => i.Name).ToHashSet(StringComparer.Ordinal);
         var attributes = node.Attributes ?? new List<string>();
 
-        if (baseNames.Contains("ControllerBase") || baseNames.Contains("Controller") || attributes.Contains("ApiController")) node.AddTag(Tags.Controller);
+        if (baseNames.Contains("ControllerBase") || baseNames.Contains("Controller") || attributes.Contains("ApiController") || attributes.Contains("Controller")) node.AddTag(Tags.Controller);
+        var markup = CodeBehindMarkup(type);
+        if (baseNames.Contains("PageModel") || markup == ".cshtml") node.AddTag(Tags.Page);
+        if (ComponentBases.Any(baseNames.Contains) || markup is ".razor" or ".xaml") node.AddTag(Tags.Component);
         if (baseNames.Any(n => n.EndsWith("DbContext", StringComparison.Ordinal))) node.AddTag(Tags.DbContext);
         if (baseNames.Contains("Exception")) node.AddTag(Tags.Exception);
         if (baseNames.Contains("Attribute")) node.AddTag(Tags.Attribute);
@@ -56,7 +61,7 @@ internal static class Tagger
                           || type.GetMembers().OfType<IMethodSymbol>().Any(m => m.GetAttributes().Any(a => TestMethodAttributes.Contains(StripAttribute(a.AttributeClass?.Name))));
         if (isTestClass || (isTestProject && type.Name.EndsWith("Tests", StringComparison.Ordinal))) node.AddTag(Tags.Test);
 
-        if (type.TypeKind is TypeKind.Class or TypeKind.Struct or TypeKind.Interface)
+        if (type.TypeKind is TypeKind.Class or TypeKind.Struct or TypeKind.Interface && !node.HasTag(Tags.Page) && !node.HasTag(Tags.Component))
         {
             var name = type.TypeKind == TypeKind.Interface && type.Name.Length > 1 && type.Name[0] == 'I' && char.IsUpper(type.Name[1])
                 ? type.Name[1..]
@@ -76,6 +81,24 @@ internal static class Tagger
     {
         if (node.Attributes?.Any(TestMethodAttributes.Contains) == true) node.AddTag(Tags.Test);
         if (symbol is IMethodSymbol { IsStatic: true, Name: "Main" }) node.AddTag(Tags.EntryPoint);
+    }
+
+    /// <summary>
+    /// The markup a type is the code-behind of: ".razor" for X.razor.cs next to X.razor, ".cshtml" and ".xaml" likewise.
+    /// Its members are used from that markup, which the analysis does not read.
+    /// </summary>
+    private static string? CodeBehindMarkup(INamedTypeSymbol type)
+    {
+        foreach (var location in type.Locations.Where(l => l.IsInSource))
+        {
+            var path = location.SourceTree?.FilePath;
+            if (path == null || !path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)) continue;
+            var markup = path[..^3];
+            var extension = Path.GetExtension(markup).ToLowerInvariant();
+            if (extension is ".razor" or ".cshtml" or ".xaml" && File.Exists(markup)) return extension;
+        }
+
+        return null;
     }
 
     private static bool HasMiddlewareInvoke(INamedTypeSymbol type) =>
