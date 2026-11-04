@@ -20,7 +20,7 @@ export function analyze(ts, request, log = () => {}) {
   const isFile = statSync(target).isFile();
   const root = resolve(request.root ?? (isFile ? dirname(target) : target));
   const options = request.options ?? {};
-  const { projects, packages, skippedTests } = discover(target, root, { includeTests: options.includeTests !== false });
+  const { projects, packages, skippedTests, links } = discover(target, root, { includeTests: options.includeTests !== false });
 
   const graph = new Graph();
   const files = new Map(); // file name as the compiler writes it → where it sits on the map
@@ -95,7 +95,7 @@ export function analyze(ts, request, log = () => {}) {
   }
 
   const sourceCache = new Map();
-  const resolver = new Resolver(ts, packages, (file) => files.has(toPosix(file)));
+  const resolver = new Resolver(ts, packages, (file) => files.has(toPosix(file)), links);
   const shared = { di: { registrations: [], dependencies: [] }, claimed: new Map(), nestScopes: new Map(), express: { routers: new Map(), mounts: new Map(), routes: [] } };
   projects.forEach((project, i) => {
     if (!project.analyzedFiles.length) return;
@@ -146,8 +146,8 @@ export function analyze(ts, request, log = () => {}) {
 }
 
 /**
- * Entry points: what package.json starts (main, bin), and files that run code at the top and that nothing
- * imports (scripts, server.ts, main.ts). They are where flows start, and never unused.
+ * Entry points: what package.json starts (main, bin), and files that run code when loaded and that nothing
+ * imports (scripts, server.ts, main.ts, vite.config.ts). They are where flows start, and never unused.
  */
 function markEntryPoints(graph, projects, resolver, files) {
   const tag = (node) => {
@@ -158,10 +158,12 @@ function markEntryPoints(graph, projects, resolver, files) {
   const imported = new Set([...graph.edges.values()].filter((e) => e.kind === 'imports' || e.kind === 'uses').map((e) => e.target));
   for (const node of graph.nodes.values()) {
     if (node.kind !== 'module' || node.tags?.includes('test')) continue;
-    const topLevel = graph.nodes.get(`${node.id}#(top-level)`);
-    if (topLevel && !imported.has(node.id)) {
+    if (imported.has(node.id)) continue;
+    // Code that runs when the file is loaded: its top-level statements, or a default export it computes (defineConfig(…)).
+    const runs = [graph.nodes.get(`${node.id}#(top-level)`), graph.nodes.get(`${node.id}#default`)].filter((n) => n?.runsCode);
+    if (runs.length) {
       tag(node);
-      tag(topLevel);
+      runs.forEach(tag);
     }
   }
 
@@ -196,7 +198,7 @@ function cmp(a, b) {
 function clean(node) {
   const out = {};
   for (const [key, value] of Object.entries(node)) {
-    if (key === 'hasCode' || value === undefined || value === null) continue;
+    if (key === 'hasCode' || key === 'runsCode' || value === undefined || value === null) continue;
     if (Array.isArray(value) && value.length === 0) continue;
     out[key] = value;
   }

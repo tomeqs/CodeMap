@@ -79,7 +79,13 @@ export function referenceKind(ts, decl) {
   if (ts.isVariableDeclaration(decl) && decl.initializer && (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer))) return 'calls';
   if (ts.isPropertyDeclaration(decl) && decl.initializer && (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer))) return 'calls';
   if (ts.isClassDeclaration(decl) || ts.isInterfaceDeclaration(decl) || ts.isTypeAliasDeclaration(decl) || ts.isEnumDeclaration(decl) || ts.isEnumMember(decl)) return 'uses';
-  if (ts.isExportAssignment(decl) || ts.isSourceFile(decl)) return 'uses';
+  if (ts.isExportAssignment(decl)) {
+    // export default () => …, export default class {…}, export default { … }
+    const expr = decl.expression;
+    return ts.isArrowFunction(expr) || ts.isFunctionExpression(expr) ? 'calls' : ts.isClassExpression(expr) ? 'uses' : 'accesses';
+  }
+
+  if (ts.isSourceFile(decl)) return 'uses';
   return 'accesses';
 }
 
@@ -194,8 +200,20 @@ export function declareModule(ctx, sf, info) {
           signature: signature(ts, sf, statement, isFunction ? expr.body : null),
           metrics: isFunction ? { complexity: complexity(ts, expr.body) } : undefined,
         }, statement, expr);
-      } else {
+      } else if (ts.isIdentifier(expr)) {
+        // export default name: references reach `name` itself.
         topLevel.push(statement);
+      } else {
+        // export default { Row: RowStack } / defineConfig(…): one node that importers of the default export reach.
+        const node = add(memberId(info.moduleId, 'default'), {
+          kind: 'variable',
+          name: 'default',
+          fullName: `${info.path}#default`,
+          parent: info.moduleId,
+          accessibility: 'public',
+          signature: signature(ts, sf, statement, null),
+        }, statement, expr);
+        node.runsCode = runsCode(ts, expr);
       }
     } else if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement) && !ts.isModuleDeclaration(statement) &&
         !ts.isImportEqualsDeclaration(statement) && statement.kind !== ts.SyntaxKind.EmptyStatement) {
@@ -203,11 +221,13 @@ export function declareModule(ctx, sf, info) {
     }
   }
 
-  // Code at the top of the file (bootstrap calls, app.use(…), route registrations) is one more member.
-  if (topLevel.some((s) => containsCode(ts, s))) {
+  // Code at the top of the file (bootstrap calls, app.use(…), route registrations, module.exports = {…},
+  // assignments) is one more member. Directives ('use strict', 'use client') are not code.
+  const code = topLevel.filter((s) => !(ts.isExpressionStatement(s) && ts.isStringLiteral(s.expression)));
+  if (code.some((s) => !ts.isExportAssignment(s))) {
     const id = memberId(info.moduleId, '(top-level)');
-    const first = location(topLevel[0]);
-    const last = location(topLevel[topLevel.length - 1]);
+    const first = location(code[0]);
+    const last = location(code[code.length - 1]);
     graph.addNode({
       id,
       ...base,
@@ -218,9 +238,10 @@ export function declareModule(ctx, sf, info) {
       accessibility: 'private',
       location: { file: info.rel, line: first.line, endLine: last.endLine },
       tags: tags ? [...tags] : undefined,
-      metrics: { loc: last.endLine - first.line + 1, complexity: topLevel.reduce((sum, s) => sum + complexity(ts, s) - 1, 1) },
+      metrics: { loc: last.endLine - first.line + 1, complexity: code.reduce((sum, s) => sum + complexity(ts, s) - 1, 1) },
+      runsCode: code.some((s) => runsCode(ts, s)), // a script (an entry point when nothing imports it), not only assignments
     });
-    owners.push({ id, node: sf, code: topLevel, kind: 'function', topLevel: true });
+    owners.push({ id, node: sf, code, kind: 'function', topLevel: true });
   }
 
   return owners;
@@ -356,7 +377,8 @@ function doc(ts, node) {
   return first.length > 300 ? first.slice(0, 299) + '…' : first;
 }
 
-function containsCode(ts, node) {
+/** Does a statement call something, create an object or wait (code that runs), rather than only assign or export values? */
+function runsCode(ts, node) {
   let found = false;
   const visit = (n) => {
     if (found) return;

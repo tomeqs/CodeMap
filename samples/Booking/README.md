@@ -51,6 +51,9 @@ The C# compiles (`dotnet build server/Booking.sln`). Delete `bin/` and `obj/` af
 | Express route chain on a mounted router | `apiRouter.route('/reservations').get(…).post(…).delete(…)`, mounted at `/api` | `GET`, `POST` and `DELETE /api/reservations`, each on the line of its verb |
 | An app typed with a qualified name | `register(app: express.Express)` | the route `GET /health` |
 | A route registered inside a function | `register.ts` | `GET /health` has complexity 3, `register` 1, and the top-level code keeps its own 3 |
+| A function typed by its variable | `apps/web/src/badge.ts`: `export const Badge: Renderer<BadgeProps> = …` | `Badge` uses `Renderer` and `BadgeProps` |
+| Constraint and default of a type parameter | `type Renderer<P extends Labelled = BadgeProps>` | `Renderer` uses `Labelled` and `BadgeProps`, so neither is "possibly unused" |
+| CommonJS `require()` variables | `apps/bff/scripts/version.cjs`: `const pkg = require('../package.json')` | the script's top-level code accesses `pkg` and `path`; the script is an entry point |
 | A tsconfig path alias | `@/util/dates` (`apps/web/tsconfig.json`) | `reservation-list.ts` imports `util/dates.ts` |
 | A bundler-only alias | `~/app.config` (only `vite.config.ts` declares it) | no npm package `~` (the packages are `express`, `@types/express`, `vite`) |
 | A folder inside a package | `codemap client/apps/web/src` | the package `@booking/web`, with the same ids as for the whole sample |

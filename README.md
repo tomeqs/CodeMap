@@ -156,8 +156,10 @@ from the installed .NET. If `dotnet restore` has run, types from NuGet packages 
 With **Node.js 18+** on the machine, CodeMap also maps TypeScript and JavaScript (the `analyzers/typescript` plugin,
 included in releases; the VS Code extension uses the Node.js built into VS Code). The unit of the map is the **file**: packages (`package.json`) → folders → files → declarations
 (classes, interfaces, functions, types, constants) and class members. Edges: `imports` between files, calls (in order,
-also through `index.ts` barrel files and through interfaces), `new` and JSX, inheritance and implementations, types in signatures,
-decorators, npm packages and dependencies between monorepo packages (workspaces), all without `npm install`.
+also through `index.ts` barrel files and through interfaces), `new` and JSX, inheritance and implementations, types in signatures
+and annotations (also the constraints and defaults of type parameters), decorators (also of parameters), CommonJS `require()`,
+npm packages and dependencies between monorepo packages (workspaces), all without `npm install`. Code at the top of a file
+(`module.exports = {…}`, assignments, `export default {…}`) is a member of its own, so what it uses is not "unused".
 
 Frameworks recognised from the imports:
 

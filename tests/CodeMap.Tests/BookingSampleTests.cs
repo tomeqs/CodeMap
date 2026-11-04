@@ -167,6 +167,19 @@ public class BookingSampleTests
     }
 
     [NodeFact(typescript: true)]
+    public void Typescript_annotations_type_parameters_and_require_variables_are_references()
+    {
+        Graph.AssertEdge(Web + "badge.ts#Badge", EdgeKinds.Uses, Web + "badge.ts#Renderer");   // const Badge: Renderer<BadgeProps>
+        Graph.AssertEdge(Web + "badge.ts#Badge", EdgeKinds.Uses, Web + "badge.ts#BadgeProps");
+        Graph.AssertEdge(Web + "badge.ts#Renderer", EdgeKinds.Uses, Web + "badge.ts#Labelled"); // <P extends Labelled = BadgeProps>
+        Graph.AssertEdge(Web + "badge.ts#Renderer", EdgeKinds.Uses, Web + "badge.ts#BadgeProps");
+        const string script = "ts:@booking/bff:scripts/version.cjs";
+        Graph.AssertEdge(script + "#(top-level)", EdgeKinds.Accesses, script + "#pkg"); // const pkg = require(…)
+        Graph.AssertEdge(script + "#(top-level)", EdgeKinds.Accesses, script + "#path");
+        Assert.Contains("entrypoint", Node(script).Tags!); // a script nothing imports
+    }
+
+    [NodeFact(typescript: true)]
     public void Typescript_express_routes_and_their_complexity()
     {
         // A chain of verbs on a router mounted at /api, and a route on an app typed express.Express.

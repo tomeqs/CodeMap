@@ -13,9 +13,21 @@ export function collectReferences(ctx, sf, owners) {
 
   for (const owner of owners) {
     const node = owner.node;
+    const codes = owner.code ? (Array.isArray(owner.code) ? owner.code : [owner.code]) : [];
     const fn = functionLike(ts, node);
     if (fn) {
-      for (const parameter of fn.parameters ?? []) typeEdges(ctx, owner.id, parameter.type, 'accepts');
+      typeParameterEdges(ctx, owner.id, fn.typeParameters);
+      // const Badge: Renderer<BadgeProps> = (p) => …: the annotation is the function's type.
+      if (fn !== node && (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node))) typeEdges(ctx, owner.id, node.type, 'uses');
+      for (const parameter of fn.parameters ?? []) {
+        typeEdges(ctx, owner.id, parameter.type, 'accepts');
+        // Default values and decorators of a declared function's parameters (an arrow function's are in its code;
+        // a parameter property is a member of its own).
+        if (codes.some((c) => c.pos <= parameter.pos && parameter.end <= c.end) || declarationId(ctx, parameter)) continue;
+        if (parameter.initializer) walk(parameter.initializer, owner.id);
+        decorate(parameter, owner.id);
+      }
+
       typeEdges(ctx, owner.id, fn.type, 'returns');
       if (ts.isConstructorDeclaration(fn)) {
         const type = graph.nodes.get(owner.id)?.parent;
@@ -24,19 +36,25 @@ export function collectReferences(ctx, sf, owners) {
     } else if (ts.isPropertyDeclaration(node) || ts.isPropertySignature(node) || ts.isParameter(node) || (ts.isVariableDeclaration(node) && node.type)) {
       typeEdges(ctx, owner.id, node.type, 'holds');
     } else if (ts.isTypeAliasDeclaration(node)) {
+      typeParameterEdges(ctx, owner.id, node.typeParameters);
       typeEdges(ctx, owner.id, node.type, 'uses');
     } else if (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node)) {
+      typeParameterEdges(ctx, owner.id, node.typeParameters);
       heritage(ctx, owner, node);
     }
 
+    decorate(node, owner.id);
+    for (const code of codes) walk(code, owner.id);
+  }
+
+  /** `@Decorator(args)` on a declaration or parameter: an edge to the decorator, and its arguments are code of the owner. */
+  function decorate(node, ownerId) {
     for (const decorator of (ts.canHaveDecorators?.(node) && ts.getDecorators(node)) || []) {
       const expr = ts.isCallExpression(decorator.expression) ? decorator.expression.expression : decorator.expression;
       const target = targetOf(ctx, nameOf(ts, expr));
-      if (target) graph.addEdge(owner.id, target.id, 'decoratedWith');
-      if (ts.isCallExpression(decorator.expression)) decorator.expression.arguments.forEach((a) => walk(a, owner.id));
+      if (target) graph.addEdge(ownerId, target.id, 'decoratedWith');
+      if (ts.isCallExpression(decorator.expression)) decorator.expression.arguments.forEach((a) => walk(a, ownerId));
     }
-
-    if (owner.code) for (const code of Array.isArray(owner.code) ? owner.code : [owner.code]) walk(code, owner.id);
   }
 
   function walk(root, ownerId) {
@@ -76,9 +94,12 @@ export function collectReferences(ctx, sf, owners) {
         edge(targetOf(ctx, nameOf(ts, n.expression.expression)), 'throws', n);
       }
 
+      if (ts.isJsxClosingElement(n)) return; // </Comp>: its opening tag made the edge
+
       if (ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) {
         const tag = n.tagName;
         if (!(ts.isIdentifier(tag) && /^[a-z]/.test(tag.text))) edge(targetOf(ctx, nameOf(ts, tag)), 'instantiates', n);
+        if (ts.isPropertyAccessExpression(tag)) visit(tag.expression); // <Stack.Navigator>: reads Stack
         visit(n.attributes);
         return;
       }
@@ -155,19 +176,39 @@ function heritage(ctx, owner, node) {
   }
 }
 
+/** `<T extends Constraint = Default>`: the constraints and defaults of type parameters are types the declaration uses. */
+function typeParameterEdges(ctx, sourceId, typeParameters) {
+  for (const parameter of typeParameters ?? []) {
+    typeEdges(ctx, sourceId, parameter.constraint, 'uses');
+    typeEdges(ctx, sourceId, parameter.default, 'uses');
+  }
+}
+
 /** Edges to the declarations a type annotation names: `Promise<Order[]>` → Order. */
 function typeEdges(ctx, sourceId, typeNode, kind) {
   if (!typeNode || !sourceId) return;
   const { ts, graph } = ctx;
-  // A constructor depends on services: classes and interfaces, not on aliases of strings and numbers.
-  const accepted = (target) => target && (kind !== 'injects' || ts.isClassDeclaration(target.decl) || ts.isInterfaceDeclaration(target.decl));
+  if (kind === 'injects') {
+    // A constructor is given the type itself (also `Service | undefined`); what its type arguments name
+    // (`Repository<Article>`, `Array<Item>`) or anything nested deeper is only used.
+    if (ts.isUnionTypeNode(typeNode) || ts.isIntersectionTypeNode(typeNode)) typeNode.types.forEach((t) => typeEdges(ctx, sourceId, t, kind));
+    else if (ts.isParenthesizedTypeNode(typeNode)) typeEdges(ctx, sourceId, typeNode.type, kind);
+    else if (ts.isTypeReferenceNode(typeNode)) {
+      // A constructor depends on services: classes and interfaces, not on aliases of strings and numbers.
+      const target = targetOf(ctx, rightmost(ts, typeNode.typeName));
+      if (target && (ts.isClassDeclaration(target.decl) || ts.isInterfaceDeclaration(target.decl))) graph.addEdge(sourceId, target.id, kind);
+      typeNode.typeArguments?.forEach((t) => typeEdges(ctx, sourceId, t, 'uses'));
+    } else typeEdges(ctx, sourceId, typeNode, 'uses');
+    return;
+  }
+
   const visit = (n) => {
     if (ts.isTypeReferenceNode(n)) {
       const target = targetOf(ctx, rightmost(ts, n.typeName));
-      if (accepted(target)) graph.addEdge(sourceId, target.id, kind);
+      if (target) graph.addEdge(sourceId, target.id, kind);
     } else if (ts.isExpressionWithTypeArguments(n) || ts.isTypeQueryNode(n)) {
       const target = targetOf(ctx, nameOf(ts, n.expression ?? n.exprName));
-      if (accepted(target)) graph.addEdge(sourceId, target.id, kind);
+      if (target) graph.addEdge(sourceId, target.id, kind);
     }
 
     ts.forEachChild(n, visit);
@@ -222,7 +263,13 @@ export function targetOf(ctx, name) {
     symbol = name.parent && ts.isShorthandPropertyAssignment(name.parent) && name.parent.name === name
       ? checker.getShorthandAssignmentValueSymbol(name.parent)
       : checker.getSymbolAtLocation(name);
-    if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+    if (symbol && symbol.flags & ts.SymbolFlags.Alias) {
+      // const helper = require('./helper'): a reference to `helper` reads that variable, not the module.
+      const variable = symbol.declarations?.find((d) => ts.isVariableDeclaration(d) && isRequire(ts, d.initializer));
+      const id = variable && declarationId(ctx, variable);
+      if (id) return { id, kind: 'accesses', decl: variable };
+      symbol = checker.getAliasedSymbol(symbol);
+    }
   } catch {
     return null;
   }
@@ -233,4 +280,10 @@ export function targetOf(ctx, name) {
   }
 
   return null;
+}
+
+/** `require('x')`, the CommonJS import. */
+export function isRequire(ts, node) {
+  return !!node && ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'require' &&
+    node.arguments.length === 1 && ts.isStringLiteralLike(node.arguments[0]);
 }

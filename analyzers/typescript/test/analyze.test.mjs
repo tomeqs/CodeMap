@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -179,8 +179,11 @@ test('path aliases are local code, not npm packages', () => {
   });
 });
 
-/** A package `pkg` with these files in a temporary folder, analyzed as CodeMap asks; removed afterwards. */
-function inline(files) {
+/**
+ * A package `pkg` with these files in a temporary folder, analyzed as CodeMap asks; removed afterwards.
+ * `links` are symbolic links to make first: { 'src/linked.ts': '../shared/real.ts' }.
+ */
+function inline(files, links = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'codemap-ts-'));
   try {
     writeFileSync(join(dir, 'package.json'), '{ "name": "pkg" }');
@@ -189,10 +192,14 @@ function inline(files) {
       writeFileSync(join(dir, path), text);
     }
 
+    for (const [path, target] of Object.entries(links)) symlinkSync(target, join(dir, path));
+
     const graph = analyze(ts, { target: dir, root: dir, options: {} });
     const node = (id) => graph.nodes.find((n) => n.id === id) ?? assert.fail(`no node ${id}; nodes: ${graph.nodes.map((n) => n.id).join(', ')}`);
     const hasEdge = (source, kind, target) => assert.ok(graph.edges.some((e) => e.source === source && e.kind === kind && e.target === target), `missing ${source} -${kind}-> ${target}; from it: ${graph.edges.filter((e) => e.source === source).map((e) => `${e.kind} ${e.target}`).join(', ')}`);
-    return { graph, node, hasEdge };
+    const noEdge = (source, kind, target) => assert.ok(!graph.edges.some((e) => e.source === source && e.kind === kind && e.target === target), `unexpected ${source} -${kind}-> ${target}`);
+    const unused = new Set(graph.nodes.filter((n) => !graph.edges.some((e) => e.target === n.id && e.source !== n.id)).map((n) => n.id));
+    return { graph, node, hasEdge, noEdge, unused };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -235,4 +242,136 @@ test('overloads keep the size of the implementation; signatures leave decorators
   assert.deepEqual(node('ts:pkg:src/overloads.ts#f').metrics, { complexity: 2, loc: 3 });
   assert.equal(node('ts:pkg:src/app.component.ts#AppComponent').signature, 'export class AppComponent');
   assert.equal(node('ts:pkg:src/app.component.ts#AppComponent.list').signature, 'list(page: number)');
+});
+
+const P = 'ts:pkg:src/';
+
+test('the annotation of a function-valued variable and the constraints and defaults of type parameters are used', () => {
+  const { hasEdge } = inline({
+    'src/a.ts': [
+      'interface Props { a: number }',
+      'type Constraint = string;',
+      'type Fallback = "x";',
+      'type FC<P> = (p: P) => number;',
+      'export const Comp: FC<Props> = (p) => p.a;',
+      'export function g<T extends Constraint = Fallback>(x: T): T { return x; }',
+      'export class Box<T extends Props> { put(x: T) { return x; } }',
+      'export type Pair<K extends Constraint> = [K, K];',
+      '',
+    ].join('\n'),
+  });
+  hasEdge(`${P}a.ts#Comp`, 'uses', `${P}a.ts#FC`);
+  hasEdge(`${P}a.ts#Comp`, 'uses', `${P}a.ts#Props`);
+  hasEdge(`${P}a.ts#g`, 'uses', `${P}a.ts#Constraint`);
+  hasEdge(`${P}a.ts#g`, 'uses', `${P}a.ts#Fallback`);
+  hasEdge(`${P}a.ts#Box`, 'uses', `${P}a.ts#Props`);
+  hasEdge(`${P}a.ts#Pair`, 'uses', `${P}a.ts#Constraint`);
+});
+
+test('a require() variable is what references to it read, and require() in TypeScript imports', () => {
+  const { hasEdge, noEdge } = inline({
+    'src/helper.js': 'function double(x) { return x * 2; }\nmodule.exports = { double };\n',
+    'src/index.js': "const helper = require('./helper');\nfunction run(xs) {\n  return xs.map(helper.double);\n}\nmodule.exports = { run };\n",
+    'src/legacy.ts': "const helper = require('./helper');\nexport const twice = (n: number) => helper.double(n);\n",
+  });
+  hasEdge(`${P}index.js#run`, 'accesses', `${P}index.js#helper`);
+  hasEdge(`${P}index.js#run`, 'calls', `${P}helper.js#double`); // helper.double still reaches the function
+  noEdge(`${P}index.js#run`, 'uses', `${P}helper.js`);
+  hasEdge(`${P}index.js`, 'imports', `${P}helper.js`);
+  hasEdge(`${P}legacy.ts`, 'imports', `${P}helper.js`);
+  hasEdge(`${P}legacy.ts#twice`, 'accesses', `${P}legacy.ts#helper`);
+});
+
+test('top-level code without calls is walked, and an exported default value is a node', () => {
+  const { graph, node, hasEdge } = inline({
+    'src/webpack.config.js': "const opts = { a: 1 };\nconst plugin = { name: 'p', opts };\nmodule.exports = { plugins: [plugin] };\n",
+    'src/stack.ts': 'const Row = () => 1;\nconst Col = () => 2;\nexport default { Row, Col };\n',
+    'src/screen.ts': "'use client';\nexport const Center = { X: 0 };\nconst Logo = 1;\nCenter.X = Logo;\n",
+    'src/use.ts': "import Stack from './stack';\nexport const row = () => Stack.Row();\n",
+  });
+  hasEdge(`${P}webpack.config.js#(top-level)`, 'accesses', `${P}webpack.config.js#plugin`);
+  hasEdge(`${P}stack.ts#default`, 'calls', `${P}stack.ts#Row`);
+  hasEdge(`${P}stack.ts#default`, 'calls', `${P}stack.ts#Col`);
+  hasEdge(`${P}use.ts#row`, 'accesses', `${P}stack.ts#default`);
+  hasEdge(`${P}screen.ts#(top-level)`, 'accesses', `${P}screen.ts#Logo`);
+  assert.equal(node(`${P}screen.ts#(top-level)`).location.line, 4); // the directive is not code
+  // Assignments alone do not make a script: nothing imports these files, yet they are no entry points.
+  assert.ok(!graph.nodes.some((n) => n.tags?.includes('entrypoint')));
+});
+
+test('a JSX closing tag makes no edge', () => {
+  const { graph } = inline({
+    'src/app.tsx': [
+      'const Panel = (p: { children?: unknown }) => null;',
+      'const Stack = { Screen: (p: { children?: unknown }) => null };',
+      'export const App = () => (',
+      '  <Panel>',
+      '    <Stack.Screen>x</Stack.Screen>',
+      '  </Panel>',
+      ');',
+      '',
+    ].join('\n'),
+  });
+  const edges = (target) => graph.edges.filter((e) => e.source === `${P}app.tsx#App` && e.target === `${P}app.tsx#${target}`).map((e) => [e.kind, e.line ?? 0]);
+  assert.deepEqual(edges('Panel'), [['instantiates', 4]]);
+  assert.deepEqual(edges('Stack'), [['accesses', 0]]); // <Stack.Screen> reads Stack, from the opening tag
+});
+
+test('a constructor injects the type itself; its type arguments are only used', () => {
+  const { hasEdge, noEdge } = inline({
+    'src/article.ts': [
+      'export class ArticleEntity { id = 0; }',
+      'export class Repository<T> { find(): T[] { return []; } }',
+      'export class Clock { now() { return 0; } }',
+      'export class ArticleService {',
+      '  constructor(private readonly articles: Repository<ArticleEntity>, private readonly tags: Array<ArticleEntity>, private readonly clock?: Clock | undefined) {}',
+      '}',
+      '',
+    ].join('\n'),
+  });
+  const service = `${P}article.ts#ArticleService`;
+  hasEdge(service, 'injects', `${P}article.ts#Repository`);
+  hasEdge(service, 'injects', `${P}article.ts#Clock`);
+  noEdge(service, 'injects', `${P}article.ts#ArticleEntity`);
+  hasEdge(service, 'uses', `${P}article.ts#ArticleEntity`);
+});
+
+test('default values and decorators of the parameters of declared functions and methods are walked', () => {
+  const { hasEdge } = inline({
+    'src/defaults.ts': 'function compute(): number { return 1; }\nexport function withDefault(x: number = compute()) { return x; }\n',
+    'src/dec.ts': [
+      'function createParamDecorator(f: () => number) { return () => (t: any, k: string, i: number) => {}; }',
+      'const PAGE = 20;',
+      'export const CurrentUser = createParamDecorator(() => 1);',
+      'export class AController {',
+      '  b(@CurrentUser() user: unknown, size = PAGE) { return user; }',
+      '  constructor(@CurrentUser() user: unknown) {}',
+      '}',
+      '',
+    ].join('\n'),
+  });
+  hasEdge(`${P}defaults.ts#withDefault`, 'calls', `${P}defaults.ts#compute`);
+  hasEdge(`${P}dec.ts#AController.b`, 'decoratedWith', `${P}dec.ts#CurrentUser`);
+  hasEdge(`${P}dec.ts#AController.b`, 'accesses', `${P}dec.ts#PAGE`);
+  hasEdge(`${P}dec.ts#AController.constructor`, 'decoratedWith', `${P}dec.ts#CurrentUser`);
+});
+
+test('a relative import that finds a .d.ts leads to the analyzed file next to it', () => {
+  const { hasEdge } = inline({
+    'config/port.d.ts': 'export declare const PORT: number;\n',
+    'config/port.js': 'export const PORT = 3000;\n',
+    'src/useport.ts': "import { PORT } from '../config/port.js';\nexport const where = () => PORT;\n",
+  });
+  hasEdge(`${P}useport.ts`, 'imports', 'ts:pkg:config/port.js');
+  hasEdge(`${P}useport.ts#where`, 'accesses', 'ts:pkg:config/port.js#PORT');
+});
+
+test('a symbolically linked file is analyzed under its own path, and imports through the link reach it', { skip: process.platform === 'win32' }, () => {
+  const { hasEdge, node } = inline({
+    'shared/real.ts': 'export const shared = 1;\n',
+    'src/uselink.ts': "import { shared } from './linked';\nexport const v = () => shared;\n",
+  }, { 'src/linked.ts': '../shared/real.ts' });
+  node(`${P}linked.ts`);
+  hasEdge(`${P}uselink.ts`, 'imports', `${P}linked.ts`);
+  hasEdge(`${P}uselink.ts#v`, 'accesses', `${P}linked.ts#shared`);
 });

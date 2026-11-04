@@ -12,12 +12,14 @@ const ASSET = /\.(css|scss|sass|less|styl|svg|png|jpe?g|gif|webp|avif|ico|bmp|wo
  */
 export function collectImports(ctx, sf, info) {
   const { ts, graph } = ctx;
-  for (const literal of sf.imports ?? []) {
+  // The compiler lists require() calls of JavaScript files with the imports; in TypeScript they are only calls.
+  const requires = /\.[cm]?tsx?$/.test(sf.fileName) && sf.text.includes('require(') ? requireCalls(ts, sf) : [];
+  for (const literal of [...(sf.imports ?? []), ...requires]) {
     const specifier = literal.text;
     if (!specifier) continue;
     let resolved;
     try {
-      const mode = ts.getModeForUsageLocation(sf, literal, ctx.options);
+      const mode = requires.includes(literal) ? ts.ModuleKind.CommonJS : ts.getModeForUsageLocation(sf, literal, ctx.options);
       resolved = ctx.program.getResolvedModule?.(sf, specifier, mode)?.resolvedModule ?? ctx.resolver.resolve(specifier, sf.fileName, ctx.options, mode);
     } catch {
       resolved = null;
@@ -50,6 +52,20 @@ export function collectImports(ctx, sf, info) {
       graph.addEdge(info.projectId, packageId(name), 'packageReference');
     }
   }
+}
+
+/** The module names of the `require('x')` calls in a file. */
+function requireCalls(ts, sf) {
+  const literals = [];
+  const visit = (n) => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'require' && n.arguments.length === 1 && ts.isStringLiteralLike(n.arguments[0])) {
+      literals.push(n.arguments[0]);
+    }
+
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return literals;
 }
 
 /** `@/x`, `~/x`, `#x` (package.json imports) or a tsconfig `paths` pattern: local code, never an npm package. */

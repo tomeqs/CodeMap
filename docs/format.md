@@ -157,7 +157,7 @@ Krawędzie są zapisywane na najdokładniejszym możliwym poziomie: `calls` łą
 | `extends` | metoda/typ → typ | `this T` w metodach rozszerzających, bloki `extension(T)` z C# 14 |
 | `decoratedWith` | element → klasa atrybutu | `[Attr]` |
 | `changesWith` | typ → typ | historia gita: pliki obu typów zmieniały się w tych samych commitach (patrz `analysis.changeCoupling`) |
-| `imports` | plik → plik | języki z modułami (TypeScript): `import` innego pliku |
+| `imports` | plik → plik | języki z modułami (TypeScript): `import` innego pliku, także `require()` |
 
 W innych językach dziedziczenie klas to też `inherits` (np. `class A extends B` w TypeScripcie); `extends` zostaje
 dla metod rozszerzających C#. Języki mogą dodawać własne rodzaje krawędzi (camelCase).

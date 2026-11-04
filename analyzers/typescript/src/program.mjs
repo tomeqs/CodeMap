@@ -61,11 +61,15 @@ export function compilerOptions(ts, projectDir, root) {
  * with one the link leads to built .d.ts files rather than the code.
  */
 export class Resolver {
-  /** @param isAnalyzed whether a file is one the analysis reads: a package's sources beat its built output. */
-  constructor(ts, packages, isAnalyzed = () => false) {
+  /**
+   * @param isAnalyzed whether a file is one the analysis reads: a package's sources beat its built output.
+   * @param links analyzed files that are symbolic links: imports through them stay on the link.
+   */
+  constructor(ts, packages, isAnalyzed = () => false, links = new Set()) {
     this.ts = ts;
     this.packages = packages;
     this.isAnalyzed = isAnalyzed;
+    this.links = links;
     this.cache = new Map();
   }
 
@@ -84,9 +88,21 @@ export class Resolver {
     if (this.cache.has(key)) return this.cache.get(key);
     const ts = this.ts;
     let resolved = ts.resolveModuleName(specifier, containingFile, options, ts.sys, undefined, undefined, mode).resolvedModule;
+    const local = (file) => ({ resolvedFileName: file, extension: ts.extensionFromPath(file), isExternalLibraryImport: false });
     if (!specifier.startsWith('.') && (!resolved || resolved.isExternalLibraryImport || /\.d\.[cm]?ts$/.test(resolved.resolvedFileName))) {
       const file = this.workspaceFile(specifier);
-      if (file) resolved = { resolvedFileName: file, extension: ts.extensionFromPath(file), isExternalLibraryImport: false };
+      if (file) resolved = local(file);
+    } else if (specifier.startsWith('.') && resolved) {
+      if (/\.d\.[cm]?ts$/.test(resolved.resolvedFileName)) {
+        // './port.js' finds port.d.ts first; the code is the analyzed port.js (or .ts) next to it.
+        const base = resolved.resolvedFileName.replace(/\.d\.[cm]?ts$/, '');
+        const file = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'].map((e) => base + e).find((f) => this.isAnalyzed(f) && existsSync(f));
+        if (file) resolved = local(toPosix(file));
+      } else if (this.links.size) {
+        // The compiler follows a symbolic link to its target (which may be outside the analysis); the import is of the link.
+        const kept = ts.resolveModuleName(specifier, containingFile, { ...options, preserveSymlinks: true }, ts.sys, undefined, undefined, mode).resolvedModule;
+        if (kept && this.links.has(toPosix(kept.resolvedFileName))) resolved = local(toPosix(kept.resolvedFileName));
+      }
     }
 
     this.cache.set(key, resolved);

@@ -43,8 +43,9 @@ export function discover(target, root, { includeTests = true } = {}) {
   const files = [];
   const packageDirs = new Set();
   const configDirs = new Set();
+  const links = new Set();
   if (onlyFile) files.push(onlyFile);
-  else walk(scanDir, files, packageDirs, configDirs);
+  else walk(scanDir, files, packageDirs, configDirs, links);
 
   // The folder or file given may be inside a package (src/ of an app, one file): its package.json is above,
   // also above the analysis root (CodeMap passes the folder given as the root). The search stops at the
@@ -104,10 +105,11 @@ export function discover(target, root, { includeTests = true } = {}) {
       return { dir, name, json, hasPackageJson: packageDirs.has(dir), files: list.sort() };
     });
 
-  return { projects, packages, skippedTests };
+  return { projects, packages, skippedTests, links };
 }
 
-function walk(dir, files, packageDirs, configDirs) {
+/** Collects the files under a folder; a symbolic link to a source file is a file (by the link's path), not followed into folders. */
+function walk(dir, files, packageDirs, configDirs, links) {
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
@@ -119,12 +121,23 @@ function walk(dir, files, packageDirs, configDirs) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
       if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
-      walk(path, files, packageDirs, configDirs);
+      walk(path, files, packageDirs, configDirs, links);
     } else if (entry.isFile()) {
       if (entry.name === 'package.json') packageDirs.add(dir);
       else if (CONFIGS.includes(entry.name)) configDirs.add(dir);
       else if (isSource(path)) files.push(path);
+    } else if (entry.isSymbolicLink() && isSource(path) && isFileTarget(path)) {
+      files.push(path);
+      links.add(toPosix(path));
     }
+  }
+}
+
+function isFileTarget(path) {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false; // a broken link
   }
 }
 

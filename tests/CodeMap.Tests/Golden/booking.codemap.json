@@ -62,28 +62,28 @@
   },
   "stats": {
     "projects": 7,
-    "namespaces": 21,
-    "types": 55,
-    "members": 135,
+    "namespaces": 22,
+    "types": 57,
+    "members": 146,
     "packages": 3,
     "externalTypes": 0,
-    "edges": 274,
-    "files": 44,
-    "lines": 732,
+    "edges": 285,
+    "files": 46,
+    "lines": 760,
     "cycles": 1,
     "edges.holds": 5,
-    "edges.calls": 54,
+    "edges.calls": 55,
     "edges.instantiates": 12,
     "edges.accepts": 12,
-    "edges.accesses": 65,
+    "edges.accesses": 70,
     "edges.returns": 17,
-    "edges.uses": 42,
+    "edges.uses": 46,
     "edges.overrides": 1,
     "edges.implements": 25,
     "edges.injects": 16,
     "edges.inherits": 5,
     "edges.projectReference": 5,
-    "edges.imports": 11,
+    "edges.imports": 12,
     "edges.decoratedWith": 1,
     "edges.packageReference": 3
   },
@@ -212,13 +212,13 @@
         "abstractness": 0,
         "ca": 0,
         "ce": 1,
-        "complexity": 20,
+        "complexity": 21,
         "distance": 0,
-        "files": 4,
+        "files": 5,
         "instability": 1,
-        "lines": 78,
-        "loc": 78,
-        "types": 4
+        "lines": 83,
+        "loc": 83,
+        "types": 5
       }
     },
     {
@@ -264,13 +264,13 @@
         "abstractness": 0,
         "ca": 0,
         "ce": 1,
-        "complexity": 9,
+        "complexity": 10,
         "distance": 0,
-        "files": 5,
+        "files": 6,
         "instability": 1,
-        "lines": 43,
-        "loc": 43,
-        "types": 5
+        "lines": 66,
+        "loc": 66,
+        "types": 6
       }
     },
     {
@@ -616,6 +616,25 @@
       }
     },
     {
+      "id": "ts:ns:@booking/bff/scripts",
+      "kind": "namespace",
+      "name": "scripts",
+      "fullName": "@booking/bff/scripts",
+      "parent": "ts:project:@booking/bff",
+      "project": "ts:project:@booking/bff",
+      "namespace": "scripts",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 0,
+        "complexity": 1,
+        "distance": 1,
+        "instability": 0,
+        "loc": 5,
+        "types": 1
+      }
+    },
+    {
       "id": "ts:ns:@booking/core/(root)",
       "kind": "namespace",
       "name": "(root)",
@@ -646,11 +665,11 @@
         "abstractness": 0,
         "ca": 0,
         "ce": 2,
-        "complexity": 7,
+        "complexity": 8,
         "distance": 0,
         "instability": 1,
-        "loc": 39,
-        "types": 4
+        "loc": 62,
+        "types": 5
       }
     },
     {
@@ -2006,6 +2025,35 @@
       }
     },
     {
+      "id": "ts:@booking/bff:scripts/version.cjs",
+      "kind": "module",
+      "level": "type",
+      "name": "version.cjs",
+      "fullName": "scripts/version.cjs",
+      "parent": "ts:ns:@booking/bff/scripts",
+      "project": "ts:project:@booking/bff",
+      "namespace": "scripts",
+      "accessibility": "public",
+      "location": {
+        "file": "client/apps/bff/scripts/version.cjs",
+        "line": 1,
+        "endLine": 5
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 0,
+        "complexity": 1,
+        "instability": 0,
+        "loc": 5,
+        "maxComplexity": 1,
+        "members": 3,
+        "methods": 1
+      }
+    },
+    {
       "id": "ts:@booking/bff:src/register.ts",
       "kind": "module",
       "level": "type",
@@ -2277,7 +2325,34 @@
         "complexity": 0,
         "instability": 0,
         "loc": 3,
-        "members": 0
+        "members": 1
+      }
+    },
+    {
+      "id": "ts:@booking/web:src/badge.ts",
+      "kind": "module",
+      "level": "type",
+      "name": "badge.ts",
+      "fullName": "src/badge.ts",
+      "parent": "ts:ns:@booking/web/(root)",
+      "project": "ts:project:@booking/web",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "location": {
+        "file": "client/apps/web/src/badge.ts",
+        "line": 1,
+        "endLine": 21
+      },
+      "metrics": {
+        "ca": 1,
+        "ce": 0,
+        "complexity": 1,
+        "instability": 0,
+        "loc": 21,
+        "maxComplexity": 1,
+        "members": 5,
+        "methods": 1,
+        "properties": 3
       }
     },
     {
@@ -2322,15 +2397,15 @@
       "location": {
         "file": "client/apps/web/src/reservation-list.ts",
         "line": 1,
-        "endLine": 23
+        "endLine": 25
       },
       "metrics": {
         "ca": 1,
-        "ce": 6,
-        "complexity": 4,
-        "instability": 0.857,
-        "loc": 23,
-        "maxComplexity": 2,
+        "ce": 7,
+        "complexity": 5,
+        "instability": 0.875,
+        "loc": 25,
+        "maxComplexity": 3,
         "members": 3,
         "methods": 2,
         "properties": 1
@@ -2383,12 +2458,10 @@
       "metrics": {
         "ca": 0,
         "ce": 0,
-        "complexity": 1,
+        "complexity": 0,
         "instability": 0,
         "loc": 7,
-        "maxComplexity": 1,
-        "members": 1,
-        "methods": 1
+        "members": 1
       }
     },
     {
@@ -4264,6 +4337,75 @@
       }
     },
     {
+      "id": "ts:@booking/bff:scripts/version.cjs#(top-level)",
+      "kind": "function",
+      "level": "member",
+      "name": "(top-level)",
+      "fullName": "scripts/version.cjs#(top-level)",
+      "parent": "ts:@booking/bff:scripts/version.cjs",
+      "project": "ts:project:@booking/bff",
+      "namespace": "scripts",
+      "accessibility": "private",
+      "location": {
+        "file": "client/apps/bff/scripts/version.cjs",
+        "line": 5,
+        "endLine": 5
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "complexity": 1,
+        "loc": 1
+      }
+    },
+    {
+      "id": "ts:@booking/bff:scripts/version.cjs#path",
+      "kind": "variable",
+      "level": "member",
+      "name": "path",
+      "fullName": "scripts/version.cjs#path",
+      "parent": "ts:@booking/bff:scripts/version.cjs",
+      "project": "ts:project:@booking/bff",
+      "namespace": "scripts",
+      "accessibility": "private",
+      "modifiers": [
+        "const"
+      ],
+      "signature": "const path = require('node:path');",
+      "location": {
+        "file": "client/apps/bff/scripts/version.cjs",
+        "line": 3,
+        "endLine": 3
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "ts:@booking/bff:scripts/version.cjs#pkg",
+      "kind": "variable",
+      "level": "member",
+      "name": "pkg",
+      "fullName": "scripts/version.cjs#pkg",
+      "parent": "ts:@booking/bff:scripts/version.cjs",
+      "project": "ts:project:@booking/bff",
+      "namespace": "scripts",
+      "accessibility": "private",
+      "modifiers": [
+        "const"
+      ],
+      "signature": "const pkg = require('../package.json');",
+      "location": {
+        "file": "client/apps/bff/scripts/version.cjs",
+        "line": 2,
+        "endLine": 2
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
       "id": "ts:@booking/bff:src/register.ts#(top-level)",
       "kind": "function",
       "level": "member",
@@ -5316,6 +5458,180 @@
       }
     },
     {
+      "id": "ts:@booking/web:src/app.config.ts#default",
+      "kind": "variable",
+      "level": "member",
+      "name": "default",
+      "fullName": "src/app.config.ts#default",
+      "parent": "ts:@booking/web:src/app.config.ts",
+      "project": "ts:project:@booking/web",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "signature": "export default { apiUrl: '/api', };",
+      "location": {
+        "file": "client/apps/web/src/app.config.ts",
+        "line": 1,
+        "endLine": 3
+      },
+      "metrics": {
+        "loc": 3
+      }
+    },
+    {
+      "id": "ts:@booking/web:src/badge.ts#Badge",
+      "kind": "function",
+      "level": "member",
+      "name": "Badge",
+      "fullName": "src/badge.ts#Badge",
+      "parent": "ts:@booking/web:src/badge.ts",
+      "project": "ts:project:@booking/web",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "signature": "export const Badge: Renderer<BadgeProps> = (props)",
+      "location": {
+        "file": "client/apps/web/src/badge.ts",
+        "line": 16,
+        "endLine": 21
+      },
+      "doc": "Edge case: a function typed by its variable's annotation; Badge uses Renderer and BadgeProps.",
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "loc": 6
+      }
+    },
+    {
+      "id": "ts:@booking/web:src/badge.ts#BadgeProps",
+      "kind": "interface",
+      "level": "member",
+      "name": "BadgeProps",
+      "fullName": "src/badge.ts#BadgeProps",
+      "parent": "ts:@booking/web:src/badge.ts",
+      "project": "ts:project:@booking/web",
+      "namespace": "(root)",
+      "accessibility": "private",
+      "signature": "interface BadgeProps",
+      "location": {
+        "file": "client/apps/web/src/badge.ts",
+        "line": 7,
+        "endLine": 10
+      },
+      "doc": "Only the annotation of Badge and the default of Renderer's type parameter name it.",
+      "metrics": {
+        "complexity": 0,
+        "loc": 4,
+        "maxComplexity": 0,
+        "members": 2,
+        "properties": 2
+      }
+    },
+    {
+      "id": "ts:@booking/web:src/badge.ts#BadgeProps.label",
+      "kind": "property",
+      "level": "member",
+      "name": "label",
+      "fullName": "src/badge.ts#BadgeProps.label",
+      "parent": "ts:@booking/web:src/badge.ts#BadgeProps",
+      "project": "ts:project:@booking/web",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "signature": "label: string;",
+      "location": {
+        "file": "client/apps/web/src/badge.ts",
+        "line": 8,
+        "endLine": 8
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "ts:@booking/web:src/badge.ts#BadgeProps.tone",
+      "kind": "property",
+      "level": "member",
+      "name": "tone",
+      "fullName": "src/badge.ts#BadgeProps.tone",
+      "parent": "ts:@booking/web:src/badge.ts#BadgeProps",
+      "project": "ts:project:@booking/web",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "signature": "tone: 'info' | 'warn';",
+      "location": {
+        "file": "client/apps/web/src/badge.ts",
+        "line": 9,
+        "endLine": 9
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "ts:@booking/web:src/badge.ts#Labelled",
+      "kind": "interface",
+      "level": "member",
+      "name": "Labelled",
+      "fullName": "src/badge.ts#Labelled",
+      "parent": "ts:@booking/web:src/badge.ts",
+      "project": "ts:project:@booking/web",
+      "namespace": "(root)",
+      "accessibility": "private",
+      "signature": "interface Labelled",
+      "location": {
+        "file": "client/apps/web/src/badge.ts",
+        "line": 2,
+        "endLine": 4
+      },
+      "doc": "Something with a label: only the constraint of Renderer's type parameter names it.",
+      "metrics": {
+        "complexity": 0,
+        "loc": 3,
+        "maxComplexity": 0,
+        "members": 1,
+        "properties": 1
+      }
+    },
+    {
+      "id": "ts:@booking/web:src/badge.ts#Labelled.label",
+      "kind": "property",
+      "level": "member",
+      "name": "label",
+      "fullName": "src/badge.ts#Labelled.label",
+      "parent": "ts:@booking/web:src/badge.ts#Labelled",
+      "project": "ts:project:@booking/web",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "signature": "label: string;",
+      "location": {
+        "file": "client/apps/web/src/badge.ts",
+        "line": 3,
+        "endLine": 3
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "ts:@booking/web:src/badge.ts#Renderer",
+      "kind": "typeAlias",
+      "level": "member",
+      "name": "Renderer",
+      "fullName": "src/badge.ts#Renderer",
+      "parent": "ts:@booking/web:src/badge.ts",
+      "project": "ts:project:@booking/web",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "signature": "export type Renderer<P extends Labelled = BadgeProps> = (props: P) => HTMLElement;",
+      "location": {
+        "file": "client/apps/web/src/badge.ts",
+        "line": 13,
+        "endLine": 13
+      },
+      "doc": "Edge case: a type parameter with a constraint and a default; Renderer uses both.",
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
       "id": "ts:@booking/web:src/main.ts#(top-level)",
       "kind": "function",
       "level": "member",
@@ -5375,17 +5691,17 @@
       "signature": "export class ReservationList extends HttpClient",
       "location": {
         "file": "client/apps/web/src/reservation-list.ts",
-        "line": 5,
-        "endLine": 23
+        "line": 6,
+        "endLine": 25
       },
       "attributes": [
         "component"
       ],
       "doc": "Edge case: the decorator's template holds parentheses; the signature is still `export class ReservationList extends HttpClient`.",
       "metrics": {
-        "complexity": 4,
-        "loc": 19,
-        "maxComplexity": 2,
+        "complexity": 5,
+        "loc": 20,
+        "maxComplexity": 3,
         "members": 3,
         "methods": 2,
         "properties": 1
@@ -5404,8 +5720,8 @@
       "signature": "private items: ReservationDto[] = [];",
       "location": {
         "file": "client/apps/web/src/reservation-list.ts",
-        "line": 7,
-        "endLine": 7
+        "line": 8,
+        "endLine": 8
       },
       "metrics": {
         "complexity": 1,
@@ -5428,8 +5744,8 @@
       "signature": "async reload(): Promise<void>",
       "location": {
         "file": "client/apps/web/src/reservation-list.ts",
-        "line": 9,
-        "endLine": 11
+        "line": 10,
+        "endLine": 12
       },
       "metrics": {
         "complexity": 1,
@@ -5451,14 +5767,14 @@
       "signature": "render(): HTMLElement",
       "location": {
         "file": "client/apps/web/src/reservation-list.ts",
-        "line": 13,
-        "endLine": 22
+        "line": 14,
+        "endLine": 24
       },
       "metrics": {
-        "complexity": 2,
+        "complexity": 3,
         "fanIn": 1,
-        "fanOut": 2,
-        "loc": 10
+        "fanOut": 3,
+        "loc": 11
       }
     },
     {
@@ -5485,15 +5801,16 @@
       }
     },
     {
-      "id": "ts:@booking/web:vite.config.ts#(top-level)",
-      "kind": "function",
+      "id": "ts:@booking/web:vite.config.ts#default",
+      "kind": "variable",
       "level": "member",
-      "name": "(top-level)",
-      "fullName": "vite.config.ts#(top-level)",
+      "name": "default",
+      "fullName": "vite.config.ts#default",
       "parent": "ts:@booking/web:vite.config.ts",
       "project": "ts:project:@booking/web",
       "namespace": "(root)",
-      "accessibility": "private",
+      "accessibility": "public",
+      "signature": "export default defineConfig({ resolve: { alias: { '~': fileURLToPath(new URL('./src', import.meta.url)) } }, });",
       "location": {
         "file": "client/apps/web/vite.config.ts",
         "line": 5,
@@ -5503,7 +5820,6 @@
         "entrypoint"
       ],
       "metrics": {
-        "complexity": 1,
         "loc": 3
       }
     },
@@ -6809,6 +7125,18 @@
       "weight": 1
     },
     {
+      "source": "ts:@booking/bff:scripts/version.cjs#(top-level)",
+      "target": "ts:@booking/bff:scripts/version.cjs#path",
+      "kind": "accesses",
+      "weight": 2
+    },
+    {
+      "source": "ts:@booking/bff:scripts/version.cjs#(top-level)",
+      "target": "ts:@booking/bff:scripts/version.cjs#pkg",
+      "kind": "accesses",
+      "weight": 2
+    },
+    {
       "source": "ts:@booking/bff:src/register.ts#(top-level)",
       "target": "ts:@booking/bff:src/register.ts#verbose",
       "kind": "accesses",
@@ -7097,6 +7425,42 @@
       "weight": 1
     },
     {
+      "source": "ts:@booking/web:src/badge.ts#Badge",
+      "target": "ts:@booking/web:src/badge.ts#BadgeProps.label",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "ts:@booking/web:src/badge.ts#Badge",
+      "target": "ts:@booking/web:src/badge.ts#BadgeProps.tone",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "ts:@booking/web:src/badge.ts#Badge",
+      "target": "ts:@booking/web:src/badge.ts#BadgeProps",
+      "kind": "uses",
+      "weight": 1
+    },
+    {
+      "source": "ts:@booking/web:src/badge.ts#Badge",
+      "target": "ts:@booking/web:src/badge.ts#Renderer",
+      "kind": "uses",
+      "weight": 1
+    },
+    {
+      "source": "ts:@booking/web:src/badge.ts#Renderer",
+      "target": "ts:@booking/web:src/badge.ts#BadgeProps",
+      "kind": "uses",
+      "weight": 1
+    },
+    {
+      "source": "ts:@booking/web:src/badge.ts#Renderer",
+      "target": "ts:@booking/web:src/badge.ts#Labelled",
+      "kind": "uses",
+      "weight": 1
+    },
+    {
       "source": "ts:@booking/web:src/main.ts",
       "target": "ts:@booking/web:src/reservation-list.ts",
       "kind": "imports",
@@ -7137,6 +7501,12 @@
     },
     {
       "source": "ts:@booking/web:src/reservation-list.ts",
+      "target": "ts:@booking/web:src/badge.ts",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "ts:@booking/web:src/reservation-list.ts",
       "target": "ts:@booking/web:src/util/dates.ts",
       "kind": "imports",
       "weight": 1
@@ -7170,7 +7540,7 @@
       "target": "ts:@booking/core:src/http-client.ts#HttpClient.get",
       "kind": "calls",
       "weight": 1,
-      "line": 10
+      "line": 11
     },
     {
       "source": "ts:@booking/web:src/reservation-list.ts#ReservationList.reload",
@@ -7198,6 +7568,12 @@
     },
     {
       "source": "ts:@booking/web:src/reservation-list.ts#ReservationList.render",
+      "target": "ts:@booking/core:src/contracts.ts#ReservationDto.status",
+      "kind": "accesses",
+      "weight": 2
+    },
+    {
+      "source": "ts:@booking/web:src/reservation-list.ts#ReservationList.render",
       "target": "ts:@booking/web:src/reservation-list.ts#ReservationList.items",
       "kind": "accesses",
       "weight": 1
@@ -7207,14 +7583,21 @@
       "target": "ts:@booking/core:src/money.ts#formatMoney",
       "kind": "calls",
       "weight": 1,
-      "line": 17
+      "line": 18
+    },
+    {
+      "source": "ts:@booking/web:src/reservation-list.ts#ReservationList.render",
+      "target": "ts:@booking/web:src/badge.ts#Badge",
+      "kind": "calls",
+      "weight": 1,
+      "line": 19
     },
     {
       "source": "ts:@booking/web:src/reservation-list.ts#ReservationList.render",
       "target": "ts:@booking/web:src/util/dates.ts#formatNights",
       "kind": "calls",
       "weight": 1,
-      "line": 17
+      "line": 18
     },
     {
       "source": "ts:project:@booking/bff",
@@ -7288,11 +7671,11 @@
         "score": 5
       },
       {
-        "id": "ts:@booking/bff:src/reservations-api.ts",
-        "score": 4
+        "id": "ts:@booking/web:src/reservation-list.ts",
+        "score": 5
       },
       {
-        "id": "ts:@booking/web:src/reservation-list.ts",
+        "id": "ts:@booking/bff:src/reservations-api.ts",
         "score": 4
       },
       {
@@ -7492,6 +7875,7 @@
             "namespace:Booking.Domain/Booking.Domain.Common",
             "namespace:Booking.Domain/Booking.Domain.Time",
             "namespace:Booking.Infrastructure/Booking.Infrastructure.Resilience",
+            "ts:ns:@booking/bff/scripts",
             "ts:ns:@booking/core/(root)",
             "ts:ns:@booking/web/util"
           ],
