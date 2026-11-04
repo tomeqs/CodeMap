@@ -488,3 +488,11 @@ test('Nuxt: pages and server routes are routes; the app, layouts and auto-import
   for (const id of ['ts:pkg:app/app.vue', 'ts:pkg:app/components/Counter.vue', 'ts:pkg:server/utils/db.ts']) assert.deepEqual(node(id).tags, ['entrypoint']);
   assert.equal(node('ts:pkg:app/helpers/format.ts').tags, undefined);
 });
+
+test('the warning about unresolved imports names where they are', () => {
+  const { graph } = inline({
+    'src/a.ts': "import { x } from './missing';\nimport './styles.css';\nexport const a = x;\n",
+    'src/b.ts': "import { y } from '../gone/y';\nexport const b = y;\n",
+  });
+  assert.deepEqual(graph.analysis.warnings, ['2 relative import(s) could not be resolved (paths only a bundler knows, or missing files): src/a.ts → ./missing, src/b.ts → ../gone/y.']);
+});

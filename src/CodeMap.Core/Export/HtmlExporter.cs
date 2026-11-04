@@ -15,8 +15,9 @@ public static class HtmlExporter
         var index = template.IndexOf(Placeholder, StringComparison.Ordinal);
         if (index < 0) throw new InvalidDataException("The viewer template does not contain the CodeMap data placeholder.");
 
-        // "</" must not appear inside a <script> element.
-        var json = JsonExporter.Serialize(graph).Replace("</", "<\\/", StringComparison.Ordinal);
+        // No "<" at all inside the <script> element: "</script>" would end it, and "<!--<script" makes the browser
+        // read the rest of the page as part of the data. \u003c is the same character to JSON.
+        var json = JsonExporter.Serialize(graph).Replace("<", "\\u003c", StringComparison.Ordinal);
         return template[..index]
                + "<script id=\"codemap-data\" type=\"application/json\">" + json + "</script>"
                + template[(index + Placeholder.Length)..];

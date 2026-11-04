@@ -12,13 +12,30 @@ public static class GraphView
     public static void CollapseMembers(CodeGraph graph)
     {
         var edges = TypeLevelEdges(graph);
+        // The method that registers a service (AddInfrastructure) is gone with the members: its type registers it.
+        var lift = Lifter(graph);
+        foreach (var registration in graph.Analysis.Di?.Registrations ?? new List<ServiceRegistration>())
+        {
+            if (registration.RegisteredIn != null) registration.RegisteredIn = lift(registration.RegisteredIn);
+        }
+
         graph.Nodes.RemoveAll(NodeLevels.IsMember);
         var ids = graph.Nodes.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
         graph.Analysis.UnusedCandidates.RemoveAll(id => !ids.Contains(id));
         graph.Edges = edges.OrderBy(e => e.Source, StringComparer.Ordinal).ThenBy(e => e.Kind, StringComparer.Ordinal).ThenBy(e => e.Target, StringComparer.Ordinal).ToList();
-        graph.Stats["edges"] = graph.Edges.Count;
-        foreach (var key in graph.Stats.Keys.Where(k => k.StartsWith("edges.", StringComparison.Ordinal)).ToList()) graph.Stats.Remove(key);
-        foreach (var group in graph.Edges.GroupBy(e => e.Kind)) graph.Stats["edges." + group.Key] = group.Count();
+        graph.Stats = Pipeline.GraphStats.Compute(graph); // the counts of what the map now holds
+    }
+
+    /// <summary>The type (or other non-member node) a node id stands for once members are folded into their types.</summary>
+    private static Func<string, string?> Lifter(CodeGraph graph)
+    {
+        var byId = graph.Nodes.ToDictionary(n => n.Id, StringComparer.Ordinal);
+        return id =>
+        {
+            var node = byId.GetValueOrDefault(id);
+            while (node != null && NodeLevels.IsMember(node)) node = node.Parent != null ? byId.GetValueOrDefault(node.Parent) : null;
+            return node?.Id;
+        };
     }
 
     /// <summary>
@@ -27,20 +44,12 @@ public static class GraphView
     /// </summary>
     public static List<GraphEdge> TypeLevelEdges(CodeGraph graph)
     {
-        var byId = graph.Nodes.ToDictionary(n => n.Id, StringComparer.Ordinal);
-
-        string? Lift(string id)
-        {
-            var node = byId.GetValueOrDefault(id);
-            while (node != null && NodeLevels.IsMember(node)) node = node.Parent != null ? byId.GetValueOrDefault(node.Parent) : null;
-            return node?.Id;
-        }
-
+        var lift = Lifter(graph);
         var result = new Dictionary<(string, string, string), GraphEdge>();
         foreach (var edge in graph.Edges)
         {
-            var source = Lift(edge.Source);
-            var target = Lift(edge.Target);
+            var source = lift(edge.Source);
+            var target = lift(edge.Target);
             if (source == null || target == null || source == target) continue;
             var key = (source, target, edge.Kind);
             if (result.TryGetValue(key, out var existing)) existing.Weight += edge.Weight;

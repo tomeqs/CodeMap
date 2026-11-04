@@ -64,7 +64,10 @@ function linkImport(ctx, file, info, specifier, resolved, typeOnly) {
   }
 
   if (specifier.startsWith('.') || specifier.startsWith('/')) {
-    if (!resolved && !ASSET.test(specifier)) ctx.stats.unresolved++; // styles, images, JSON: not code
+    if (!resolved && !ASSET.test(specifier)) { // styles, images, JSON: not code
+      ctx.stats.unresolved++;
+      if (ctx.stats.unresolvedExamples.length < 5) ctx.stats.unresolvedExamples.push(`${info.rel} → ${specifier}`);
+    }
     return;
   }
 

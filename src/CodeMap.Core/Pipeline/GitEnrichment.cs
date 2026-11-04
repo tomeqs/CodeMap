@@ -15,7 +15,11 @@ internal static class GitEnrichment
         ApplyChurn(graph, history, root);
         GraphMetrics.ComputeHotspots(graph);
         ChangeCouplingAnalysis.Compute(graph, history, root);
-        graph.Source.Git = new GitInfo { Branch = history.Branch, Commit = history.Head, CommitsAnalyzed = history.CommitCount, Since = options.GitSince };
+        graph.Source.Git = new GitInfo { Branch = history.Branch, Commit = history.Head, CommitsAnalyzed = history.CommitCount, Since = options.GitSince, Shallow = history.Shallow };
+        if (history.Shallow)
+        {
+            graph.Analysis.Warnings.Add($"The repository is a shallow clone with only {history.CommitCount} commit(s): churn, hotspots and change coupling see just these (git fetch --unshallow gives them the whole history).");
+        }
     }
 
     private static void ApplyChurn(CodeGraph graph, GitHistory history, string root)
@@ -27,21 +31,22 @@ internal static class GitEnrichment
                 .Select(l => Path.GetFullPath(Path.Combine(root, l.File)))
                 .Distinct(StringComparer.Ordinal);
 
-            var commits = 0;
+            // Commits are counted once per type (one commit over 13 partial files is one), churn is the lines of all its files.
+            var commits = new HashSet<int>();
             var churn = 0;
             long last = 0;
             var authors = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var file in files)
             {
                 if (!history.Files.TryGetValue(file, out var stats)) continue;
-                commits += stats.Commits;
+                commits.UnionWith(stats.CommitIndexes);
                 churn += stats.Churn;
                 last = Math.Max(last, stats.LastCommitUnix);
                 authors.UnionWith(stats.Authors);
             }
 
-            if (commits == 0) continue;
-            node.SetMetric("commits", commits);
+            if (commits.Count == 0) continue;
+            node.SetMetric("commits", commits.Count);
             node.SetMetric("churn", churn);
             node.SetMetric("authors", authors.Count);
             node.SetMetric("ageDays", Math.Max(0, (now - last) / 86400));

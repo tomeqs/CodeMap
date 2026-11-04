@@ -19,7 +19,7 @@ JSON Schema: [`codemap.schema.json`](codemap.schema.json).
 | `version` | `"1.1"` | wersja formatu; nowe pola mogą się pojawiać bez zmiany wersji głównej (1.1 dodała `level`, `language`, `source.languages`, nowe rodzaje węzłów i `imports`) |
 | `generator` | `{ name, version }` | narzędzie, które wygenerowało plik |
 | `generatedAt` | ISO 8601 | czas analizy |
-| `source` | obiekt | `path` (analizowany plik/katalog), `root` (katalog bazowy dla ścieżek plików), `kind` (`solution`/`project`/`directory`/`file`), `name`, `languages` (języki w mapie, patrz niżej), opcjonalnie `git` (`branch`, `commit`, `commitsAnalyzed`, `since`) |
+| `source` | obiekt | `path` (analizowany plik/katalog), `root` (katalog bazowy dla ścieżek plików), `kind` (`solution`/`project`/`directory`/`file`), `name`, `languages` (języki w mapie, patrz niżej), opcjonalnie `git` (`branch`, `commit`, `commitsAnalyzed`, `since`, `shallow: true` dla płytkiego klonu, z ostrzeżeniem, bo metryki historii widzą wtedy tylko jego commity) |
 | `stats` | `{ string: int }` | liczniki: `projects`, `namespaces`, `types`, `members`, `edges`, `lines`, `files`, `cycles`, `edges.<kind>`… |
 | `nodes` | `Node[]` | węzły |
 | `edges` | `Edge[]` | krawędzie |
@@ -122,7 +122,7 @@ każdego mają swój `language`.
 | `abstractness`, `distance` | namespace, projekt | udział typów abstrakcyjnych, odległość od main sequence `|A + I − 1|` |
 | `dit`, `noc` | klasa | głębokość dziedziczenia, liczba bezpośrednich podklas |
 | `types`, `files`, `lines` | namespace / projekt | liczba typów, plików, linii |
-| `commits`, `churn`, `authors`, `ageDays` | typ | historia gita plików typu |
+| `commits`, `churn`, `authors`, `ageDays` | typ | historia gita plików typu (`commits` liczy każdy commit raz, także gdy zmienia kilka plików typu częściowego; `churn` to suma linii) |
 | `hotspot` | typ | `sqrt(complexity/max · commits/max)` w zakresie 0..1 |
 
 ## Krawędź (`Edge`)

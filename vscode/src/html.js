@@ -37,7 +37,8 @@ const PLACEHOLDER = '<script id="codemap-data" type="application/json">null</scr
 function standaloneHtml(viewerHtml, doc) {
   const index = viewerHtml.indexOf(PLACEHOLDER);
   if (index < 0) throw new Error('viewer.html does not contain the CodeMap data placeholder.');
-  const json = JSON.stringify(doc).replace(/<\//g, '<\\/'); // "</" must not appear inside a <script> element
+  // No "<" inside the <script> element: "</script>" would end it, "<!--<script" would swallow the page. \u003c is the same to JSON.
+  const json = JSON.stringify(doc).replace(/</g, '\\u003c');
   const name = String(doc?.source?.name ?? '').replace(/[<>&"]/g, '');
   return viewerHtml.slice(0, index).replace('<title>CodeMap</title>', `<title>CodeMap · ${name}</title>`)
     + `<script id="codemap-data" type="application/json">${json}</script>`

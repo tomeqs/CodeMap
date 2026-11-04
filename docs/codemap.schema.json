@@ -48,7 +48,8 @@
             "branch": { "type": ["string", "null"] },
             "commit": { "type": ["string", "null"] },
             "commitsAnalyzed": { "type": "integer" },
-            "since": { "type": ["string", "null"] }
+            "since": { "type": ["string", "null"] },
+            "shallow": { "type": "boolean" }
           }
         }
       }

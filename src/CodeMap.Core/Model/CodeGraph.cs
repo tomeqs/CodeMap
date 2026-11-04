@@ -78,6 +78,10 @@ public sealed class GitInfo
     public string? Commit { get; set; }
     public int CommitsAnalyzed { get; set; }
     public string? Since { get; set; }
+
+    /// <summary>A shallow clone: the metrics from the history see only its few commits.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Shallow { get; set; }
 }
 
 public sealed class GraphNode

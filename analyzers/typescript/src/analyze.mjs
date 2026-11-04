@@ -24,7 +24,7 @@ export function analyze(ts, request, log = () => {}) {
 
   const graph = new Graph();
   const files = new Map(); // file name as the compiler writes it → where it sits on the map
-  const stats = { unresolved: 0, generated: 0 };
+  const stats = { unresolved: 0, unresolvedExamples: [], generated: 0 };
   const warnings = [];
   const projectsByName = new Map(projects.map((p) => [p.name, p]));
   const ensurePackage = (name, version) => {
@@ -148,7 +148,10 @@ export function analyze(ts, request, log = () => {}) {
   finishAllRoutes({ ...shared, graph });
   const di = finishDi(shared);
 
-  if (stats.unresolved) warnings.push(`${stats.unresolved} relative import(s) could not be resolved (paths only a bundler knows, or missing files).`);
+  if (stats.unresolved) {
+    const more = stats.unresolved > stats.unresolvedExamples.length ? ', …' : '';
+    warnings.push(`${stats.unresolved} relative import(s) could not be resolved (paths only a bundler knows, or missing files): ${stats.unresolvedExamples.join(', ')}${more}.`);
+  }
   if (stats.generated) warnings.push(`${stats.generated} generated file(s) were skipped.`);
   if (skippedTests) warnings.push(`${skippedTests} test file(s) were left out.`);
 
