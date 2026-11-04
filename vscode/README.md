@@ -42,7 +42,7 @@ The map updates itself when you save source or project files (`.cs`, `.csproj`, 
 | `codemap.includeTests` | `true` | Include test projects and test files |
 | `codemap.includeExternal` | `false` | Include framework, NuGet and npm code |
 | `codemap.gitHistory` | `true` | Churn, hotspots and change coupling from git |
-| `codemap.renderer` | `auto` | Graphics API of the map: WebGPU where VS Code supports it, otherwise WebGL 2 (`webgpu` / `webgl` to force one) |
+| `codemap.renderer` | `auto` | Graphics API of the map: WebGPU where the editor supports it, otherwise WebGL 2 (`webgpu` / `webgl` to prefer one; when it is missing, the other is used) |
 | `codemap.analyzerPath` | | Use another analyzer (a `codemap` executable or `codemap.dll`) |
 | `codemap.dotnetPath` | `dotnet` | The dotnet that runs the bundled analyzer |
 | `codemap.nodePath` | | Node.js 18+ for TypeScript / JavaScript instead of the one inside VS Code (for very large code bases: VS Code's Node.js has a lower memory limit) |

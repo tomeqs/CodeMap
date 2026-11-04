@@ -1252,14 +1252,17 @@ boot();
 
 /** The map could not start (no WebGPU and no WebGL 2): say why instead of leaving an empty page. */
 function showStartupError(error) {
-  const webgl = /webgl|webgpu|gpu|context/i.test(String(error?.message ?? error));
+  const webgl = error?.code === 'no-graphics' || /webgl|webgpu|gpu|context/i.test(String(error?.message ?? error));
   const message = webgl
     ? 'The 3D map needs WebGPU or WebGL 2, and neither is available here (graphics acceleration is turned off or the GPU is blocklisted).'
     : `CodeMap could not start: ${error?.message ?? error}`;
   console.error(error);
   host?.post('fatal', { message, webgl });
+  // In an editor (VS Code, Cursor) the webview gets the GPU only when the editor itself uses it.
   const hint = host
-    ? 'Use “Open in Browser” to see the map in your web browser instead.'
+    ? webgl
+      ? 'Use “Open in Browser” to see the map in your web browser instead. In the editor, hardware acceleration may be off: run “Preferences: Configure Runtime Arguments”, set "disable-hardware-acceleration" to false and restart.'
+      : 'Use “Open in Browser” to see the map in your web browser instead.'
     : 'Try another browser, or turn on hardware acceleration in the browser settings.';
   const card = document.querySelector('#welcome .welcome-card');
   card.replaceChildren(h('div', { class: 'logo big' }), h('h1', {}, 'CodeMap'), h('p', {}, message), h('p', { class: 'muted small' }, hint));

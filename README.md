@@ -360,9 +360,11 @@ or use the `?data=url.json` parameter.
 ### GPU
 
 * The map draws with **WebGPU**: Metal on macOS, Direct3D 12 on Windows, Vulkan on Linux.
-  When the browser (or VS Code) has no WebGPU, it falls back to **WebGL 2**.
-  The backend can be forced in the *Data* tab (*Graphics → Renderer*), with `?renderer=webgpu|webgl`
-  or with the `codemap.renderer` setting in VS Code.
+  When the browser (or VS Code) has no WebGPU, it falls back to **WebGL 2**. Without a GPU, recent Chromium
+  (and editors built on it, such as VS Code and Cursor with hardware acceleration off) may have no WebGL 2 but a
+  software WebGPU: the map then draws with that. With neither, it says so and the editor offers *Open in Browser*.
+  The preferred backend can be set in the *Data* tab (*Graphics → Renderer*), with `?renderer=webgpu|webgl`
+  or with the `codemap.renderer` setting in VS Code; when it is missing, the other one is used.
 * The force layout runs on the **GPU** (WebGPU compute shaders): all nodes in parallel. Positions go straight
   into a texture the shaders draw from, and only come back to the CPU about every 200 ms (labels, picking, camera).
   Repulsion between up to 12,000 elements is computed exactly, in tiles in the workgroup's shared memory.

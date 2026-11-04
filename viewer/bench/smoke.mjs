@@ -7,7 +7,7 @@
 //                                       samples/shop-ts and of samples/ (C# and TypeScript in one map); CI passes it
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { fixture, graph, launch, open, serve, settled } from './lib.mjs';
+import { CHROMIUM_ARGS, fixture, graph, launch, open, serve, settled } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -737,9 +737,50 @@ try {
     });
     await half.page.close();
   }
+
+  await graphicsFallbacks();
 } finally {
   await browser.close();
   await server.close();
+}
+
+/**
+ * Editors and machines without a usable GPU (Cursor or VS Code with hardware acceleration off, a VM): recent
+ * Chromium gives them no software WebGL 2, but may give a software WebGPU adapter. Whatever renderer is set,
+ * the map then draws with WebGPU; with neither, the page says so.
+ */
+async function graphicsFallbacks() {
+  console.log('\nwithout WebGL 2');
+  const url = (renderer) => `${server.url}/?${new URLSearchParams({ data: '/sample.codemap.json', bench: '1', ...(renderer === 'auto' ? {} : { renderer }) })}`;
+  const noWebGL = await launch({ headed: args.includes('--headed'), args: [...CHROMIUM_ARGS, '--disable-webgl'] });
+  try {
+    for (const renderer of ['auto', 'webgl', 'webgpu']) {
+      await test(`the ${renderer} setting draws with WebGPU`, async () => {
+        const { page, errors } = await open(noWebGL, url(renderer));
+        await settled(page, 60000);
+        assert.equal(await page.evaluate(() => window.codemap.stage.backend), 'webgpu');
+        assert.ok(await litPixels(page) > 400, 'the canvas shows the map');
+        assert.deepEqual(errors, []);
+        await page.close();
+      });
+    }
+  } finally {
+    await noWebGL.close();
+  }
+
+  console.log('\nwithout WebGPU and WebGL 2');
+  const nothing = await launch({ headed: args.includes('--headed'), args: ['--disable-webgl'] });
+  try {
+    await test('the page says the map needs WebGPU or WebGL 2', async () => {
+      const { page } = await open(nothing, url('auto'));
+      await page.waitForFunction(() => !document.getElementById('welcome').classList.contains('hidden'), null, { timeout: 30000 });
+      const text = await page.evaluate(() => document.querySelector('#welcome .welcome-card').innerText);
+      assert.match(text, /needs WebGPU or WebGL 2/);
+      await page.close();
+    });
+  } finally {
+    await nothing.close();
+  }
 }
 
 /**

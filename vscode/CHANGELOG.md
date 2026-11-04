@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The map starts in editors without WebGL 2 (Cursor or VS Code with hardware acceleration off, a machine without a GPU): it draws with WebGPU instead, whichever renderer is set, rather than failing with "Cannot read properties of null (reading 'getSupportedExtensions')". With neither WebGPU nor WebGL 2, it says so and offers *Open in Browser*.
 - C# maps are more accurate:
   - Dependencies that were missing now show up: generic arguments of base types (`IRepository<Order>`), property patterns (`is { Status: … }`), and code under `#if NET6_0_OR_GREATER` or similar SDK symbols. `nameof(Method)` no longer counts as a call.
   - Project files are read the way MSBuild reads them: `Compile` `Remove`/`Include` in order, conditions on the target framework, `EnableDefaultItems=false`. An unreadable subfolder, or a build running at the same time, no longer drops a project.
