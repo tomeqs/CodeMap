@@ -66,13 +66,14 @@ public class PluginTests
     [NodeFact]
     public void A_plugin_takes_files_it_names_and_folders_with_its_project_files()
     {
-        using var ws = new TestWorkspace().File("x/stub.json", "{}").File("x/a.stub", "").File("y/loose.stub", "").File("z/skipped/stub.json", "").File("z/skipped/b.stub", "");
+        using var ws = new TestWorkspace().File("x/stub.json", "{}").File("x/a.stub", "").File("x/src/c.stub", "").File("y/loose.stub", "").File("z/skipped/stub.json", "").File("z/skipped/b.stub", "");
         var (_, stub) = Stub();
 
         Assert.True(stub.CanAnalyzeFile(Path.Combine(ws.Root, "y/loose.stub")));
         Assert.False(stub.CanAnalyzeFile(Path.Combine(ws.Root, "x/stub.json")));
         Assert.True(stub.Detect(ws.Root, CancellationToken.None));
         Assert.True(stub.Detect(Path.Combine(ws.Root, "x"), CancellationToken.None));
+        Assert.True(stub.Detect(Path.Combine(ws.Root, "x", "src"), CancellationToken.None)); // its project file is above it
         Assert.False(stub.Detect(Path.Combine(ws.Root, "y"), CancellationToken.None)); // sources without a project file
         Assert.False(stub.Detect(Path.Combine(ws.Root, "z"), CancellationToken.None)); // only in an ignored folder
     }
@@ -155,12 +156,25 @@ public class PluginTests
             .File("short/codemap-plugin.json", Manifest("short", "s:"))
             .File("future/codemap-plugin.json", Manifest("future", "future:", protocol: 2))
             .File("same-prefix/codemap-plugin.json", Manifest("other", "good:"))
-            .File("broken/codemap-plugin.json", "{ not json");
+            .File("broken/codemap-plugin.json", "{ not json")
+            .File("pattern/codemap-plugin.json", Manifest("pattern", "pattern:").Replace("\"detect\"", "\"unused\": { \"skipNamePattern\": \"(\" }, \"detect\""))
+            .File("null-id/codemap-plugin.json", Manifest("x", "nullid:").Replace("\"id\": \"x\"", "\"id\": null"))
+            .File("null-detect/codemap-plugin.json", """{ "protocol": 1, "id": "nodetect", "idPrefix": "nodetect:", "name": "n", "command": ["node"], "detect": null }""")
+            .File("null-command/codemap-plugin.json", """{ "protocol": 1, "id": "nocommand", "idPrefix": "nocommand:", "name": "n", "command": [null], "detect": { "sources": [".x"] } }""");
 
         var found = PluginCatalog.Discover(new[] { ws.Root });
 
         Assert.Equal(new[] { "good" }, found.Plugins.Select(p => p.Id));
-        Assert.Equal(5, found.Problems.Count);
+        Assert.Equal(9, found.Problems.Count);
+        Assert.Contains(found.Problems, p => p.Contains("skipNamePattern is not a valid regular expression"));
+        Assert.Contains(found.Problems, p => p.Contains("id '' must be lowercase"));
+        Assert.Contains(found.Problems, p => p.Contains("detect is needed"));
+        Assert.Contains(found.Problems, p => p.Contains("a command is needed"));
+
+        // A broken plugin is one problem among others: C# and the good plugin still work.
+        var withPlugins = LanguageRegistry.WithPlugins(new[] { ws.Root });
+        Assert.Equal(new[] { "csharp", "good" }, withPlugins.Languages.Select(l => l.Info.Id));
+        Assert.Equal(9, withPlugins.Problems.Count);
         Assert.Contains(found.Problems, p => p.Contains("idPrefix 'project:' is reserved"));
         Assert.Contains(found.Problems, p => p.Contains("protocol 2 is not supported"));
         Assert.Contains(found.Problems, p => p.Contains("already used by plugin 'good'"));
@@ -170,6 +184,58 @@ public class PluginTests
         var registry = new LanguageRegistry(new ILanguageAnalyzer[] { new Languages.CSharp.CSharpAnalyzer(), new ExternalProcessAnalyzer(PluginManifest.Load(Path.Combine(ws.Root, "good", "codemap-plugin.json"))) });
         Assert.Throws<ArgumentException>(() => registry.Only(new[] { "cobol" }));
         Assert.Equal(new[] { "good" }, registry.Only(new[] { "good" }).Languages.Select(l => l.Info.Id));
+    }
+
+    [Fact]
+    public void Plugins_are_only_looked_for_in_absolute_folders()
+    {
+        var absolute = Path.Combine(Path.GetTempPath(), "codemap-plugins");
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        IEnumerable<string> Folders(string? path, string? home) =>
+            PluginCatalog.DefaultFolders(name => name switch { "CODEMAP_PLUGIN_PATH" => path, "CODEMAP_HOME" => home, _ => null });
+
+        // An empty CODEMAP_HOME is not set: ~/.codemap, not ./plugins of the current folder.
+        var empty = Folders(null, "").ToList();
+        Assert.All(empty, f => Assert.True(Path.IsPathFullyQualified(f), f));
+        if (!string.IsNullOrEmpty(profile)) Assert.Contains(Path.Combine(profile, ".codemap", "plugins"), empty);
+        Assert.Contains(Path.Combine(AppContext.BaseDirectory, "plugins"), empty);
+
+        // Relative folders are left out, whichever variable names them.
+        var relative = Folders($"plugins{Path.PathSeparator}{absolute}", Path.Combine("some", "home")).ToList();
+        Assert.Contains(absolute, relative);
+        Assert.DoesNotContain(relative, f => !Path.IsPathFullyQualified(f));
+        Assert.DoesNotContain(Path.Combine("some", "home", "plugins"), relative);
+    }
+
+    [Fact]
+    public void Parent_cycles_from_a_plugin_are_cut()
+    {
+        using var ws = new TestWorkspace().File("good/codemap-plugin.json", Manifest("good", "good:"));
+        var plugin = PluginManifest.Load(Path.Combine(ws.Root, "good", "codemap-plugin.json"));
+        var graph = new CodeGraph();
+        graph.Nodes.AddRange(new[]
+        {
+            new GraphNode { Id = "good:root", Kind = "project", Name = "root" },
+            new GraphNode { Id = "good:self", Kind = "item", Name = "self", Parent = "good:self" },
+            new GraphNode { Id = "good:a", Kind = "item", Name = "a", Parent = "good:b" },
+            new GraphNode { Id = "good:b", Kind = "item", Name = "b", Parent = "good:a" },
+            new GraphNode { Id = "good:leaf", Kind = "item", Name = "leaf", Parent = "good:a" },
+            new GraphNode { Id = "good:fine", Kind = "item", Name = "fine", Parent = "good:root" },
+        });
+
+        FragmentValidator.Validate(graph, plugin, ws.Root);
+
+        var byId = graph.Nodes.ToDictionary(n => n.Id);
+        foreach (var node in graph.Nodes)
+        {
+            var seen = new HashSet<string>();
+            for (var current = node; current.Parent != null; current = byId[current.Parent]) Assert.True(seen.Add(current.Id), $"{node.Id} is its own ancestor");
+        }
+
+        Assert.Null(byId["good:self"].Parent);
+        Assert.Equal("good:root", byId["good:fine"].Parent);
+        Assert.Equal(1, new[] { byId["good:a"].Parent, byId["good:b"].Parent }.Count(p => p == null)); // the cycle is cut once
+        Assert.Contains(graph.Analysis.Warnings, w => w.Contains("2 parent cycles"));
     }
 
     private static string Manifest(string id, string prefix, int protocol = 1) => $$"""
@@ -195,6 +261,11 @@ public class PluginTests
         Assert.Equal("typescript", graph.Node("ts:project:basic").Language);
         Assert.Equal(new[] { "File", "Files" }, graph.Source.Languages![0].Levels.Type);
         Assert.Equal("src/orders/orders.service.ts", graph.Node(service).Location!.File);
+
+        // A folder inside the package maps with the package's ids, and locations relative to the folder.
+        var orders = CodeMapAnalyzer.Analyze(Path.Combine(fixture, "src", "orders"), registry, NoGit);
+        Assert.Equal("orders.service.ts", orders.Node(service).Location!.File);
+        Assert.Equal("ts:project:basic", Assert.Single(orders.Nodes, n => n.Kind == NodeKinds.Project).Id);
     }
 
     [NodeFact(typescript: true)]

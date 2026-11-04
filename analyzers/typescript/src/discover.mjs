@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 
 const manifest = JSON.parse(readFileSync(new URL('../codemap-plugin.json', import.meta.url), 'utf8'));
@@ -45,17 +46,19 @@ export function discover(target, root, { includeTests = true } = {}) {
   if (onlyFile) files.push(onlyFile);
   else walk(scanDir, files, packageDirs, configDirs);
 
-  // The folder given may be inside a package (src/ of an app): its package.json is above.
-  for (let dir = dirname(scanDir); dir !== dirname(dir) && dir.startsWith(root); dir = dirname(dir)) {
-    if (existsSync(join(dir, 'package.json'))) {
+  // The folder or file given may be inside a package (src/ of an app, one file): its package.json is above,
+  // also above the analysis root (CodeMap passes the folder given as the root). The search stops at the
+  // first package.json, at the repository root (.git), and before the home folder (a stray ~/package.json
+  // is not the package of everything under it).
+  const home = homedir();
+  for (let dir = scanDir; dir !== home; dir = dirname(dir)) {
+    if (CONFIGS.some((c) => existsSync(join(dir, c)))) configDirs.add(dir);
+    if (packageDirs.has(dir) || existsSync(join(dir, 'package.json'))) {
       packageDirs.add(dir);
       break;
     }
-  }
 
-  for (let dir = scanDir; ; dir = dirname(dir)) {
-    if (CONFIGS.some((c) => existsSync(join(dir, c)))) configDirs.add(dir);
-    if (dir === root || dir === dirname(dir) || !dir.startsWith(root)) break;
+    if (existsSync(join(dir, '.git')) || dir === dirname(dir)) break;
   }
 
   const ownerOf = (file) => {

@@ -18,6 +18,12 @@ W tej kolejności (dla jednego `id` wygrywa pierwsza znaleziona):
 
 Folder jest wtyczką, gdy ma plik `codemap-plugin.json`, albo folderem wtyczek, gdy mają go jego podfoldery.
 **Wtyczki nigdy nie są ładowane z analizowanego repozytorium**: wtyczka to program, który się uruchamia.
+Dlatego z `CODEMAP_PLUGIN_PATH` i `CODEMAP_HOME` liczą się tylko ścieżki bezwzględne (względna byłaby czytana
+z bieżącego folderu, a ten bywa analizowanym repozytorium), a puste `CODEMAP_HOME` znaczy `~/.codemap`.
+Folder podany wprost w `--plugins` może być względny.
+
+Manifest, którego nie da się użyć (zły JSON, brak `id`, `command` albo `detect`, `null` w polu, niepoprawne
+`unused.skipNamePattern`), trafia z powodem na listę problemów (`codemap --version`); C# i pozostałe wtyczki działają dalej.
 
 `codemap --version` wypisuje znalezione języki, czy ich środowisko (np. Node.js) jest dostępne i dlaczego ewentualnie nie jest.
 
@@ -83,6 +89,9 @@ CodeMap uruchamia `command` w folderze wtyczki i pisze na **stdin** żądanie (U
 ```
 
 * `target`: plik lub folder do analizy; `root`: folder, względem którego mają być ścieżki (`location.file`).
+  CodeMap podaje jako `root` folder do analizy (albo folder pliku). Folder może leżeć wewnątrz projektu
+  (np. `src/` pakietu): jego plik projektu jest wtedy wyżej i wtyczka powinna go znaleźć, żeby id były takie same
+  jak przy analizie całego projektu. Ścieżek spoza `root` CodeMap nie pokazuje.
 * Wynik wtyczka zapisuje do pliku **`output`** (nie na stdout: duże grafy i przypadkowy `console.log` by go psuły).
 * Postęp i ostrzeżenia idą na **stderr** (linia po linii); CodeMap pokazuje je z prefiksem `[id]`.
 * Kod wyjścia 0 to sukces. Inny kod to błąd, a jego treścią jest ostatnich 20 linii stderr.
@@ -103,7 +112,8 @@ Dokument [CodeMap JSON](format.md) w wersji `1.x`:
 Metryki pochodne (coupling, fan-in/out, abstractness…), cykle, warstwy, nieużywany kod, hotspoty i statystyki liczy CodeMap.
 
 CodeMap sprawdza wynik: węzły spoza `idPrefix`, powtórzone id, nieznane poziomy, rodziców i końce krawędzi, które nie istnieją,
-oraz ścieżki spoza `root` odrzuca albo poprawia i podsumowuje w ostrzeżeniu, zamiast przerywać analizę.
+cykle rodziców (węzeł, który jest swoim przodkiem: przecina je) oraz ścieżki spoza `root` odrzuca albo poprawia i podsumowuje
+w ostrzeżeniu, zamiast przerywać analizę.
 
 ## Kilka języków w jednym folderze
 

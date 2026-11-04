@@ -28,8 +28,22 @@ public sealed class LanguageRegistry
     public static LanguageRegistry WithPlugins(IEnumerable<string>? folders = null)
     {
         var found = PluginCatalog.Discover(folders);
-        var languages = new ILanguageAnalyzer[] { new CSharpAnalyzer() }.Concat(found.Plugins.Select(p => new ExternalProcessAnalyzer(p)));
-        return new LanguageRegistry(languages) { Problems = found.Problems };
+        var languages = new List<ILanguageAnalyzer> { new CSharpAnalyzer() };
+        var problems = new List<string>(found.Problems);
+        foreach (var plugin in found.Plugins)
+        {
+            // A plugin that cannot be set up is a problem of its own: C# and the other plugins still work.
+            try
+            {
+                languages.Add(new ExternalProcessAnalyzer(plugin));
+            }
+            catch (Exception ex)
+            {
+                problems.Add($"{Path.Combine(plugin.Directory, PluginManifest.FileName)}: {ex.Message}");
+            }
+        }
+
+        return new LanguageRegistry(languages) { Problems = problems };
     }
 
     public IReadOnlyList<ILanguageAnalyzer> Languages => _languages;

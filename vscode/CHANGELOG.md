@@ -6,6 +6,11 @@
   - Dependencies that were missing now show up: generic arguments of base types (`IRepository<Order>`), property patterns (`is { Status: … }`), and code under `#if NET6_0_OR_GREATER` or similar SDK symbols. `nameof(Method)` no longer counts as a call.
   - Project files are read the way MSBuild reads them: `Compile` `Remove`/`Include` in order, conditions on the target framework, `EnableDefaultItems=false`. An unreadable subfolder, or a build running at the same time, no longer drops a project.
   - DI: `TryAdd*` of a service that is already registered is ignored, as in the container. Keyed services match `[FromKeyedServices]`. `AddDbContext`'s lifetime argument is applied, and `AddSingleton(typeof(I), instance)` is read correctly. An override after `AddServiceDefaults()`-style extensions in another file wins. Each call of a fluent chain has its own line.
+- TypeScript and JavaScript maps are more accurate:
+  - A folder or a single file inside a package maps with that package (it used to come out empty or under another name). A workspace package that was built is still read from its sources, so the links between packages stay. Path aliases (`@/…`, `~/…`, tsconfig `paths`) no longer show up as npm packages.
+  - Functions put into an object by shorthand (`{ list, place }`) are referenced, so they are no longer reported as unused. `super(…)` reaches the base class' constructor in another package. Overloaded functions keep their size, and Angular components and Nest modules no longer show part of their decorator as their signature.
+  - Express: chained routes (`router.route('/x').get(…).post(…)`) and apps or routers typed `express.Express` / `express.Router` are found, and a handler's complexity is counted once.
+- Plugins: a broken plugin manifest is reported instead of stopping every analysis, plugins are never loaded from a relative folder (such as the analyzed repository), and a plugin's graph with a parent cycle no longer hangs the analysis.
 
 ## 0.2.3
 

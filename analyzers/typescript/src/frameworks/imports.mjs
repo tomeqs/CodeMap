@@ -12,6 +12,12 @@ export function importOf(ctx, expr) {
     return base && (base.name === 'default' || base.name === '*') ? { module: base.module, name: expr.name.text } : null;
   }
 
+  if (ts.isQualifiedName(expr)) {
+    // A type of a namespace or default import: express.Router, express.Express
+    const base = importOf(ctx, expr.left);
+    return base && (base.name === 'default' || base.name === '*') ? { module: base.module, name: expr.right.text } : null;
+  }
+
   if (ts.isCallExpression(expr)) return importOf(ctx, expr.expression);
   if (!ts.isIdentifier(expr)) return null;
   let symbol;

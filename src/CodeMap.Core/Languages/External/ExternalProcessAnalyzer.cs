@@ -43,7 +43,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
         var sources = new HashSet<string>(Manifest.Detect.Sources, StringComparer.OrdinalIgnoreCase);
         var ignored = new HashSet<string>(Manifest.Detect.IgnoreDirs, StringComparer.OrdinalIgnoreCase);
         var pending = new Stack<(string Dir, bool InProject)>();
-        pending.Push((directory, false));
+        pending.Push((directory, MarkerAbove(directory, markers)));
         while (pending.Count > 0)
         {
             ct.ThrowIfCancellationRequested();
@@ -65,6 +65,30 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
             {
                 var name = Path.GetFileName(sub);
                 if (!ignored.Contains(name) && !name.StartsWith('.')) pending.Push((sub, inProject));
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// A folder inside a project (src/ of a package) has its marker above it. Looks up to the repository root
+    /// (a folder with .git, checked too) and stops before the home folder, as the plugins do.
+    /// </summary>
+    private static bool MarkerAbove(string directory, HashSet<string> markers)
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        for (var dir = Directory.GetParent(Path.GetFullPath(directory)); dir != null; dir = dir.Parent)
+        {
+            if (!string.IsNullOrEmpty(home) && string.Equals(Path.TrimEndingDirectorySeparator(dir.FullName), Path.TrimEndingDirectorySeparator(home), StringComparison.OrdinalIgnoreCase)) return false;
+            try
+            {
+                if (dir.EnumerateFiles().Any(f => markers.Contains(f.Name))) return true;
+                if (Directory.Exists(Path.Combine(dir.FullName, ".git")) || File.Exists(Path.Combine(dir.FullName, ".git"))) return false;
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                return false;
             }
         }
 

@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadTypeScript } from '../src/load-typescript.mjs';
 import { analyze } from '../src/analyze.mjs';
@@ -36,6 +39,59 @@ test('Express: routes are members of their file, their handlers\' code is theirs
   assert.ok(!graph.edges.some((e) => e.source === `${R}#(top-level)` && e.kind === 'calls'), 'the top-level code does not call the handlers itself');
   assert.equal(node(`${R}#(top-level)`).metrics.complexity, 1);
   node('ts:shop-gateway:src/legacy.js#route:DELETE /cache'); // CommonJS, express.Router()
+});
+
+test('Express: chained routes, typed apps and routers, and complexity counted once', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'codemap-ts-'));
+  const lines = [
+    "import express from 'express';",
+    '',
+    'const app = express();',
+    'const books = express.Router();',
+    'books',
+    "  .route('/book')",
+    "  .get((req, res) => res.send('list'))",
+    "  .post((req, res) => res.send('add'))",
+    "  .put((req, res) => res.send('put'));",
+    "app.use('/library', books);",
+    '',
+    'export function register(api: express.Express, router: express.Router) {',
+    "  api.get('/x', (req, res) => {",
+    "    if (req.query.a) res.send('a');",
+    "    else if (req.query.b) res.send('b');",
+    "    else res.send('c');",
+    '  });',
+    "  router.delete('/y', (req, res) => res.send('y'));",
+    '}',
+    '',
+    "if (process.env.A) console.log('a');",
+    "else if (process.env.B) console.log('b');",
+    '',
+  ];
+  try {
+    writeFileSync(join(dir, 'package.json'), '{ "name": "lib", "dependencies": { "express": "^4.0.0" } }');
+    mkdirSync(join(dir, 'src'));
+    writeFileSync(join(dir, 'src', 'server.ts'), lines.join('\n'));
+    const graph = analyze(ts, { target: dir, root: dir, options: {} });
+    const node = (id) => graph.nodes.find((n) => n.id === id) ?? assert.fail(`no node ${id}; nodes: ${graph.nodes.map((n) => n.id).join(', ')}`);
+    const F = 'ts:lib:src/server.ts';
+    const routes = graph.nodes.filter((n) => n.tags?.includes('route'));
+    assert.deepEqual(routes.map((n) => n.name).sort(), ['DELETE /y', 'GET /library/book', 'GET /x', 'POST /library/book', 'PUT /library/book']);
+    // Each verb of a chain is a route on its own line, under the router's mount path.
+    const lineOf = (text) => lines.findIndex((l) => l.includes(text)) + 1;
+    for (const verb of ['get', 'post', 'put']) {
+      const route = node(`${F}#route:${verb.toUpperCase()} /book`);
+      assert.equal(route.location.line, lineOf(`.${verb}(`));
+      assert.equal(route.signature, `books.${verb}('/book', …)`);
+    }
+
+    // The handler's decisions are the route's: taken from register(), which registers it, not from the top-level code.
+    assert.equal(node(`${F}#route:GET /x`).metrics.complexity, 3);
+    assert.equal(node(`${F}#register`).metrics.complexity, 1);
+    assert.equal(node(`${F}#(top-level)`).metrics.complexity, 3);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('NestJS: roles, handlers as entry points, providers and what classes ask for', () => {

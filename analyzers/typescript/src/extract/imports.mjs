@@ -40,11 +40,28 @@ export function collectImports(ctx, sf, info) {
     const workspace = ctx.projectsByName.get(name);
     if (workspace) {
       graph.addEdge(info.projectId, projectId(workspace.name), 'projectReference');
+    } else if (resolved && !resolved.isExternalLibraryImport) {
+      // A file of this repository that the analysis leaves out (generated, a test, outside the packages),
+      // reached through a path alias: not an npm package.
+    } else if (!resolved && isAlias(specifier, ctx.options)) {
+      // A path alias the compiler could not follow (no tsconfig that declares it, or a missing file).
     } else {
       ctx.ensurePackage(name);
       graph.addEdge(info.projectId, packageId(name), 'packageReference');
     }
   }
+}
+
+/** `@/x`, `~/x`, `#x` (package.json imports) or a tsconfig `paths` pattern: local code, never an npm package. */
+function isAlias(specifier, options) {
+  if (/^(@\/|~\/|#)/.test(specifier)) return true;
+  return Object.keys(options?.paths ?? {}).some((pattern) => {
+    const star = pattern.indexOf('*');
+    if (star < 0) return specifier === pattern;
+    const prefix = pattern.slice(0, star);
+    const suffix = pattern.slice(star + 1);
+    return specifier.length >= prefix.length + suffix.length && specifier.startsWith(prefix) && specifier.endsWith(suffix);
+  });
 }
 
 function isTypeOnly(ts, node) {
