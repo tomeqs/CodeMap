@@ -64,7 +64,8 @@ export const CHROMIUM_ARGS = [
   '--enable-precise-memory-info',
 ];
 
-export async function launch({ headed = false } = {}) {
+/** @param args Chromium's command line; the default gives WebGPU and WebGL 2 on SwiftShader (no GPU needed). */
+export async function launch({ headed = false, args = CHROMIUM_ARGS } = {}) {
   let playwright;
   try {
     playwright = await import('playwright');
@@ -72,7 +73,7 @@ export async function launch({ headed = false } = {}) {
     throw new Error('Playwright is missing: run npm install in viewer/ (the browser comes from `npx playwright install chromium`).');
   }
 
-  return playwright.chromium.launch({ headless: !headed, args: CHROMIUM_ARGS });
+  return playwright.chromium.launch({ headless: !headed, args });
 }
 
 /** Opens the viewer and collects page errors and console errors. */

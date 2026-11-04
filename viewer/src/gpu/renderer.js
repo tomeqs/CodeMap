@@ -53,17 +53,45 @@ async function requestDevice() {
 }
 
 /**
+ * Whether this page can have a WebGL 2 context. Without a usable GPU, recent Chromium (and the editors built on it:
+ * VS Code, Cursor) no longer falls back to software WebGL, while it may still offer a software WebGPU adapter.
+ */
+function hasWebGL2() {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    gl?.getExtension('WEBGL_lose_context')?.loseContext(); // give the context back at once
+    return !!gl;
+  } catch {
+    return false;
+  }
+}
+
+/** Neither WebGPU nor WebGL 2: the map cannot be drawn here (see showStartupError in main.js). */
+export class NoGraphicsError extends Error {
+  constructor() {
+    super('Neither WebGPU nor WebGL 2 is available here.');
+    this.name = 'NoGraphicsError';
+    this.code = 'no-graphics';
+  }
+}
+
+/**
  * Creates and initializes the renderer: WebGPU (Metal on macOS, Direct3D 12 on Windows, Vulkan on Linux)
- * when possible, WebGL 2 otherwise. Resolves to { renderer, backend: 'webgpu' | 'webgl', adapter, software }.
+ * when possible, WebGL 2 otherwise. A preferred backend that is not available gives way to the other one.
+ * Resolves to { renderer, backend: 'webgpu' | 'webgl', adapter, software }.
  */
 export async function createRenderer(canvasOptions = {}) {
   const preference = rendererPreference();
-  let gpu = preference === 'webgl' ? null : await requestDevice();
-  // Without a GPU (a software WebGPU adapter) WebGL 2 on SwiftShader is the faster of the two.
-  if (gpu?.software && preference === 'auto') {
+  const webgl = hasWebGL2();
+  let gpu = preference === 'webgl' && webgl ? null : await requestDevice();
+  // Without a GPU (a software WebGPU adapter) WebGL 2 on SwiftShader is the faster of the two, when there is one.
+  if (gpu?.software && preference === 'auto' && webgl) {
     gpu.device.destroy();
     gpu = null;
   }
+
+  if (!gpu && !webgl) throw new NoGraphicsError();
+  if (preference === 'webgl' && gpu) console.warn('CodeMap: no WebGL 2 here, using WebGPU.');
 
   const renderer = new WebGPURenderer({
     antialias: true,
