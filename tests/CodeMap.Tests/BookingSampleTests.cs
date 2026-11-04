@@ -36,6 +36,19 @@ public class BookingSampleTests
     }
 
     [NodeFact(typescript: true)]
+    public void Csharp_settings_come_from_imported_props_and_directory_build_targets()
+    {
+        // server/Directory.Build.props imports build/Common.props (framework, implicit usings); Directory.Build.targets adds
+        // a global using for every project but Contracts. Reservation.cs relies on both: Entity<> and Guid resolve.
+        var domain = Loading.ProjectLoader.ReadProject(Path.Combine(Booking, "server", "src", "Booking.Domain", "Booking.Domain.csproj"));
+        Assert.Equal(("net8.0", true), (domain.TargetFramework, domain.ImplicitUsings));
+        Assert.Contains("Booking.Domain.Common", domain.Usings);
+        Assert.DoesNotContain("Booking.Domain.Common", Loading.ProjectLoader.ReadProject(Path.Combine(Booking, "server", "src", "Booking.Contracts", "Booking.Contracts.csproj")).Usings);
+        Graph.AssertEdge($"T:{Domain}Reservations.Reservation", EdgeKinds.Inherits, $"T:{Domain}Common.Entity`1");
+        Graph.AssertEdge($"T:{Domain}Reservations.ReservationValidator", EdgeKinds.Inherits, $"T:{Domain}Common.Validator`1");
+    }
+
+    [NodeFact(typescript: true)]
     public void Csharp_edges_generic_bases_property_patterns_and_nameof()
     {
         // The generic arguments of base types are dependencies.

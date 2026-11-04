@@ -226,18 +226,38 @@ public sealed class CompilationFactory
     private static IEnumerable<string> FrameworkAssemblies(ProjectInfo project)
     {
         if (FrameworkLocator.RuntimeDirectory is not { } runtimeDirectory) yield break;
-        foreach (var file in SafeGetDlls(runtimeDirectory)) yield return file;
+        // The framework of the project's own .NET version when it is installed (net10.0 sees the .NET 10 API).
+        var major = NetMajor(project.TargetFramework);
+        string? Framework(string name) => (major is { } m ? FrameworkLocator.FindFramework(name, m) : null)
+                                          ?? (name == "Microsoft.NETCore.App" ? runtimeDirectory : FrameworkLocator.FindSharedFramework(name));
+
+        foreach (var file in SafeGetDlls(Framework("Microsoft.NETCore.App")!)) yield return file;
 
         var frameworks = new HashSet<string>(project.FrameworkReferences, StringComparer.OrdinalIgnoreCase);
         if (IsWebSdk(project.Sdk ?? "")) frameworks.Add("Microsoft.AspNetCore.App");
         if (project.UseWindowsDesktop) frameworks.Add("Microsoft.WindowsDesktop.App");
+        // Not restored: Microsoft.Extensions.* and Microsoft.AspNetCore.* packages are part of the ASP.NET Core shared
+        // framework, so its assemblies stand in for them (IServiceCollection, IHostApplicationBuilder resolve in libraries).
+        if (!File.Exists(Path.Combine(project.Directory, "obj", "project.assets.json"))
+            && project.PackageReferences.Any(p => p.Name.StartsWith("Microsoft.Extensions.", StringComparison.OrdinalIgnoreCase)
+                                                 || p.Name.StartsWith("Microsoft.AspNetCore.", StringComparison.OrdinalIgnoreCase)))
+        {
+            frameworks.Add("Microsoft.AspNetCore.App");
+        }
 
         foreach (var framework in frameworks)
         {
-            var dir = FrameworkLocator.FindSharedFramework(framework);
+            var dir = Framework(framework);
             if (dir == null) continue;
             foreach (var file in SafeGetDlls(dir)) yield return file;
         }
+    }
+
+    /// <summary>The .NET major version of a net5+ target framework (net10.0, net8.0-windows); null for others.</summary>
+    internal static int? NetMajor(string? targetFramework)
+    {
+        var match = Regex.Match(targetFramework?.Trim() ?? "", @"^net(?<major>\d+)\.\d+", RegexOptions.IgnoreCase);
+        return match.Success && int.Parse(match.Groups["major"].Value) is var major and >= 5 ? major : null;
     }
 
     private static IEnumerable<string> SafeGetDlls(string dir)

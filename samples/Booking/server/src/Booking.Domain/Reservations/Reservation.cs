@@ -1,5 +1,3 @@
-using Booking.Domain.Common;
-
 namespace Booking.Domain.Reservations;
 
 /// <summary>A room booked by a guest for some nights. Edge case: the generic argument of the base (ReservationId) is a dependency.</summary>

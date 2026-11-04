@@ -28,6 +28,61 @@ public static class FrameworkLocator
     public static string Describe() =>
         RuntimeDirectory ?? $"the .NET {Environment.Version.ToString(2)} runtime bundled with codemap (no .NET installation found)";
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, int), string?> ForVersion = new();
+
+    /// <summary>
+    /// The assemblies of a framework (Microsoft.NETCore.App, Microsoft.AspNetCore.App…) for a .NET major version, so a
+    /// net10.0 project sees the .NET 10 API even when codemap runs on .NET 8: an installed runtime of that major
+    /// version, else its reference pack (packs/{framework}.Ref/{version}/ref/net{major}.0), else the newest above it.
+    /// Null when none is installed (the caller then uses the framework codemap runs on).
+    /// </summary>
+    internal static string? FindFramework(string framework, int major) =>
+        ForVersion.GetOrAdd((framework, major), key => FindFramework(key.Item1, key.Item2, InstallRoots()));
+
+    internal static string? FindFramework(string framework, int major, IEnumerable<string> roots)
+    {
+        var shared = new List<(string Dir, Version Version, bool Prerelease)>();
+        var packs = new List<(string Dir, Version Version, bool Prerelease)>();
+        foreach (var root in roots.Distinct(StringComparer.Ordinal))
+        {
+            var sharedDir = Path.Combine(root, "shared", framework);
+            if (Directory.Exists(sharedDir)) shared.AddRange(Versions(sharedDir).Where(v => HasAssemblies(v.Dir)));
+            var packDir = Path.Combine(root, "packs", framework + ".Ref");
+            if (!Directory.Exists(packDir)) continue;
+            foreach (var version in Versions(packDir))
+            {
+                var refDir = Path.Combine(version.Dir, "ref", $"net{version.Version.Major}.0");
+                if (HasAssemblies(refDir)) packs.Add((refDir, version.Version, version.Prerelease));
+            }
+        }
+
+        static string? Best(IEnumerable<(string Dir, Version Version, bool Prerelease)> candidates) =>
+            candidates.OrderByDescending(v => v.Version).ThenBy(v => v.Prerelease).Select(v => v.Dir).FirstOrDefault();
+
+        return Best(shared.Where(v => v.Version.Major == major))
+               ?? Best(packs.Where(v => v.Version.Major == major))
+               ?? Best(shared.Concat(packs).Where(v => v.Version.Major > major).OrderBy(v => v.Version.Major).Take(1));
+    }
+
+    private static bool HasAssemblies(string dir)
+    {
+        try
+        {
+            return Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*.dll").Any();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>.NET installations: the one codemap runs on first, then the usual places.</summary>
+    private static IEnumerable<string> InstallRoots()
+    {
+        if (RuntimeDirectory != null && IsSharedFramework(RuntimeDirectory) && Directory.GetParent(RuntimeDirectory)?.Parent?.Parent is { } root) yield return root.FullName;
+        foreach (var candidate in DotNetRoots()) yield return candidate;
+    }
+
     /// <summary>Finds shared/{framework}/{version} next to <see cref="RuntimeDirectory"/>, preferring the same major version.</summary>
     internal static string? FindSharedFramework(string framework)
     {

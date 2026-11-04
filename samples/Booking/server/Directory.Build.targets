@@ -1,0 +1,6 @@
+<Project>
+  <!-- Edge case: a global using that comes from Directory.Build.targets, for every project but Contracts (which does not reference Domain). -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'Booking.Contracts'">
+    <Using Include="Booking.Domain.Common" />
+  </ItemGroup>
+</Project>

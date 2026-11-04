@@ -14,6 +14,8 @@ The C# compiles (`dotnet build server/Booking.sln`). Delete `bin/` and `obj/` af
 
 | Case | Where | What the map shows |
 |---|---|---|
+| Settings in an imported props file | `server/Directory.Build.props` imports `build/Common.props` (framework, `ImplicitUsings`, `Nullable`) | the projects are net8.0 with implicit usings; `Guid`, `List<T>` resolve |
+| A global using from `Directory.Build.targets` | `<Using Include="Booking.Domain.Common" />`, not for Contracts | `Reservation` and `ReservationValidator` (no `using` of their own) inherit `Entity<>` and `Validator<>` |
 | Generic argument of a base class | `Reservation : Entity<ReservationId>` | `Reservation` uses `ReservationId` |
 | Generic argument of a base interface | `IReservationRepository : IRepository<Reservation>` | `IReservationRepository` uses `Reservation` |
 | Generic base class over another type | `ReservationValidator : Validator<Reservation>` | `ReservationValidator` uses `Reservation` |

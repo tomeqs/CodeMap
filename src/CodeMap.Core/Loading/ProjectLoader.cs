@@ -167,10 +167,10 @@ public static class ProjectLoader
 
         var sdk = root.Attribute("Sdk")?.Value
                   ?? root.Elements().FirstOrDefault(e => e.Name.LocalName == "Sdk")?.Attribute("Name")?.Value;
-        var properties = ReadDirectoryBuildProps(dir);
-        foreach (var (key, value) in ReadProperties(doc)) properties[key] = value;
+        // Directory.Build.props, Directory.Packages.props, the project, Directory.Build.targets, with their imports.
+        var evaluation = MsBuildEvaluation.Evaluate(projectFile, new Dictionary<string, string> { ["Configuration"] = "Debug", ["Platform"] = "AnyCPU" });
 
-        string? Prop(string key) => properties.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? v.Trim() : null;
+        string? Prop(string key) => evaluation.Property(key);
         bool Flag(string key) => string.Equals(Prop(key), "true", StringComparison.OrdinalIgnoreCase)
                                  || string.Equals(Prop(key), "enable", StringComparison.OrdinalIgnoreCase);
 
@@ -184,37 +184,50 @@ public static class ProjectLoader
             AssemblyName = Substitute(Prop("AssemblyName"), name) ?? name,
             TargetFramework = Prop("TargetFramework") ?? Prop("TargetFrameworks")?.Split(';', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()
                               ?? Prop("TargetFrameworkVersion"),
-            OutputType = Prop("OutputType")
-                         ?? (sdk != null && (sdk.Contains(".Web", StringComparison.OrdinalIgnoreCase) || sdk.Contains(".Worker", StringComparison.OrdinalIgnoreCase)) ? "Exe" : "Library"),
+            OutputType = Prop("OutputType") ?? (IsAppSdk(sdk) ? "Exe" : "Library"),
             ImplicitUsings = Flag("ImplicitUsings"),
             AllowUnsafe = Flag("AllowUnsafeBlocks"),
             UseWindowsDesktop = Flag("UseWPF") || Flag("UseWindowsForms"),
         };
 
-        foreach (var item in Items(doc, "ProjectReference"))
+        foreach (var (item, expand) in evaluation.Items("ProjectReference"))
         {
-            var include = item.Attribute("Include")?.Value;
-            if (!string.IsNullOrWhiteSpace(include)) info.ProjectReferences.Add(ResolvePath(dir, include));
+            var include = expand(item.Attribute("Include")?.Value);
+            if (!string.IsNullOrWhiteSpace(include) && !include.Contains("$(")) info.ProjectReferences.Add(ResolvePath(dir, include));
         }
 
-        foreach (var item in Items(doc, "PackageReference"))
+        // Central package management: versions from Directory.Packages.props (PackageVersion), unless the reference overrides them.
+        var central = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (item, expand) in evaluation.Items("PackageVersion"))
         {
-            var include = item.Attribute("Include")?.Value;
-            if (string.IsNullOrWhiteSpace(include)) continue;
-            var version = item.Attribute("Version")?.Value ?? item.Elements().FirstOrDefault(e => e.Name.LocalName == "Version")?.Value;
-            info.PackageReferences.Add(new PackageReferenceInfo(include, version));
+            if (expand(item.Attribute("Include")?.Value) is { Length: > 0 } package && expand(VersionOf(item)) is { Length: > 0 } version) central[package] = version;
         }
 
-        foreach (var item in Items(doc, "FrameworkReference"))
+        foreach (var (item, expand) in evaluation.Items("PackageReference"))
         {
-            var include = item.Attribute("Include")?.Value;
+            var version = expand(item.Attribute("VersionOverride")?.Value ?? VersionOf(item));
+            if (expand(item.Attribute("Include")?.Value) is { Length: > 0 } include)
+            {
+                info.PackageReferences.Add(new PackageReferenceInfo(include, version ?? central.GetValueOrDefault(include)));
+            }
+            else if (expand(item.Attribute("Update")?.Value) is { Length: > 0 } update && version != null)
+            {
+                // <PackageReference Update="X" Version="…" /> sets the version of a reference made elsewhere.
+                var index = info.PackageReferences.FindIndex(p => string.Equals(p.Name, update, StringComparison.OrdinalIgnoreCase));
+                if (index >= 0) info.PackageReferences[index] = info.PackageReferences[index] with { Version = version };
+            }
+        }
+
+        foreach (var (item, expand) in evaluation.Items("FrameworkReference"))
+        {
+            var include = expand(item.Attribute("Include")?.Value);
             if (!string.IsNullOrWhiteSpace(include)) info.FrameworkReferences.Add(include);
         }
 
-        foreach (var item in Items(doc, "Using"))
+        foreach (var (item, expand) in evaluation.Items("Using"))
         {
-            var include = item.Attribute("Include")?.Value;
-            var remove = item.Attribute("Remove")?.Value;
+            var include = expand(item.Attribute("Include")?.Value);
+            var remove = expand(item.Attribute("Remove")?.Value);
             if (!string.IsNullOrWhiteSpace(include))
             {
                 var alias = item.Attribute("Alias")?.Value;
@@ -234,22 +247,29 @@ public static class ProjectLoader
         }
 
         info.IsTestProject = Flag("IsTestProject")
-                             || info.PackageReferences.Any(p => p.Name is "Microsoft.NET.Test.Sdk" or "xunit" or "xunit.v3" or "NUnit" or "MSTest.TestFramework" or "TUnit")
+                             || info.PackageReferences.Any(p => IsTestPackage(p.Name))
                              || (sdk?.StartsWith("MSTest.Sdk", StringComparison.OrdinalIgnoreCase) ?? false);
 
-        // What the conditions on Compile items see: the target framework we compile for, a Debug build, the project's properties.
-        string? ConditionProperty(string key) => key.ToLowerInvariant() switch
-        {
-            "targetframework" => info.TargetFramework,
-            "configuration" => Prop("Configuration") ?? "Debug",
-            "platform" => Prop("Platform") ?? "AnyCPU",
-            "msbuildprojectname" or "projectname" => name,
-            _ => Prop(key),
-        };
         var defaultItems = !IsFalse(Prop("EnableDefaultItems")) && !IsFalse(Prop("EnableDefaultCompileItems"));
-        info.SourceFiles.AddRange(CollectSources(doc, dir, info.IsSdkStyle && defaultItems, ConditionProperty));
+        info.SourceFiles.AddRange(CollectSources(evaluation, dir, info.IsSdkStyle && defaultItems));
         return info;
     }
+
+    /// <summary>Packages only test projects reference: test SDKs and frameworks (xunit, xunit.v3.*, NUnit, MSTest, TUnit, Microsoft.Testing.Platform).</summary>
+    private static bool IsTestPackage(string name)
+    {
+        var id = name.ToLowerInvariant();
+        return id is "microsoft.net.test.sdk" or "microsoft.testing.platform" or "xunit" or "xunit.v3" or "nunit" or "mstest" or "mstest.testframework" or "tunit"
+               || id.StartsWith("xunit.v3.", StringComparison.Ordinal);
+    }
+
+    private static string? VersionOf(XElement item) =>
+        item.Attribute("Version")?.Value ?? item.Elements().FirstOrDefault(e => e.Name.LocalName == "Version")?.Value;
+
+    /// <summary>SDKs whose projects are applications by default (OutputType Exe).</summary>
+    private static bool IsAppSdk(string? sdk) =>
+        sdk != null && (sdk.Contains(".Web", StringComparison.OrdinalIgnoreCase) || sdk.Contains(".Worker", StringComparison.OrdinalIgnoreCase)
+                        || sdk.Contains("BlazorWebAssembly", StringComparison.OrdinalIgnoreCase));
 
     private static ProjectInfo CreateVirtualProject(string name, string dir, IEnumerable<string> sources)
     {
@@ -271,12 +291,12 @@ public static class ProjectLoader
     private static bool IsFalse(string? value) => string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The Compile items as MSBuild builds them: the SDK's default glob first, then every Compile element in document
-    /// order. An Include adds files (minus its Exclude), a Remove takes away what is there so far, so a later Include
-    /// wins again. Item and ItemGroup conditions are evaluated where we can (<see cref="MsBuildCondition"/>); one we
-    /// can't read applies, as before.
+    /// The Compile items as MSBuild builds them: the SDK's default glob first, then every Compile element of the
+    /// project and the files it imports, in document order. An Include adds files (minus its Exclude), a Remove takes
+    /// away what is there so far, so a later Include wins again. Item and ItemGroup conditions are evaluated where we
+    /// can (<see cref="MsBuildCondition"/>); one we can't read applies, as before.
     /// </summary>
-    private static IEnumerable<string> CollectSources(XDocument doc, string dir, bool defaultGlob, Func<string, string?> property)
+    private static IEnumerable<string> CollectSources(MsBuildEvaluation evaluation, string dir, bool defaultGlob)
     {
         var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (defaultGlob)
@@ -288,15 +308,12 @@ public static class ProjectLoader
         HashSet<string> Expand(string? patterns) =>
             string.IsNullOrWhiteSpace(patterns) ? new HashSet<string>() : new HashSet<string>(ExpandPattern(dir, patterns), StringComparer.OrdinalIgnoreCase);
 
-        foreach (var item in Items(doc, "Compile"))
+        foreach (var (item, expand) in evaluation.Items("Compile"))
         {
-            if (MsBuildCondition.Evaluate(item.Attribute("Condition")?.Value, property) == false) continue;
-            if (MsBuildCondition.Evaluate(item.Parent?.Attribute("Condition")?.Value, property) == false) continue;
-
-            var include = Expand(item.Attribute("Include")?.Value);
-            include.ExceptWith(Expand(item.Attribute("Exclude")?.Value));
+            var include = Expand(expand(item.Attribute("Include")?.Value));
+            include.ExceptWith(Expand(expand(item.Attribute("Exclude")?.Value)));
             files.UnionWith(include);
-            files.ExceptWith(Expand(item.Attribute("Remove")?.Value));
+            files.ExceptWith(Expand(expand(item.Attribute("Remove")?.Value)));
         }
 
         return files.OrderBy(f => f, StringComparer.Ordinal);
@@ -315,8 +332,17 @@ public static class ProjectLoader
                 continue;
             }
 
-            // Patterns may climb out of the project folder (../Shared/**/*.cs): anchor the matcher there.
+            // Patterns may climb out of the project folder (../Shared/**/*.cs) or be absolute ($(MSBuildThisFileDirectory)…):
+            // anchor the matcher at the folder before the first wildcard.
             var baseDir = dir;
+            if (Path.IsPathRooted(pattern))
+            {
+                var wildcard = pattern.IndexOfAny(new[] { '*', '?' });
+                var slash = pattern.LastIndexOf('/', wildcard);
+                baseDir = pattern[..Math.Max(slash, 1)];
+                pattern = pattern[(slash + 1)..];
+            }
+
             while (pattern.StartsWith("../", StringComparison.Ordinal))
             {
                 baseDir = Path.GetDirectoryName(baseDir) ?? baseDir;
@@ -371,55 +397,6 @@ public static class ProjectLoader
         {
             return true;
         }
-    }
-
-    private static Dictionary<string, string> ReadDirectoryBuildProps(string projectDir)
-    {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var chain = new List<string>();
-        for (var dir = new DirectoryInfo(projectDir); dir != null; dir = dir.Parent)
-        {
-            var props = Path.Combine(dir.FullName, "Directory.Build.props");
-            if (File.Exists(props)) chain.Add(props);
-        }
-
-        // Outermost first so that nearer files win, mimicking the usual import chain.
-        foreach (var file in Enumerable.Reverse(chain))
-        {
-            try
-            {
-                foreach (var (key, value) in ReadProperties(XDocument.Load(file))) result[key] = value;
-            }
-            catch
-            {
-                // A broken props file should not stop the analysis.
-            }
-        }
-
-        return result;
-    }
-
-    private static IEnumerable<(string Key, string Value)> ReadProperties(XDocument doc)
-    {
-        // Unconditional property groups win; conditional ones only fill gaps (we do not evaluate conditions).
-        var unconditional = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var conditional = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var group in doc.Descendants().Where(e => e.Name.LocalName == "PropertyGroup"))
-        {
-            var groupConditional = group.Attribute("Condition") != null;
-            foreach (var property in group.Elements())
-            {
-                var target = groupConditional || property.Attribute("Condition") != null ? conditional : unconditional;
-                target[property.Name.LocalName] = property.Value;
-            }
-        }
-
-        foreach (var (key, value) in conditional)
-        {
-            if (!unconditional.ContainsKey(key)) yield return (key, value);
-        }
-
-        foreach (var (key, value) in unconditional) yield return (key, value);
     }
 
     private static IEnumerable<XElement> Items(XDocument doc, string itemName) =>
