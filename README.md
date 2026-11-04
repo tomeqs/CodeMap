@@ -161,17 +161,23 @@ and annotations (also the constraints and defaults of type parameters), decorato
 npm packages and dependencies between monorepo packages (workspaces), all without `npm install`. Code at the top of a file
 (`module.exports = {…}`, assignments, `export default {…}`) is a member of its own, so what it uses is not "unused".
 
+Single-file components (`.vue`, `.svelte`, `.astro`) are files on the map with the imports of their scripts. Entry points
+come from `package.json` (`main`, `module`, `bin`, `exports`, also when built to `build/<format>/`), from files that run code,
+and from file-based routing (Next.js, SvelteKit, SolidStart, Astro, Nuxt). SvelteKit's `$lib` is `src/lib`. In a workspace
+(`pnpm-workspace.yaml`, `workspaces`), a package it excludes gets its dependencies on workspace names from npm.
+
 Frameworks recognised from the imports:
 
 * **Express**: every `app.get('/orders/:id', …)` / `router.post(…)` / `router.route(…).put(…)` is its own route node
-  (`GET /orders/:id`, with the prefix from `app.use('/catalog', router)`); the code of inline handlers belongs to the route, named handlers
+  (`GET /orders/:id`, with the prefix from `app.use('/catalog', router)`, also through chains such as
+  `Router().use('/api', Router().use(articles))`); the code of inline handlers belongs to the route, named handlers
   and middleware are called by it. The Flow view starts from the routes.
-* **NestJS**: controllers (routes with their full path), providers, guards, interceptors, modules, GraphQL resolvers, gateways,
+* **NestJS**: controllers (routes with their full path, including `app.setGlobalPrefix(…)`), providers, guards, interceptors, modules, GraphQL resolvers, gateways,
   `@Cron`/`@MessagePattern`… as entry points, and in the DI view Nest's container: module providers (`useClass`, `useValue`,
   `useFactory`, `useExisting`, tokens), `Scope.REQUEST`/`TRANSIENT` scopes, `@Inject`, `@InjectRepository`, `@Optional`.
   CodeMap shows where the request scope "spreads" to dependent services (a note, not an error) and where an interface is injected without a token.
 * **Angular**: components, directives, pipes, modules and services; `providedIn: 'root'`, module and component providers,
-  `inject()`. An error when a root service needs something only components provide.
+  standalone applications (`bootstrapApplication(App, { providers })`, `ApplicationConfig`, `provideX(new T())`), `inject()`. An error when a root service needs something only components provide.
 
 ```bash
 codemap path/to/app                 # a folder with package.json / tsconfig.json

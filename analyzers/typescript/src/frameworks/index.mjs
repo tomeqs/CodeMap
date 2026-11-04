@@ -1,5 +1,5 @@
 import { expressRoutes, finishRoutes } from './express.mjs';
-import { nest } from './nest.mjs';
+import { finishNestRoutes, nest } from './nest.mjs';
 import { angular } from './angular.mjs';
 
 /**
@@ -22,7 +22,11 @@ export function applyFrameworks(ctx, sf, info, owners) {
   return routes;
 }
 
-export { finishRoutes };
+/** After every file: routes named with the prefixes their routers are mounted at (Express) or the package's global prefix (Nest). */
+export function finishAllRoutes(ctx) {
+  finishRoutes(ctx);
+  finishNestRoutes(ctx);
+}
 
 /** The declaration whose code holds a node: the smallest one around it. */
 function innermostOwner(owners, node) {

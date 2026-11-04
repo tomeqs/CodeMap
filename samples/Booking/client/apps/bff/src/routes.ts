@@ -27,3 +27,14 @@ apiRouter
   .get(list)
   .post(create)
   .delete(cancel);
+
+/**
+ * Edge case: unnamed routers built by chains. use() and the verbs return their router, so `rooms` is mounted in `v1`,
+ * and `v1` at /v1 of apiRouter: GET /api/v1/rooms.
+ */
+const rooms = express.Router().get('/rooms', async (req, res) => {
+  const reservations = await backend.list();
+  res.json([...new Set(reservations.map((r) => r.room))]);
+});
+export const v1 = express.Router().use(express.json()).use(rooms);
+apiRouter.use('/v1', v1);

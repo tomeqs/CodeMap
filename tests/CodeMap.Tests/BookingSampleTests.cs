@@ -184,7 +184,7 @@ public class BookingSampleTests
     {
         // A chain of verbs on a router mounted at /api, and a route on an app typed express.Express.
         var routes = Graph.Nodes.Where(n => n.Tags?.Contains("route") == true && n.Id.StartsWith("ts:", StringComparison.Ordinal)).ToList();
-        Assert.Equal(new[] { "DELETE /api/reservations", "GET /api/reservations", "GET /health", "POST /api/reservations" }, routes.Select(n => n.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(new[] { "DELETE /api/reservations", "GET /api/reservations", "GET /api/v1/rooms", "GET /health", "POST /api/reservations" }, routes.Select(n => n.Name).Order(StringComparer.Ordinal));
         var lines = File.ReadAllLines(Path.Combine(Booking, "client", "apps", "bff", "src", "routes.ts"));
         foreach (var verb in new[] { "get", "post", "delete" })
         {
@@ -196,6 +196,15 @@ public class BookingSampleTests
         Assert.Equal(3, Node(Bff + "register.ts#route:GET /health").Metric("complexity"));
         Assert.Equal(1, Node(Bff + "register.ts#register").Metric("complexity"));
         Assert.Equal(3, Node(Bff + "register.ts#(top-level)").Metric("complexity"));
+    }
+
+    [NodeFact(typescript: true)]
+    public void Typescript_package_exports_configs_and_barrels()
+    {
+        Assert.Contains("entrypoint", Node(Core + "money.ts").Tags!); // exports "./money": ./dist/esm/money.js → src/money.ts
+        Assert.Contains("entrypoint", Node(Core + "index.ts").Tags!);
+        Assert.Contains("barrel", Node(Core + "index.ts").Tags!);     // only export * from …
+        Assert.Contains("config", Node("ts:@booking/web:vite.config.ts").Tags!);
     }
 
     [NodeFact(typescript: true)]

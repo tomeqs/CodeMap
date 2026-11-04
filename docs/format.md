@@ -94,8 +94,11 @@ każdego mają swój `language`.
 | Tag | Znaczenie |
 |---|---|
 | `controller`, `dbcontext`, `repository`, `service`, `handler`, `hosted-service`, `middleware`, `hub`, `exception`, `attribute`, `options`, `dto`, `validator`, `factory`, `extensions` | rozpoznane role (dziedziczenie, interfejsy, atrybuty, konwencje nazw) |
-| `test`, `test-project` | klasa/metoda testowa, projekt testowy |
-| `entrypoint` | `Main`, top-level statements, projekt wykonywalny |
+| `page`, `component` | C#: strona Razor (`PageModel` albo code-behind pliku `.cshtml`) i komponent Blazora (`ComponentBase` albo code-behind pliku `.razor`); ich składowe nie są „nieużywane”, bo używa ich markup. `component` także dla komponentów Angulara |
+| `test`, `test-project` | klasa/metoda testowa, projekt testowy; w TypeScripcie także pliki w `test/`, `tests/`, `__tests__/`, `__fixtures__/`, `__testfixtures__/` oraz `*.test-d.ts` |
+| `entrypoint` | `Main`, top-level statements, projekt wykonywalny; w TypeScripcie pliki z `main`, `module`, `bin` i `exports` w package.json (bez warunków `types`), pliki uruchamiające kod, których nikt nie importuje, i pliki, które framework ładuje sam (Next.js, SvelteKit, SolidStart, Astro, Nuxt) |
+| `route` | trasa HTTP (Express, NestJS) albo plik trasy w routingu plikowym (`app/**/page.tsx`, `pages/**`, `+page.svelte`, `src/routes/**`, `server/api/**`) |
+| `config`, `barrel` | TypeScript: konfiguracja narzędzia w katalogu paczki (`vite.config.ts`, `.eslintrc.cjs`) i plik złożony tylko z importów i re-eksportów (`index.ts` folderu) |
 | `generated` | `[GeneratedCode]`, `[CompilerGenerated]` |
 | `positional` | właściwość z parametru pozycyjnego rekordu |
 | `in-cycle` | element należy do cyklu zależności |

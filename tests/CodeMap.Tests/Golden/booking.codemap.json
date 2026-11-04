@@ -64,18 +64,18 @@
     "projects": 7,
     "namespaces": 22,
     "types": 57,
-    "members": 146,
+    "members": 149,
     "packages": 3,
     "externalTypes": 0,
-    "edges": 285,
+    "edges": 290,
     "files": 46,
-    "lines": 760,
+    "lines": 771,
     "cycles": 1,
     "edges.holds": 5,
-    "edges.calls": 55,
+    "edges.calls": 56,
     "edges.instantiates": 12,
     "edges.accepts": 12,
-    "edges.accesses": 70,
+    "edges.accesses": 74,
     "edges.returns": 17,
     "edges.uses": 46,
     "edges.overrides": 1,
@@ -212,12 +212,12 @@
         "abstractness": 0,
         "ca": 0,
         "ce": 1,
-        "complexity": 21,
+        "complexity": 22,
         "distance": 0,
         "files": 5,
         "instability": 1,
-        "lines": 83,
-        "loc": 83,
+        "lines": 94,
+        "loc": 94,
         "types": 5
       }
     },
@@ -608,10 +608,10 @@
         "abstractness": 0,
         "ca": 0,
         "ce": 1,
-        "complexity": 20,
+        "complexity": 21,
         "distance": 0,
         "instability": 1,
-        "loc": 78,
+        "loc": 89,
         "types": 4
       }
     },
@@ -2122,20 +2122,20 @@
       "location": {
         "file": "client/apps/bff/src/routes.ts",
         "line": 1,
-        "endLine": 29
+        "endLine": 40
       },
       "tags": [
         "controller"
       ],
       "metrics": {
         "ca": 1,
-        "ce": 1,
-        "complexity": 7,
-        "instability": 0.5,
-        "loc": 29,
+        "ce": 2,
+        "complexity": 8,
+        "instability": 0.667,
+        "loc": 40,
         "maxComplexity": 1,
-        "members": 10,
-        "methods": 7
+        "members": 13,
+        "methods": 8
       }
     },
     {
@@ -2210,7 +2210,7 @@
         "endLine": 14
       },
       "metrics": {
-        "ca": 3,
+        "ca": 4,
         "ce": 0,
         "complexity": 0,
         "instability": 0,
@@ -2264,6 +2264,7 @@
         "endLine": 4
       },
       "tags": [
+        "barrel",
         "entrypoint"
       ],
       "metrics": {
@@ -2290,6 +2291,9 @@
         "line": 1,
         "endLine": 8
       },
+      "tags": [
+        "entrypoint"
+      ],
       "metrics": {
         "ca": 2,
         "ce": 0,
@@ -2453,6 +2457,7 @@
         "endLine": 7
       },
       "tags": [
+        "config",
         "entrypoint"
       ],
       "metrics": {
@@ -4608,7 +4613,7 @@
       },
       "metrics": {
         "complexity": 1,
-        "fanIn": 1,
+        "fanIn": 2,
         "fanOut": 1,
         "loc": 3
       }
@@ -4626,11 +4631,11 @@
       "location": {
         "file": "client/apps/bff/src/routes.ts",
         "line": 25,
-        "endLine": 29
+        "endLine": 40
       },
       "metrics": {
         "complexity": 1,
-        "loc": 5
+        "loc": 16
       }
     },
     {
@@ -4784,6 +4789,30 @@
       }
     },
     {
+      "id": "ts:@booking/bff:src/routes.ts#rooms",
+      "kind": "variable",
+      "level": "member",
+      "name": "rooms",
+      "fullName": "src/routes.ts#rooms",
+      "parent": "ts:@booking/bff:src/routes.ts",
+      "project": "ts:project:@booking/bff",
+      "namespace": "(root)",
+      "accessibility": "private",
+      "modifiers": [
+        "const"
+      ],
+      "signature": "const rooms = express.Router().get('/rooms', async (req, res) => { const reservations = await backend.list(); res.json([...new Set(reservations.map((r) => r.room))]); });",
+      "location": {
+        "file": "client/apps/bff/src/routes.ts",
+        "line": 35,
+        "endLine": 38
+      },
+      "doc": "Edge case: unnamed routers built by chains.",
+      "metrics": {
+        "loc": 4
+      }
+    },
+    {
       "id": "ts:@booking/bff:src/routes.ts#route:DELETE /reservations",
       "kind": "function",
       "level": "member",
@@ -4836,6 +4865,32 @@
       }
     },
     {
+      "id": "ts:@booking/bff:src/routes.ts#route:GET /rooms",
+      "kind": "function",
+      "level": "member",
+      "name": "GET /api/v1/rooms",
+      "fullName": "src/routes.ts#route:GET /api/v1/rooms",
+      "parent": "ts:@booking/bff:src/routes.ts",
+      "project": "ts:project:@booking/bff",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "signature": "express.Router().get('/rooms', …)",
+      "location": {
+        "file": "client/apps/bff/src/routes.ts",
+        "line": 35,
+        "endLine": 38
+      },
+      "tags": [
+        "entrypoint",
+        "route"
+      ],
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 1,
+        "loc": 4
+      }
+    },
+    {
       "id": "ts:@booking/bff:src/routes.ts#route:POST /reservations",
       "kind": "function",
       "level": "member",
@@ -4858,6 +4913,29 @@
       "metrics": {
         "complexity": 1,
         "fanOut": 1,
+        "loc": 1
+      }
+    },
+    {
+      "id": "ts:@booking/bff:src/routes.ts#v1",
+      "kind": "variable",
+      "level": "member",
+      "name": "v1",
+      "fullName": "src/routes.ts#v1",
+      "parent": "ts:@booking/bff:src/routes.ts",
+      "project": "ts:project:@booking/bff",
+      "namespace": "(root)",
+      "accessibility": "public",
+      "modifiers": [
+        "const"
+      ],
+      "signature": "export const v1 = express.Router().use(express.json()).use(rooms);",
+      "location": {
+        "file": "client/apps/bff/src/routes.ts",
+        "line": 39,
+        "endLine": 39
+      },
+      "metrics": {
         "loc": 1
       }
     },
@@ -7228,6 +7306,12 @@
       "source": "ts:@booking/bff:src/routes.ts#(top-level)",
       "target": "ts:@booking/bff:src/routes.ts#apiRouter",
       "kind": "accesses",
+      "weight": 2
+    },
+    {
+      "source": "ts:@booking/bff:src/routes.ts#(top-level)",
+      "target": "ts:@booking/bff:src/routes.ts#v1",
+      "kind": "accesses",
       "weight": 1
     },
     {
@@ -7312,11 +7396,36 @@
       "line": 27
     },
     {
+      "source": "ts:@booking/bff:src/routes.ts#route:GET /rooms",
+      "target": "ts:@booking/bff:src/routes.ts#backend",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "ts:@booking/bff:src/routes.ts#route:GET /rooms",
+      "target": "ts:@booking/core:src/contracts.ts#ReservationDto.room",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "ts:@booking/bff:src/routes.ts#route:GET /rooms",
+      "target": "ts:@booking/bff:src/reservations-api.ts#ReservationsApi.list",
+      "kind": "calls",
+      "weight": 1,
+      "line": 36
+    },
+    {
       "source": "ts:@booking/bff:src/routes.ts#route:POST /reservations",
       "target": "ts:@booking/bff:src/routes.ts#create",
       "kind": "calls",
       "weight": 1,
       "line": 28
+    },
+    {
+      "source": "ts:@booking/bff:src/routes.ts#v1",
+      "target": "ts:@booking/bff:src/routes.ts#rooms",
+      "kind": "accesses",
+      "weight": 1
     },
     {
       "source": "ts:@booking/bff:src/server.ts",
@@ -7647,11 +7756,11 @@
         "score": 9
       },
       {
-        "id": "ts:@booking/bff:src/register.ts",
-        "score": 7
+        "id": "ts:@booking/bff:src/routes.ts",
+        "score": 8
       },
       {
-        "id": "ts:@booking/bff:src/routes.ts",
+        "id": "ts:@booking/bff:src/register.ts",
         "score": 7
       },
       {
@@ -7777,15 +7886,15 @@
         "score": 4
       },
       {
+        "id": "ts:@booking/core:src/contracts.ts",
+        "score": 4
+      },
+      {
         "id": "T:Booking.Domain.Common.Entity`1",
         "score": 3
       },
       {
         "id": "T:Booking.Infrastructure.Notifications.INotifier",
-        "score": 3
-      },
-      {
-        "id": "ts:@booking/core:src/contracts.ts",
         "score": 3
       },
       {

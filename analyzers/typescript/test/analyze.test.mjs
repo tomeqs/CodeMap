@@ -373,5 +373,118 @@ test('a symbolically linked file is analyzed under its own path, and imports thr
   }, { 'src/linked.ts': '../shared/real.ts' });
   node(`${P}linked.ts`);
   hasEdge(`${P}uselink.ts`, 'imports', `${P}linked.ts`);
+  hasEdge(`${P}linked.ts`, 'imports', 'ts:pkg:shared/real.ts'); // the link loads its target
   hasEdge(`${P}uselink.ts#v`, 'accesses', `${P}linked.ts#shared`);
+});
+
+test('package.json module and exports are entry points, also built into one folder per format', () => {
+  const { node } = inline({
+    'package.json': JSON.stringify({
+      name: 'pkg', main: 'build/legacy/index.cjs', module: 'build/legacy/index.js',
+      exports: { '.': { import: { types: './build/modern/index.d.ts', default: './build/modern/index.js' } }, './extra': './build/modern/extra.js', './package.json': './package.json' },
+    }),
+    'src/index.ts': 'export const a = 1;\n',
+    'src/extra.ts': 'export const b = 2;\n',
+  });
+  assert.ok(node(`${P}index.ts`).tags?.includes('entrypoint')); // build/legacy/index.cjs → src/index.ts
+  assert.ok(node(`${P}extra.ts`).tags?.includes('entrypoint')); // exports ./extra
+});
+
+test('configuration files and barrels are tagged', () => {
+  const { node } = inline({
+    'vite.config.ts': 'export default { root: "." };\n',
+    '.eslintrc.cjs': 'module.exports = { root: true };\n',
+    'src/index.ts': "export * from './a';\nexport { b } from './b';\nimport './c';\n",
+    'src/mixed.ts': "export * from './a';\nexport const own = 1;\n",
+    'src/a.ts': 'export const a = 1;\n',
+    'src/b.ts': 'export const b = 1;\n',
+    'src/c.ts': 'export {};\n',
+    'src/app.config.ts': 'export const appConfig = { api: "/api" };\n',
+  });
+  assert.equal(node(`${P}app.config.ts`).tags, undefined); // the application's code, not a tool's configuration
+  assert.deepEqual(node('ts:pkg:vite.config.ts').tags, ['config']);
+  assert.deepEqual(node('ts:pkg:.eslintrc.cjs').tags, ['config']);
+  assert.deepEqual(node(`${P}index.ts`).tags, ['barrel']);
+  assert.equal(node(`${P}mixed.ts`).tags, undefined);
+  assert.equal(node(`${P}c.ts`).tags, undefined); // no re-export
+});
+
+test('single-file components are files with the imports of their scripts', () => {
+  const { graph, node, hasEdge } = inline({
+    'src/helper.ts': 'export const helper = () => 1;\n',
+    'src/App.vue': '<template><div>{{ x }}</div></template>\n<script setup lang="ts">\nimport { helper } from \'./helper\';\nimport Panel from \'./Panel.svelte\';\nconst x = helper();\n</script>\n',
+    'src/Panel.svelte': '<script>\n  import { helper } from \'./helper\';\n</script>\n<p>{helper()}</p>\n',
+    'src/Page.astro': "---\nimport { helper } from './helper';\n---\n<p>{helper()}</p>\n",
+    'src/main.ts': "import App from './App.vue';\nconsole.log(App);\n",
+  });
+  assert.equal(node(`${P}App.vue`).kind, 'module');
+  hasEdge(`${P}main.ts`, 'imports', `${P}App.vue`);
+  hasEdge(`${P}App.vue`, 'imports', `${P}helper.ts`);
+  hasEdge(`${P}App.vue`, 'imports', `${P}Panel.svelte`);
+  hasEdge(`${P}Panel.svelte`, 'imports', `${P}helper.ts`);
+  hasEdge(`${P}Page.astro`, 'imports', `${P}helper.ts`);
+  assert.deepEqual(graph.analysis.warnings, []); // ./App.vue is no unresolved import
+});
+
+test('SvelteKit: $lib is src/lib, $app is no npm package, and route files are entry points', () => {
+  const { graph, node, hasEdge } = inline({
+    'package.json': JSON.stringify({ name: 'pkg', devDependencies: { '@sveltejs/kit': '^2.0.0' } }),
+    'src/lib/format.ts': 'export const format = (n: number) => String(n);\n',
+    'src/routes/+page.ts': "import { format } from '$lib/format';\nimport { goto } from '$app/navigation';\nexport const load = () => ({ value: format(1), goto });\n",
+    'src/routes/about/+page.svelte': "<script lang=\"ts\">\n  import Card from '$lib/Card.svelte';\n  export let data;\n</script>\n<Card>{data.value}</Card>\n",
+    'src/lib/Card.svelte': '<slot />\n',
+  });
+  hasEdge(`${P}routes/+page.ts`, 'imports', `${P}lib/format.ts`);
+  hasEdge(`${P}routes/about/+page.svelte`, 'imports', `${P}lib/Card.svelte`);
+  assert.deepEqual(graph.nodes.filter((n) => n.kind === 'package').map((n) => n.id), ['ts:npm:@sveltejs/kit']);
+  for (const id of [`${P}routes/+page.ts`, `${P}routes/about/+page.svelte`]) assert.deepEqual(node(id).tags, ['entrypoint', 'route']);
+  assert.equal(node(`${P}lib/format.ts`).tags, undefined);
+});
+
+test('Next.js app and pages files are routes; test folders and type tests are tests', () => {
+  const { node } = inline({
+    'package.json': JSON.stringify({ name: 'pkg', dependencies: { next: '^15.0.0' } }),
+    'app/page.tsx': 'export default function Page() { return null; }\n',
+    'app/blog/[slug]/layout.tsx': 'export default function Layout() { return null; }\n',
+    'app/blog/util.ts': 'export const util = 1;\n',
+    'pages/api/hello.ts': 'export default function handler() {}\n',
+    'test/helpers.ts': 'export const helper = 1;\n',
+    'src/__fixtures__/data.ts': 'export const data = 1;\n',
+    'src/types.test-d.ts': 'export type T = 1;\n',
+  });
+  for (const id of ['ts:pkg:app/page.tsx', 'ts:pkg:app/blog/[slug]/layout.tsx', 'ts:pkg:pages/api/hello.ts']) assert.deepEqual(node(id).tags, ['entrypoint', 'route']);
+  assert.equal(node('ts:pkg:app/blog/util.ts').tags, undefined);
+  for (const id of ['ts:pkg:test/helpers.ts', `${P}__fixtures__/data.ts`, `${P}types.test-d.ts`]) assert.deepEqual(node(id).tags, ['test']);
+});
+
+test('a package the workspace excludes gets its dependencies on workspace names from npm', () => {
+  const { graph, hasEdge } = inline({
+    'package.json': JSON.stringify({ name: 'root', private: true, workspaces: ['packages/*', '!packages/legacy'] }),
+    'packages/a/package.json': JSON.stringify({ name: '@w/a' }),
+    'packages/a/src/index.ts': 'export const a = 1;\n',
+    'packages/b/package.json': JSON.stringify({ name: '@w/b', dependencies: { '@w/a': '*' } }),
+    'packages/b/src/index.ts': "import { a } from '@w/a';\nexport const b = a;\n",
+    'packages/legacy/package.json': JSON.stringify({ name: '@w/legacy', dependencies: { '@w/a': '1.0.0' } }),
+    'packages/legacy/src/index.ts': "import { a } from '@w/a';\nexport const old = a;\n",
+  });
+  const edges = (from) => graph.edges.filter((e) => e.source === from).map((e) => `${e.kind} ${e.target}`).sort();
+  hasEdge('ts:@w/b:src/index.ts', 'imports', 'ts:@w/a:src/index.ts');
+  hasEdge('ts:project:@w/b', 'projectReference', 'ts:project:@w/a');
+  assert.deepEqual(edges('ts:project:@w/legacy'), ['packageReference ts:npm:@w/a']);
+  assert.ok(!graph.edges.some((e) => e.source === 'ts:@w/legacy:src/index.ts' && e.target.startsWith('ts:@w/a:')));
+});
+
+test('Nuxt: pages and server routes are routes; the app, layouts and auto-imported folders are entry points', () => {
+  const { node } = inline({
+    'package.json': JSON.stringify({ name: 'pkg', dependencies: { nuxt: '^4.0.0' } }),
+    'app/app.vue': '<template><NuxtPage /></template>\n',
+    'app/pages/index.vue': '<template><p>home</p></template>\n',
+    'app/components/Counter.vue': '<template><p>1</p></template>\n',
+    'server/api/todos.ts': 'export default () => [];\n',
+    'server/utils/db.ts': 'export const db = 1;\n',
+    'app/helpers/format.ts': 'export const format = 1;\n',
+  });
+  for (const id of ['ts:pkg:app/pages/index.vue', 'ts:pkg:server/api/todos.ts']) assert.deepEqual(node(id).tags, ['entrypoint', 'route']);
+  for (const id of ['ts:pkg:app/app.vue', 'ts:pkg:app/components/Counter.vue', 'ts:pkg:server/utils/db.ts']) assert.deepEqual(node(id).tags, ['entrypoint']);
+  assert.equal(node('ts:pkg:app/helpers/format.ts').tags, undefined);
 });

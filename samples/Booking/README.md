@@ -49,6 +49,7 @@ The C# compiles (`dotnet build server/Booking.sln`). Delete `bin/` and `obj/` af
 | Overloads | `libs/core/src/money.ts`: `formatMoney` | its size (`loc`) is the implementation's, 5 lines |
 | A decorator with parentheses in its arguments | `@component({ template: '<button (click)="reload()">…' })` | the signature is `export class ReservationList extends HttpClient` |
 | Express route chain on a mounted router | `apiRouter.route('/reservations').get(…).post(…).delete(…)`, mounted at `/api` | `GET`, `POST` and `DELETE /api/reservations`, each on the line of its verb |
+| Unnamed routers built by chains | `const rooms = express.Router().get('/rooms', …)`, `export const v1 = express.Router().use(express.json()).use(rooms)`, `apiRouter.use('/v1', v1)` | the route `GET /api/v1/rooms` |
 | An app typed with a qualified name | `register(app: express.Express)` | the route `GET /health` |
 | A route registered inside a function | `register.ts` | `GET /health` has complexity 3, `register` 1, and the top-level code keeps its own 3 |
 | A function typed by its variable | `apps/web/src/badge.ts`: `export const Badge: Renderer<BadgeProps> = …` | `Badge` uses `Renderer` and `BadgeProps` |
@@ -56,6 +57,8 @@ The C# compiles (`dotnet build server/Booking.sln`). Delete `bin/` and `obj/` af
 | CommonJS `require()` variables | `apps/bff/scripts/version.cjs`: `const pkg = require('../package.json')` | the script's top-level code accesses `pkg` and `path`; the script is an entry point |
 | A tsconfig path alias | `@/util/dates` (`apps/web/tsconfig.json`) | `reservation-list.ts` imports `util/dates.ts` |
 | A bundler-only alias | `~/app.config` (only `vite.config.ts` declares it) | no npm package `~` (the packages are `express`, `@types/express`, `vite`) |
+| `exports` of a package | `libs/core/package.json`: `"./money": { "default": "./dist/esm/money.js" }` | `money.ts` is an entry point (`dist/esm/money.js` → `src/money.ts`) |
+| A configuration file and a barrel | `apps/web/vite.config.ts`; `libs/core/src/index.ts` (only `export *`) | tagged `config` and `barrel` |
 | A folder inside a package | `codemap client/apps/web/src` | the package `@booking/web`, with the same ids as for the whole sample |
 
 ## Also on the map, on purpose

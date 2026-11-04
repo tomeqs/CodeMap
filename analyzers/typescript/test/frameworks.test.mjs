@@ -153,3 +153,86 @@ test('Angular: components, services, providedIn and component providers, inject(
   ]);
   assert.ok(di.dependencies.every((d) => d.framework === 'angular'));
 });
+
+/** Files in a temporary folder (with their package.json), analyzed as CodeMap asks; removed afterwards. */
+function inline(files) {
+  const dir = mkdtempSync(join(tmpdir(), 'codemap-fw-'));
+  try {
+    for (const [path, text] of Object.entries({ 'package.json': '{ "name": "app" }', ...files })) {
+      mkdirSync(dirname(join(dir, path)), { recursive: true });
+      writeFileSync(join(dir, path), text);
+    }
+
+    const graph = analyze(ts, { target: dir, root: dir, options: {} });
+    const node = (id) => graph.nodes.find((n) => n.id === id) ?? assert.fail(`no node ${id}; nodes: ${graph.nodes.map((n) => n.id).join(', ')}`);
+    return { graph, node, di: graph.analysis.di ?? { registrations: [], dependencies: [] } };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('Express: use() and verbs return their router, so chained and unnamed routers keep their mount prefix', () => {
+  const { graph } = inline({
+    'src/routes.ts': [
+      "import { Router } from 'express';",
+      'const items = Router();',
+      "items.get('/items', (req, res) => { res.json([]); });",
+      'const orders = Router();',
+      "orders.get('/orders', (req, res) => { res.json([]); });",
+      'const api = Router().use(items).use(orders);',
+      "export const root = Router().use('/api', api);",
+      'const tags = Router()',
+      "  .get('/tags', (req, res) => { res.json([]); });",
+      "export default Router().use('/v2', tags);",
+      '',
+    ].join('\n'),
+    'src/server.ts': "import express from 'express';\nimport v2 from './routes';\nconst app = express();\napp.use('/x', v2);\napp.listen(3000);\n",
+  });
+  const routes = graph.nodes.filter((n) => n.tags?.includes('route')).map((n) => n.name).sort();
+  assert.deepEqual(routes, ['GET /api/items', 'GET /api/orders', 'GET /x/v2/tags']);
+});
+
+test('Angular: the providers of a standalone application are root singletons, provideX(new T()) an instance of T', () => {
+  const { di } = inline({
+    'src/app/clients.ts': 'export class QueryClient {}\nexport class Logger {}\nexport class Api {}\n',
+    'src/app/app.config.ts': [
+      "import type { ApplicationConfig } from '@angular/core';",
+      "import { provideQuery } from './provide';",
+      "import { QueryClient, Logger } from './clients';",
+      'export const appConfig: ApplicationConfig = { providers: [provideQuery(new QueryClient()), Logger] };',
+      '',
+    ].join('\n'),
+    'src/app/provide.ts': 'export function provideQuery(client: unknown) { return [] as unknown[]; }\n',
+    'src/main.ts': [
+      "import { bootstrapApplication } from '@angular/platform-browser';",
+      "import { Api } from './app/clients';",
+      "bootstrapApplication(class App {}, { providers: [Api] });",
+      '',
+    ].join('\n'),
+  });
+  const reg = (name) => di.registrations.find((r) => r.service === `ts:app:src/app/clients.ts#${name}`) ?? assert.fail(`no registration of ${name}: ${JSON.stringify(di.registrations)}`);
+  assert.deepEqual([reg('QueryClient').kind, reg('QueryClient').lifetime, reg('QueryClient').implementation], ['instance', 'singleton', 'ts:app:src/app/clients.ts#QueryClient']);
+  assert.equal(reg('QueryClient').registeredIn, 'ts:app:src/app/app.config.ts#appConfig');
+  assert.deepEqual([reg('Logger').kind, reg('Logger').lifetime], ['type', 'singleton']);
+  assert.deepEqual([reg('Api').lifetime, reg('Api').registeredIn], ['singleton', 'ts:app:src/main.ts#(top-level)']);
+});
+
+test('NestJS: a handler with JSDoc keeps its route first in its doc, with the global prefix', () => {
+  const { node } = inline({
+    'src/articles.controller.ts': [
+      "import { Controller, Get } from '@nestjs/common';",
+      "@Controller('articles')",
+      'export class ArticlesController {',
+      '  /** Lists the articles. */',
+      "  @Get(':slug')",
+      '  find() { return []; }',
+      '  @Get()',
+      '  all() { return []; }',
+      '}',
+      '',
+    ].join('\n'),
+    'src/main.ts': "import { NestFactory } from '@nestjs/core';\nasync function boot() {\n  const app = await NestFactory.create({});\n  app.setGlobalPrefix('api');\n}\nvoid boot();\n",
+  });
+  assert.equal(node('ts:app:src/articles.controller.ts#ArticlesController.find').doc, 'GET /api/articles/:slug · Lists the articles.');
+  assert.equal(node('ts:app:src/articles.controller.ts#ArticlesController.all').doc, 'GET /api/articles');
+});

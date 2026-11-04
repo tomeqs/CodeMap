@@ -1,5 +1,7 @@
 import { addTag, decoratorsOf, importOf, property, stringOf } from './imports.mjs';
 import { dependenciesOf, locationOf, providersOf, serviceOf } from './di.mjs';
+import { declarationId } from '../extract/declarations.mjs';
+import { memberId } from '../ids.mjs';
 
 /**
  * Angular (decorators from @angular/core): components, directives, pipes, NgModules and services, and the
@@ -57,17 +59,68 @@ export function angular(ctx, sf, info, owners) {
     }
   }
 
+  // Standalone applications: the providers of bootstrapApplication(App, { providers }) and of ApplicationConfig
+  // objects are root singletons.
+  const registerRoot = (config, registeredIn) => {
+    for (const entry of standaloneProviders(ctx, property(ts, config, 'providers'))) {
+      ctx.di.registrations.push({
+        service: entry.service,
+        external: entry.external || undefined,
+        implementation: entry.implementation,
+        lifetime: 'singleton',
+        kind: entry.kind,
+        registeredIn,
+        location: locationOf(sf, info, entry.node),
+        framework: 'angular',
+      });
+    }
+  };
+
   // bootstrapApplication(App) / platformBrowserDynamic().bootstrapModule(AppModule) start the application.
   const visit = (n) => {
     if (ts.isCallExpression(n)) {
       const source = importOf(ctx, n.expression);
       const name = ts.isPropertyAccessExpression(n.expression) ? n.expression.name.text : source?.name;
-      if ((source?.module?.startsWith('@angular/') && name === 'bootstrapApplication') || name === 'bootstrapModule') addTag(file, 'entrypoint');
+      const bootstrap = source?.module?.startsWith('@angular/') && name === 'bootstrapApplication';
+      if (bootstrap || name === 'bootstrapModule') addTag(file, 'entrypoint');
+      if (bootstrap && n.arguments[1] && ts.isObjectLiteralExpression(n.arguments[1])) registerRoot(n.arguments[1], ownerOf(n) ?? info.moduleId);
+    }
+
+    if (ts.isVariableDeclaration(n) && n.type && ts.isTypeReferenceNode(n.type) && n.initializer && ts.isObjectLiteralExpression(n.initializer)) {
+      const type = importOf(ctx, n.type.typeName);
+      if (type?.module?.startsWith('@angular/') && type.name === 'ApplicationConfig') registerRoot(n.initializer, declarationId(ctx, n) ?? info.moduleId);
     }
 
     ts.forEachChild(n, visit);
   };
+  const ownerOf = (node) => {
+    for (let current = node; current; current = current.parent) {
+      const id = current.parent && ts.isSourceFile(current.parent) ? memberId(info.moduleId, '(top-level)') : declarationId(ctx, current);
+      if (id && graph.nodes.has(id)) return id;
+    }
+
+    return null;
+  };
   visit(sf);
+}
+
+/**
+ * Providers of a standalone application: the usual entries, and `provideX(new T(…))` (an instance of T for the
+ * container, as provideTanStackQuery(new QueryClient()) gives). Other provide…() calls are library setups.
+ */
+function standaloneProviders(ctx, list) {
+  const { ts } = ctx;
+  const entries = providersOf(ctx, list);
+  for (const element of list && ts.isArrayLiteralExpression(list) ? list.elements : []) {
+    if (!ts.isCallExpression(element)) continue;
+    for (const argument of element.arguments) {
+      if (!ts.isNewExpression(argument)) continue;
+      const service = serviceOf(ctx, argument.expression);
+      if (service) entries.push({ ...service, implementation: service.external ? undefined : service.service, kind: 'instance', node: argument });
+    }
+  }
+
+  return entries;
 }
 
 /** `private http = inject(HttpClient)` and inject() in the constructor. */

@@ -89,6 +89,31 @@ export function referenceKind(ts, decl) {
   return 'accesses';
 }
 
+/** The node of a file: a module, tagged test, config (vite.config.ts) or barrel (only re-exports). */
+function addModule(ctx, info, sf) {
+  const { ts, graph } = ctx;
+  const moduleTags = [...(info.isTest ? ['test'] : []), ...(isConfigFile(info.path) ? ['config'] : []), ...(sf && isBarrel(ts, sf) ? ['barrel'] : [])];
+  graph.addNode({
+    id: info.moduleId,
+    kind: 'module',
+    level: 'type',
+    name: info.name,
+    fullName: info.path,
+    parent: info.folderId,
+    project: info.projectId,
+    namespace: info.folder,
+    accessibility: 'public',
+    location: { file: info.rel, line: 1, endLine: info.lines },
+    tags: moduleTags.length ? moduleTags : undefined,
+    metrics: { loc: info.lines },
+  });
+}
+
+/** A single-file component (.vue, .svelte, .astro): its file on the map; the markup has no declarations to show. */
+export function declareComponent(ctx, info) {
+  addModule(ctx, info, null);
+}
+
 /**
  * Adds the nodes of one file. Returns what the reference pass walks: every member with its code
  * (body, initializer, the file's top-level statements) and the classes with their base types.
@@ -104,21 +129,7 @@ export function declareModule(ctx, sf, info) {
   };
   const tags = info.isTest ? ['test'] : undefined;
   const base = { level: 'member', project: info.projectId, namespace: info.folder };
-
-  graph.addNode({
-    id: info.moduleId,
-    kind: 'module',
-    level: 'type',
-    name: info.name,
-    fullName: info.path,
-    parent: info.folderId,
-    project: info.projectId,
-    namespace: info.folder,
-    accessibility: 'public',
-    location: { file: info.rel, line: 1, endLine: info.lines },
-    tags: info.isTest ? ['test'] : undefined,
-    metrics: { loc: info.lines },
-  });
+  addModule(ctx, info, sf);
 
   /** The metrics of a declaration, with its size (lines) when it does not say. */
   const withLoc = (fresh) => (fresh.metrics?.loc === undefined ? { ...(fresh.metrics ?? {}), loc: fresh.location.endLine - fresh.location.line + 1 } : fresh.metrics);
@@ -289,6 +300,25 @@ function declareMembers(ctx, sf, info, owner, ownerId, ownerName, add) {
     }, member, code);
     if (isAccessor && node.hasCode && code && node.metrics) node.metrics.complexity = Math.max(node.metrics.complexity ?? 1, complexity(ts, body));
   }
+}
+
+/**
+ * A tool's configuration, which the tool loads from the package's root: vite.config.ts, jest.config.js, .eslintrc.cjs.
+ * (src/app.config.ts is the application's own code.)
+ */
+export function isConfigFile(path) {
+  return !path.includes('/') && (/\.config\.[cm]?[jt]s$/.test(path) || /^\.[\w-]+rc\.c?js$/.test(path));
+}
+
+/** A file made only of imports and exports that re-exports at least one other file: index.ts of a folder. */
+function isBarrel(ts, sf) {
+  let reexports = false;
+  for (const statement of sf.statements) {
+    if (ts.isExportDeclaration(statement)) reexports ||= !!statement.moduleSpecifier;
+    else if (!ts.isImportDeclaration(statement) && !ts.isImportEqualsDeclaration(statement)) return false;
+  }
+
+  return reexports;
 }
 
 /** Names exported by `export { a, b as c }` (not re-exports from other files). */

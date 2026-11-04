@@ -1,18 +1,24 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { packageName } from './ids.mjs';
-import { isSource, toPosix } from './discover.mjs';
+import { isComponent, isSource, toPosix } from './discover.mjs';
 
 const CODE = /\.d\.[cm]?ts$|\.[cm]?[jt]sx?$/;
 
 /**
- * Where the source of a built path is: dist/server.js → src/server.ts. Only the first folder within the
- * package is replaced, never a folder above it (a checkout in /opt/build/…).
+ * Where the source of a built path may be: dist/server.js → src/server; build/legacy/index.cjs → src/legacy/index,
+ * then src/index (a build that writes one folder per format). Only the first folder within the package is
+ * replaced, never a folder above it (a checkout in /opt/build/…).
  */
-function sourceBase(dir, path) {
+function sourceBases(dir, path) {
   const rel = relative(dir, path);
-  const mapped = rel.replace(/^(dist|build|lib|out)([\\/])/, 'src$2');
-  return mapped === rel ? null : join(dir, mapped).replace(CODE, '');
+  const match = /^(dist|build|lib|out)[\\/](.*)$/.exec(rel);
+  if (!match) return [];
+  const rest = match[2].replace(CODE, '');
+  const bases = [join(dir, 'src', rest)];
+  const parts = rest.split(/[\\/]/);
+  if (parts.length > 1) bases.push(join(dir, 'src', ...parts.slice(1)));
+  return bases;
 }
 
 /**
@@ -78,19 +84,29 @@ export class Resolver {
    * compiler writes file names (and as the analysis keys its files), also on Windows.
    */
   pick(candidates) {
-    const existing = candidates.filter((c) => isSource(c) && existsSync(c));
+    const existing = candidates.filter((c) => (isSource(c) || isComponent(c)) && existsSync(c));
     const file = existing.find(this.isAnalyzed) ?? existing[0];
     return file ? toPosix(file) : null;
   }
 
-  resolve(specifier, containingFile, options, mode) {
-    const key = `${specifier}\u0000${dirname(containingFile)}\u0000${mode ?? ''}\u0000${options.configFilePath ?? ''}`;
+  /**
+   * @param components whether the import may lead to a .vue / .svelte / .astro file: only for the edges of the map,
+   *   never for the compiler, which cannot read them.
+   */
+  resolve(specifier, containingFile, options, mode, components = false) {
+    const key = `${specifier}\u0000${dirname(containingFile)}\u0000${mode ?? ''}\u0000${options.configFilePath ?? ''}\u0000${components}`;
     if (this.cache.has(key)) return this.cache.get(key);
     const ts = this.ts;
     let resolved = ts.resolveModuleName(specifier, containingFile, options, ts.sys, undefined, undefined, mode).resolvedModule;
-    const local = (file) => ({ resolvedFileName: file, extension: ts.extensionFromPath(file), isExternalLibraryImport: false });
-    if (!specifier.startsWith('.') && (!resolved || resolved.isExternalLibraryImport || /\.d\.[cm]?ts$/.test(resolved.resolvedFileName))) {
-      const file = this.workspaceFile(specifier);
+    const local = (file) => ({ resolvedFileName: file, extension: isComponent(file) ? '' : ts.extensionFromPath(file), isExternalLibraryImport: false });
+    if (!resolved && /^\$lib(\/|$)/.test(specifier)) {
+      // SvelteKit: $lib is src/lib of the package (its tsconfig paths are generated into .svelte-kit/ by a build).
+      const dir = this.packageDirOf(containingFile);
+      const base = dir && join(dir, 'src', 'lib', specifier.slice('$lib/'.length));
+      const file = base && this.pick([base, ...['.ts', '.js', '.svelte'].map((e) => base + e), ...['.ts', '.js'].map((e) => join(base, 'index' + e))]);
+      if (file && (components || !isComponent(file))) resolved = local(file);
+    } else if (!specifier.startsWith('.') && (!resolved || resolved.isExternalLibraryImport || /\.d\.[cm]?ts$/.test(resolved.resolvedFileName))) {
+      const file = this.workspaceFile(specifier, containingFile);
       if (file) resolved = local(file);
     } else if (specifier.startsWith('.') && resolved) {
       if (/\.d\.[cm]?ts$/.test(resolved.resolvedFileName)) {
@@ -109,10 +125,30 @@ export class Resolver {
     return resolved;
   }
 
+  /** The package (the nearest package.json with a name) a file is in. */
+  packageOf(file) {
+    const path = toPosix(file);
+    let best = null;
+    for (const pkg of this.packages.values()) {
+      if (path.startsWith(toPosix(pkg.dir) + '/') && (!best || pkg.dir.length > best.dir.length)) best = pkg;
+    }
+
+    return best;
+  }
+
+  packageDirOf(file) {
+    return this.packageOf(file)?.dir ?? null;
+  }
+
+  /** Is a file in a package that the workspace leaves out? */
+  isOutside(file) {
+    return this.packageOf(file)?.member === false;
+  }
+
   /** The source behind a path package.json gives (main: dist/server.js → src/server.ts). */
   sourceFor(dir, field) {
     const path = resolve(dir, field);
-    const bases = [path.replace(CODE, ''), sourceBase(dir, path)].filter(Boolean);
+    const bases = [path.replace(CODE, ''), ...sourceBases(dir, path)];
     const candidates = [path];
     for (const base of bases) {
       candidates.push(...['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'].map((e) => base + e), join(base, 'index.ts'), join(base, 'index.js'));
@@ -122,10 +158,11 @@ export class Resolver {
   }
 
   /** The source file a workspace package import means: `@shop/domain` → packages/domain/src/index.ts. */
-  workspaceFile(specifier) {
+  workspaceFile(specifier, containingFile) {
     const name = packageName(specifier);
     const pkg = this.packages.get(name);
-    if (!pkg) return null;
+    // Only members of the workspace are linked to each other; a package outside it gets the npm one.
+    if (!pkg || pkg.member === false || (containingFile && this.isOutside(containingFile))) return null;
     const sub = specifier.slice(name.length).replace(/^\//, '');
     const bases = [];
     if (sub) {
@@ -134,9 +171,7 @@ export class Resolver {
       for (const field of [pkg.json.source, pkg.json.types, pkg.json.typings, pkg.json.module, pkg.json.main]) {
         if (typeof field !== 'string') continue;
         const path = resolve(pkg.dir, field);
-        bases.push(path.replace(CODE, ''));
-        const source = sourceBase(pkg.dir, path);
-        if (source) bases.push(source);
+        bases.push(path.replace(CODE, ''), ...sourceBases(pkg.dir, path));
       }
 
       bases.push(join(pkg.dir, 'src', 'index'), join(pkg.dir, 'index'), join(pkg.dir, 'lib', 'index'));

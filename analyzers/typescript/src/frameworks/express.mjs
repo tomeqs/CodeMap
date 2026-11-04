@@ -33,8 +33,35 @@ export function expressRoutes(ctx, sf, info) {
     }
   };
 
+  /** `router.use(…)` and `router.get('/x', h)` return their receiver (a one-argument `app.get('env')` reads a setting). */
+  const isChained = (call) => ts.isCallExpression(call) && ts.isPropertyAccessExpression(call.expression) &&
+    (call.expression.name.text === 'use' || (VERBS.has(call.expression.name.text) && call.arguments.length >= 2));
+
+  /**
+   * Which router an expression is, as the key routes and mounts share: the declaration of the variable that holds it
+   * (also through imports), the `export default` that exports it, else the outermost call of an unnamed one's chain.
+   * `const api = Router().use(tags).use(articles)` is `api` all along the chain.
+   */
+  const identityOf = (expr) => {
+    let base = expr;
+    while (isChained(base) || (ts.isCallExpression(base) && ts.isPropertyAccessExpression(base.expression) && base.expression.name.text === 'route')) {
+      base = base.expression.expression;
+    }
+
+    if (!ts.isCallExpression(base) && !ts.isNewExpression(base)) return declarationOf(base);
+    let top = base;
+    while (ts.isPropertyAccessExpression(top.parent) && top.parent.expression === top && isChained(top.parent.parent) && top.parent.parent.expression === top.parent) {
+      top = top.parent.parent;
+    }
+
+    const holder = top.parent;
+    if (holder && ts.isVariableDeclaration(holder) && holder.initializer === top) return holder;
+    if (holder && ts.isExportAssignment(holder)) return holder;
+    return top;
+  };
+
   const isRouter = (expr) => {
-    if (ts.isCallExpression(expr) && ts.isPropertyAccessExpression(expr.expression) && expr.expression.name.text === 'route') {
+    if (ts.isCallExpression(expr) && ts.isPropertyAccessExpression(expr.expression) && (expr.expression.name.text === 'route' || isChained(expr))) {
       return isRouter(expr.expression.expression);
     }
 
@@ -45,6 +72,7 @@ export function expressRoutes(ctx, sf, info) {
     routers.set(decl, false);
     let result = false;
     if ((ts.isVariableDeclaration(decl) || ts.isPropertyDeclaration(decl)) && decl.initializer) result = isRouter(decl.initializer);
+    if (ts.isExportAssignment(decl)) result = isRouter(decl.expression); // export default Router().use(…)
     if (!result && (ts.isParameter(decl) || ts.isVariableDeclaration(decl) || ts.isPropertyDeclaration(decl)) && decl.type && ts.isTypeReferenceNode(decl.type)) {
       const source = importOf(ctx, decl.type.typeName); // Router, or express.Router
       result = source?.module === 'express' && /^(Router|IRouter|Express|Application)$/.test(source.name);
@@ -76,9 +104,9 @@ export function expressRoutes(ctx, sf, info) {
       const first = n.arguments[0];
       const literal = first ? stringOf(ts, first) : null;
       const computed = literal === null && first && isString(first);
-      const parent = declarationOf(n.expression.expression);
+      const parent = identityOf(n.expression.expression);
       for (const argument of n.arguments.slice(literal !== null || computed ? 1 : 0)) {
-        const mounted = (ts.isIdentifier(argument) || ts.isPropertyAccessExpression(argument)) && isRouter(argument) ? declarationOf(argument) : null;
+        const mounted = (ts.isIdentifier(argument) || ts.isPropertyAccessExpression(argument) || ts.isCallExpression(argument)) && isRouter(argument) ? identityOf(argument) : null;
         if (!mounted || mounted === parent) continue;
         if (!ctx.express.mounts.has(mounted)) ctx.express.mounts.set(mounted, []);
         ctx.express.mounts.get(mounted).push({ prefix: computed ? null : literal ?? '', parent });
@@ -118,7 +146,7 @@ export function expressRoutes(ctx, sf, info) {
           tags: ['route', 'entrypoint', ...(info.isTest ? ['test'] : [])],
           metrics: { loc: end - start + 1, complexity: handlers.reduce((sum, h) => sum + complexity(ts, h) - 1, 1) },
         });
-        ctx.express.routes.push({ id, verb, path: routePath, router: declarationOf(router) });
+        ctx.express.routes.push({ id, verb, path: routePath, router: identityOf(router) });
         for (const handler of handlers) ctx.claimed.set(handler, id);
         owners.push({ id, node: n, code: handlers, kind: 'function' });
         addTag(graph.nodes.get(info.moduleId), 'controller');

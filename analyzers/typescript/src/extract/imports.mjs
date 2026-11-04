@@ -1,4 +1,6 @@
 import { builtinModules } from 'node:module';
+import { dirname, resolve as resolvePath } from 'node:path';
+import { isComponent, toPosix } from '../discover.mjs';
 import { packageId, packageName, projectId } from '../ids.mjs';
 
 const BUILTINS = new Set(builtinModules);
@@ -11,7 +13,7 @@ const ASSET = /\.(css|scss|sass|less|styl|svg|png|jpe?g|gif|webp|avif|ico|bmp|wo
  * (projectReference). Relative imports that lead nowhere are counted for a warning.
  */
 export function collectImports(ctx, sf, info) {
-  const { ts, graph } = ctx;
+  const { ts } = ctx;
   // The compiler lists require() calls of JavaScript files with the imports; in TypeScript they are only calls.
   const requires = /\.[cm]?tsx?$/.test(sf.fileName) && sf.text.includes('require(') ? requireCalls(ts, sf) : [];
   for (const literal of [...(sf.imports ?? []), ...requires]) {
@@ -20,37 +22,65 @@ export function collectImports(ctx, sf, info) {
     let resolved;
     try {
       const mode = requires.includes(literal) ? ts.ModuleKind.CommonJS : ts.getModeForUsageLocation(sf, literal, ctx.options);
-      resolved = ctx.program.getResolvedModule?.(sf, specifier, mode)?.resolvedModule ?? ctx.resolver.resolve(specifier, sf.fileName, ctx.options, mode);
+      resolved = ctx.program.getResolvedModule?.(sf, specifier, mode)?.resolvedModule ?? ctx.resolver.resolve(specifier, sf.fileName, ctx.options, mode, true);
     } catch {
       resolved = null;
     }
 
-    const target = resolved && ctx.files.get(resolved.resolvedFileName);
-    if (target) {
-      graph.addEdge(info.moduleId, target.moduleId, isTypeOnly(ts, literal.parent) ? 'uses' : 'imports');
-      if (target.projectId !== info.projectId) graph.addEdge(info.projectId, target.projectId, 'projectReference');
-      continue;
-    }
+    linkImport(ctx, sf.fileName, info, specifier, resolved, isTypeOnly(ts, literal.parent));
+  }
+}
 
-    if (specifier.startsWith('.') || specifier.startsWith('/')) {
-      if (!resolved && !ASSET.test(specifier)) ctx.stats.unresolved++; // styles, images, JSON: not code
-      continue;
-    }
+/** The imports in the <script> blocks of a .vue / .svelte file and the frontmatter of an .astro file. */
+export function collectComponentImports(ctx, file, text, info) {
+  const { ts } = ctx;
+  const scripts = [...text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
+  const frontmatter = file.endsWith('.astro') ? /^---\r?\n([\s\S]*?)\r?\n---/.exec(text) : null;
+  if (frontmatter) scripts.push(frontmatter[1]);
+  for (const script of scripts) {
+    for (const ref of ts.preProcessFile(script, true, true).importedFiles) {
+      let resolved;
+      try {
+        resolved = ctx.resolver.resolve(ref.fileName, file, ctx.options, undefined, true);
+      } catch {
+        resolved = null;
+      }
 
-    if (BUILTINS.has(specifier) || specifier.startsWith('node:') || specifier.startsWith('bun:') || BUILTINS.has(specifier.split('/')[0])) continue;
-    const name = packageName(specifier);
-    const workspace = ctx.projectsByName.get(name);
-    if (workspace) {
-      graph.addEdge(info.projectId, projectId(workspace.name), 'projectReference');
-    } else if (resolved && !resolved.isExternalLibraryImport) {
-      // A file of this repository that the analysis leaves out (generated, a test, outside the packages),
-      // reached through a path alias: not an npm package.
-    } else if (!resolved && isAlias(specifier, ctx.options)) {
-      // A path alias the compiler could not follow (no tsconfig that declares it, or a missing file).
-    } else {
-      ctx.ensurePackage(name);
-      graph.addEdge(info.projectId, packageId(name), 'packageReference');
+      linkImport(ctx, file, info, ref.fileName, resolved, false);
     }
+  }
+}
+
+/** The edge one import makes: to the file it reaches, to a sibling package, or to an npm package. */
+function linkImport(ctx, file, info, specifier, resolved, typeOnly) {
+  const { graph } = ctx;
+  // './Panel.vue': the compiler resolves no component, the analysis has it as a file.
+  const target = (resolved && ctx.files.get(resolved.resolvedFileName)) ||
+    (specifier.startsWith('.') && isComponent(specifier) ? ctx.files.get(toPosix(resolvePath(dirname(file), specifier))) : null);
+  if (target) {
+    graph.addEdge(info.moduleId, target.moduleId, typeOnly ? 'uses' : 'imports');
+    if (target.projectId !== info.projectId) graph.addEdge(info.projectId, target.projectId, 'projectReference');
+    return;
+  }
+
+  if (specifier.startsWith('.') || specifier.startsWith('/')) {
+    if (!resolved && !ASSET.test(specifier)) ctx.stats.unresolved++; // styles, images, JSON: not code
+    return;
+  }
+
+  if (BUILTINS.has(specifier) || specifier.startsWith('node:') || specifier.startsWith('bun:') || BUILTINS.has(specifier.split('/')[0])) return;
+  const name = packageName(specifier);
+  const workspace = ctx.projectsByName.get(name);
+  if (workspace && workspace.member && info.member) {
+    graph.addEdge(info.projectId, projectId(workspace.name), 'projectReference');
+  } else if (resolved && !resolved.isExternalLibraryImport) {
+    // A file of this repository that the analysis leaves out (generated, a test, outside the packages),
+    // reached through a path alias: not an npm package.
+  } else if (!resolved && isAlias(specifier, ctx.options)) {
+    // A path alias the compiler could not follow (no tsconfig that declares it, or a missing file).
+  } else {
+    ctx.ensurePackage(name);
+    graph.addEdge(info.projectId, packageId(name), 'packageReference');
   }
 }
 
@@ -68,9 +98,12 @@ function requireCalls(ts, sf) {
   return literals;
 }
 
-/** `@/x`, `~/x`, `#x` (package.json imports) or a tsconfig `paths` pattern: local code, never an npm package. */
+/**
+ * `@/x`, `~/x`, `#x` (package.json imports), `$lib`, `$app/…` (SvelteKit's modules; `$` is no npm name) or a tsconfig
+ * `paths` pattern: local code, never an npm package.
+ */
 function isAlias(specifier, options) {
-  if (/^(@\/|~\/|#)/.test(specifier)) return true;
+  if (/^(@\/|~\/|#|\$)/.test(specifier)) return true;
   return Object.keys(options?.paths ?? {}).some((pattern) => {
     const star = pattern.indexOf('*');
     if (star < 0) return specifier === pattern;
