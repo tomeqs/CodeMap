@@ -10,6 +10,7 @@ namespace CodeMap.Tests;
 /// <summary>
 /// Whole maps against stored copies: any change to what the analysis writes shows up here.
 /// - shop: samples/Shop (C#);
+/// - booking: samples/Booking (C# and TypeScript in one folder, every edge case of BookingSampleTests);
 /// - ts-mini: a TypeScript-shaped raw graph written by hand (ts-mini.fragment.json) after the shared analysis;
 ///   the viewer's smoke tests load it too.
 /// After an intended change, regenerate with CODEMAP_UPDATE_GOLDEN=1 dotnet test --filter GoldenTests and review
@@ -23,6 +24,14 @@ public class GoldenTests
         var root = RepoRoot();
         var graph = CodeMapAnalyzer.Analyze(Path.Combine(root, "samples", "Shop", "Shop.sln"), new AnalyzerOptions { Git = false });
         AssertGolden("shop", Normalize(graph, root));
+    }
+
+    [NodeFact(typescript: true)]
+    public void Booking_map_of_csharp_and_typescript_matches_the_golden_file()
+    {
+        var root = RepoRoot();
+        var graph = CodeMapAnalyzer.Analyze(BookingSampleTests.Booking, BookingSampleTests.Registry, new AnalyzerOptions { Git = false });
+        AssertGolden("booking", Normalize(graph, root));
     }
 
     [Fact]

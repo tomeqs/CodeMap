@@ -183,6 +183,8 @@ on a shared domain library), with a deliberate cycle, dead code and DI container
 maps the TypeScript alone, and `codemap samples` gives one map of it and the C# solution [`samples/Shop`](samples/Shop) side by side
 (the levels are then called "Projects / Packages", "Types / Files"…). Maps of different languages have no edges
 between them yet (e.g. HTTP calls from TypeScript to C# controllers).
+[`samples/Booking`](samples/Booking) has both languages in one folder (an ASP.NET Core API and a TypeScript client):
+it is a test bed that contains the edge cases of C# and TypeScript mapping, each listed with what its map must show.
 
 How to add another language: [docs/plugins.md](docs/plugins.md).
 
@@ -436,9 +438,10 @@ src/CodeMap.Cli       the `codemap` tool (dotnet tool or standalone executable),
 analyzers/typescript  TypeScript / JavaScript plugin (Node.js + TypeScript compiler API), copied to plugins/typescript
 vscode/               VS Code extension: the map in a webview, code ↔ map navigation, live refresh
 viewer/               3D map: Vite + three.js + d3-force-3d + d3-hierarchy, built into a single HTML file
-tests/CodeMap.Tests   xUnit tests of the analyzer and exporters; Golden/ holds saved maps of samples/Shop and a small TS app
+tests/CodeMap.Tests   xUnit tests of the analyzer and exporters; Golden/ holds saved maps of samples/Shop, samples/Booking and a small TS app
 samples/Shop          sample solution (DDD, DI, events, a deliberate cycle and dead code)
 samples/shop-ts       the same shop in TypeScript: an npm monorepo with NestJS, Express and Angular
+samples/Booking       C# API and TypeScript client in one folder: a test bed of mapping edge cases (see its README)
 docs/                 format specification, JSON Schema and the plugin protocol
 ```
 

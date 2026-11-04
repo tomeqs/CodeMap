@@ -1,0 +1,9 @@
+{
+  "name": "@booking/bff",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/server.js",
+  "scripts": { "start": "node dist/server.js" },
+  "dependencies": { "@booking/core": "*", "express": "^4.19.2" },
+  "devDependencies": { "@types/express": "^4.17.21" }
+}
