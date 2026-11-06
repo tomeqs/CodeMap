@@ -6,6 +6,7 @@ const vscode = require('vscode');
 const { resolveAnalyzer, runAnalyzer } = require('./analyzer');
 const { standaloneHtml, webviewHtml } = require('./html');
 const { flowRootsFor, nodeAt, relativeToRoot, resolveInRoot } = require('./locate');
+const { McpCommands, registerMcpServer } = require('./mcp');
 
 const VIEW_TYPE = 'codemap.map';
 const TARGET_KEY = 'codemap.target';
@@ -445,8 +446,13 @@ function isSourceFile(file) {
 function activate(context) {
   const controller = new CodeMapController(context);
   const editorCommand = (fn) => () => fn(vscode.window.activeTextEditor);
+  // `codemap mcp` for the editor's AI agents (VS Code's agent mode, Cursor).
+  const mcp = registerMcpServer(context, vscode, { version: extensionVersion(context) });
+  const mcpCommands = new McpCommands(context, vscode, { registered: mcp });
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('codemap.copyMcpConfig', () => mcpCommands.copyConfiguration()),
+    vscode.commands.registerCommand('codemap.addMcpConfig', () => mcpCommands.addToWorkspace()),
     vscode.commands.registerCommand('codemap.open', (uri) => controller.open(uri instanceof vscode.Uri ? uri : undefined)),
     vscode.commands.registerCommand('codemap.chooseTarget', () => controller.chooseTarget()),
     vscode.commands.registerCommand('codemap.refresh', () => controller.analyze({ preserve: true })),
@@ -469,7 +475,15 @@ function activate(context) {
     }),
   );
 
-  return { controller };
+  return { controller, mcp };
+}
+
+function extensionVersion(context) {
+  try {
+    return context.extension?.packageJSON?.version ?? JSON.parse(fs.readFileSync(path.join(context.extensionPath, 'package.json'), 'utf8')).version;
+  } catch {
+    return undefined;
+  }
 }
 
 function deactivate() {}

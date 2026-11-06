@@ -108,7 +108,52 @@ async function scenario(controller) {
   assert.ok(ts.source.languages.some((l) => l.id === 'typescript'), 'mapped as TypeScript');
   assert.ok(ts.nodes.some((n) => n.kind === 'module' && n.location?.file?.endsWith('.ts')), 'files are on the map');
   assert.ok(ts.analysis?.di?.registrations?.some((r) => r.framework === 'nest'), 'the Nest container is read');
+
+  // The MCP server for agent mode: offered through VS Code's provider API, started as VS Code would start it.
+  mark('MCP server');
+  const api = vscode.extensions.getExtension('tomeqs.codemap-3d').exports;
+  if (typeof vscode.lm?.registerMcpServerDefinitionProvider === 'function') assert.equal(api.mcp, 'vscode', 'the server is offered to agent mode');
+  const { serverLaunch } = require('../../src/mcp');
+  const launch = serverLaunch({ extensionPath: controller.context.extensionPath, folder: vscode.workspace.workspaceFolders[0].uri.fsPath });
+  const tools = await listTools(launch);
+  for (const name of ['analyze', 'list_findings', 'propose_refactorings', 'simulate', 'compare', 'render_map']) assert.ok(tools.includes(name), `codemap mcp has ${name}: ${tools.join(', ')}`);
   console.log('Integration tests passed.');
+}
+
+/** initialize and tools/list over stdio, as an MCP client does. */
+function listTools({ command, args, env }) {
+  const { spawn } = require('child_process');
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { env: { ...process.env, ...env }, windowsHide: true });
+    const stderr = [];
+    let buffer = '';
+    const send = (message) => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`codemap mcp did not answer: ${stderr.join('').slice(-2000)}`));
+    }, 120000);
+    child.on('error', (error) => (clearTimeout(timer), reject(error)));
+    child.stderr.on('data', (data) => stderr.push(String(data)));
+    child.stdout.on('data', (chunk) => {
+      buffer += chunk;
+      for (let end = buffer.indexOf('\n'); end >= 0; end = buffer.indexOf('\n')) {
+        const line = buffer.slice(0, end).trim();
+        buffer = buffer.slice(end + 1);
+        if (!line) continue;
+        const message = JSON.parse(line);
+        if (message.id === 1) {
+          send({ method: 'notifications/initialized' });
+          send({ id: 2, method: 'tools/list' });
+        } else if (message.id === 2) {
+          clearTimeout(timer);
+          child.stdin.end();
+          child.kill();
+          resolve(message.result.tools.map((t) => t.name));
+        }
+      }
+    });
+    send({ id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'codemap-integration', version: '0' } } });
+  });
 }
 
 module.exports = { run };

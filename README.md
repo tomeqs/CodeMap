@@ -228,10 +228,13 @@ The server only reads; it never edits files.
 
 **Add it to an agent** (run in the project's folder, or pass `--root <folder>`):
 
+* VS Code (agent mode, 1.101+) and Cursor: the [extension](#vs-code-extension) offers the server to the editor's agent by
+  itself, in trusted workspaces (`codemap.mcpServer: false` turns that off). *CodeMap: Copy MCP Server Configuration*
+  gives the configuration for other agents.
 * Claude Code: `claude mcp add codemap -- codemap mcp`
-* Cursor, in `.cursor/mcp.json`:
+* Cursor without the extension, in `.cursor/mcp.json`:
   ```json
-  { "mcpServers": { "codemap": { "command": "codemap", "args": ["mcp"] } } }
+  { "mcpServers": { "codemap": { "command": "codemap", "args": ["mcp", "--root", "${workspaceFolder}"] } } }
   ```
 * VS Code, in `.vscode/mcp.json`:
   ```json
