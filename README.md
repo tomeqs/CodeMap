@@ -298,6 +298,28 @@ TypeScript adds `imports` between files.
   hosted service, middleware, test, options, DTO, extensions…
 * **Impact analysis** (in the viewer): what breaks if I change this type (transitive reverse dependencies),
   and the **path** between any two elements ("how does the controller reach the database?").
+* **Findings and a health score** (in the `.md` report): 33 rules read the map for problems. Each finding comes with
+  its evidence: the nodes, `file:line` places, the numbers against their thresholds, and what usually fixes it.
+  * **Spaghetti:**
+    * cycles at every level, each with the cheapest cut;
+    * tangles of 8+ types and hubs;
+    * god classes and feature envy (Lanza–Marinescu: WMC, ATFD, TCC, LAA, FDP);
+    * hidden change coupling, shotgun surgery and hotspots.
+  * **Structure:**
+    * inner layers depending on outer ones, by their names (Domain → Infrastructure);
+    * stable modules depending on volatile ones (Martin's SDP);
+    * the zones of pain and uselessness;
+    * large types, and long or complex methods with long parameter lists;
+    * deep inheritance and middle men;
+    * one-type namespaces and tiny projects;
+    * production code using test code;
+    * interfaces nothing implements.
+  * **DI:** the issues above, circular wiring and constructor over-injection.
+  * **Dead code**, grouped by type.
+
+  Test code, generated code and EF migrations are left out. The score is
+  `100 − (25·cycles + 20·layers + 20·coupling + 20·findings + 15·size)`, graded A–E, and the report shows what each part
+  costs. `FindingsAnalysis.Compute(graph)` gives the same in code.
 
 ## Data format
 
