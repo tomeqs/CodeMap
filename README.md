@@ -238,6 +238,53 @@ How to add another language: [docs/plugins.md](docs/plugins.md).
 | `--open` | open the map in the browser |
 | `--port <n>` / `--no-open` / `--watch` | app options (`codemap` / `codemap ui`) |
 | `codemap export graph.codemap.json -f dgml,cypher` | convert an existing graph to other formats |
+| `codemap mcp [path]` | run as an MCP server for AI agents ([below](#mcp-server-for-ai-agents)) |
+
+## MCP server for AI agents
+
+`codemap mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server on stdio. With it, an AI agent (Claude Code,
+Cursor, VS Code Copilot…) can:
+* read the structure of an application from the map before changing it;
+* find spaghetti code, layer violations, DI mistakes and dead code, with evidence down to `file:line`;
+* check after a refactoring that the structure got better.
+
+The server only reads; it never edits files.
+
+**Add it to an agent** (run in the project's folder, or pass `--root <folder>`):
+
+* Claude Code: `claude mcp add codemap -- codemap mcp`
+* Cursor, in `.cursor/mcp.json`:
+  ```json
+  { "mcpServers": { "codemap": { "command": "codemap", "args": ["mcp"] } } }
+  ```
+* VS Code, in `.vscode/mcp.json`:
+  ```json
+  { "servers": { "codemap": { "type": "stdio", "command": "codemap", "args": ["mcp", "--root", "${workspaceFolder}"] } } }
+  ```
+
+`codemap` is the [ready-made program](#ready-made-program-nothing-to-install) or the [.NET tool](#as-a-net-tool). Without
+`--root`, the server takes the client's first root, else the current folder. TypeScript and JavaScript need Node.js 18+;
+`CODEMAP_NODE` points at a `node` that is not on `PATH`.
+
+| Tool | What it gives the agent |
+|---|---|
+| `analyze` | Maps a folder, solution or project, or loads a `.codemap.json`. Returns the size of the map, the health score and the worst findings. Long analyses go on in the background; `refresh: true` after code changes. |
+| `overview` | Projects or namespaces with size, coupling (Ca, Ce), instability, abstractness, distance and layer. Also the layers with their upward dependencies, the score, hotspots, DI, and an optional Mermaid diagram. |
+| `list_findings` | The [findings](#3-insights-you-dont-see-in-the-ide), worst first: by category, rule, severity or part of the code; brief or with all the evidence; paged. |
+| `describe_node` | One node: its declaration, metrics, members, what it uses and what uses it, calls and callers, DI, cycles and findings. |
+| `explain_dependency` | Why A depends on B: the references behind it (`file:line`), whether it points up or is in a cycle. Without a direct dependency, the shortest chains. |
+| `search_nodes` | Nodes by name, kind, level, tags and metric range, sorted by a metric (e.g. the most complex methods). |
+| `call_flow` | The entry points (controllers, handlers, background services, routes…), or what one does: the call tree through interfaces to the implementation DI injects, and a sequence diagram. |
+| `diagram` | Mermaid: dependencies, layers, one cycle with its cheapest cut, a class with its neighbours, DI wiring, a sequence. |
+| `snapshots` | Saves the current map as a named baseline before refactoring; every tool takes `graph: "<name>"`. |
+
+* **Prompts:** `review_architecture`, `plan_refactoring` and `check_changes` start the usual tasks.
+* **Resources:** `codemap://rules` describes every finding rule (what it finds, its thresholds, why it matters).
+* **Answers:**
+  * every answer is JSON, with a `meta` block;
+  * `meta.stale` says the sources changed since the analysis;
+  * answers over 30,000 characters (`--max-output`) have their longest lists shortened, and `meta.truncated` says so;
+  * names can be ids, full names, names or the end of a full name (`Orders.OrderService`); an ambiguous one returns the candidates.
 
 ## What makes the code map interesting
 
@@ -489,13 +536,16 @@ src/CodeMap.Core      analyzer, graph model, metrics, exporters
   Pipeline/           the shared part of the analysis: choosing languages, merging their graphs into one map, metrics, git, stats
   Loading/            .sln/.slnx/.slnf/.csproj → Roslyn compilations (no MSBuild, no build)
   Analysis/           declarations, reference walker, metrics, cycles, layers, DI, git (churn, change coupling), tags
-  Export/             JSON, DGML, GraphML, Cypher, Markdown, HTML
+  Insights/           findings and the health score, class metrics, call flows, GraphIndex (look-ups for all of them)
+  Export/             JSON, DGML, GraphML, Cypher, Markdown, HTML, Mermaid
 src/CodeMap.Server    the local app: API (ASP.NET Core), folder browser, cloning, cache, live mode
+src/CodeMap.Mcp       the MCP server for AI agents (`codemap mcp`): session, tools, prompts, resources
 src/CodeMap.Cli       the `codemap` tool (dotnet tool or standalone executable), embeds the built viewer
 analyzers/typescript  TypeScript / JavaScript plugin (Node.js + TypeScript compiler API), copied to plugins/typescript
 vscode/               VS Code extension: the map in a webview, code ↔ map navigation, live refresh
 viewer/               3D map: Vite + three.js + d3-force-3d + d3-hierarchy, built into a single HTML file
-tests/CodeMap.Tests   xUnit tests of the analyzer and exporters; Golden/ holds saved maps of samples/Shop, samples/Booking and a small TS app
+tests/CodeMap.Tests   xUnit tests of the analyzer, exporters and MCP server; Golden/ holds saved maps of samples/Shop, samples/Booking and
+                      a small TS app, the Shop findings and diagrams, and the viewer's call flows (flows.mjs) the C# port must match
 samples/Shop          sample solution (DDD, DI, events, a deliberate cycle and dead code)
 samples/shop-ts       the same shop in TypeScript: an npm monorepo with NestJS, Express and Angular
 samples/Booking       C# API and TypeScript client in one folder: a test bed of mapping edge cases (see its README)
@@ -553,7 +603,6 @@ is still mapped, and unresolved symbols are simply skipped.
 * comparing two versions of the graph (an architecture diff between commits / in a PR)
 * a VR/WebXR mode for the City view
 * code ownership (authors from git) as the colour of districts
-* an MCP server that answers questions about the architecture from the graph
 * a Visual Studio extension with the map in an editor panel (VS Code already has one)
 * edges between languages: HTTP calls from TypeScript (`fetch`, `HttpClient`) to C# controller routes
 * more languages as plugins (Python, Java, Go): the protocol is in [docs/plugins.md](docs/plugins.md)

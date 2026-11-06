@@ -25,6 +25,8 @@ internal static class Cli
           codemap <path> [options]                 analyze a .sln/.slnx/.slnf/.csproj/.cs file, a package.json/tsconfig.json/.ts file
                                                    or a folder (every language found in it, merged into one map) into files
           codemap export <graph.codemap.json> [options]   convert an existing graph to other formats
+          codemap mcp [path] [mcp options]         run as an MCP server (stdio) for AI agents: the map, findings, call flows,
+                                                   diagrams; e.g. claude mcp add codemap -- codemap mcp
 
         Options:
           -o, --output <dir>       output directory (default: ./codemap-out)
@@ -44,6 +46,12 @@ internal static class Cli
               --viewer <file>      use a custom viewer template instead of the embedded one
               --open               open the HTML map when done
 
+        MCP options (codemap mcp):
+              --root <dir>         folder that relative paths start from (default: the client's root, else the current one)
+              --no-watch           do not watch the sources (answers then never say the analysis is stale)
+              --max-output <n>     the most characters of one tool answer (default 30000; longer lists are cut)
+              (--lang, --plugins, --no-git, --git-since, --no-tests, --generated, --external work as for analysis)
+
         App options (codemap / codemap ui):
               --port <n>           preferred port (default 5180; a free one is used if taken)
               --no-open            do not open the browser
@@ -58,6 +66,7 @@ internal static class Cli
     {
         try
         {
+            if (args.Length > 0 && args[0] == "mcp") return McpCommand.Run(args[1..]);
             var options = Parse(args);
             if (options == null) return 0;
             return options.Ui ? RunUiAsync(options).GetAwaiter().GetResult() : Execute(options);

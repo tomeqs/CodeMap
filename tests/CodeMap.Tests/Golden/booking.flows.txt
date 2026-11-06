@@ -1,0 +1,204 @@
+## T:Booking.Api.Controllers.ReservationsController (controller, reach 24): M:Booking.Api.Controllers.ReservationsController.Cancel(System.Guid), M:Booking.Api.Controllers.ReservationsController.Create(Booking.Contracts.Dto.CreateReservationRequest), M:Booking.Api.Controllers.ReservationsController.Get(System.Guid), M:Booking.Api.Controllers.ReservationsController.List
+methods 24, types 14, depth 3, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as ReservationsController
+    participant P1 as ReservationService
+    participant P2 as InMemoryReservationRepository
+    participant P3 as ReservationRules
+    participant P4 as Guard
+    participant P5 as Reservation
+    participant P6 as EmailNotifier
+    Note over P0: Cancel()
+    P0->>P1: Cancel()
+    activate P1
+    P1->>P2: Find() [IReservationRepository]
+    P1->>P3: RequireForCancel()
+    activate P3
+    P3->>P4: NotNull#60;T#62;()
+    deactivate P3
+    P1->>P5: Cancel()
+    activate P5
+    P5->>P3: CanCancel()
+    deactivate P5
+    P1->>P2: Save() [IRepository#60;T#62;]
+    P1->>P6: Notify() [INotifier]
+    deactivate P1
+
+sequenceDiagram
+    autonumber
+    participant P0 as ReservationsController
+    participant P1 as ReservationService
+    participant P2 as Reservation
+    participant P3 as ReservationId
+    participant P4 as ReservationValidator
+    participant P5 as InMemoryReservationRepository
+    participant P6 as RedisCache
+    participant P7 as EmailNotifier
+    Note over P0: Create()
+    P0->>P1: Book()
+    activate P1
+    P1-)P2: new Reservation
+    P1->>P3: New()
+    P1-)P4: new ReservationValidator
+    P1->>P4: Validate()
+    P1->>P2: Confirm()
+    P1->>P5: Save() [IRepository#60;T#62;]
+    P1->>P6: Set() [ICache]
+    P1->>P7: Notify() [INotifier]
+    deactivate P1
+    P0->>P0: ToDto()
+
+sequenceDiagram
+    autonumber
+    participant P0 as ReservationsController
+    participant P1 as InMemoryReservationRepository
+    Note over P0: Get()
+    P0->>P0: ToDto() (see above)
+    P0->>P1: Find() [IReservationRepository]
+
+sequenceDiagram
+    autonumber
+    participant P0 as ReservationsController
+    participant P1 as InMemoryReservationRepository
+    Note over P0: List()
+    P0->>P0: ToDto() (see above)
+    P0->>P1: All() [IRepository#60;T#62;]
+
+## ts:@booking/bff:src/routes.ts (controller, reach 14): ts:@booking/bff:src/routes.ts#route:DELETE /reservations, ts:@booking/bff:src/routes.ts#route:GET /reservations, ts:@booking/bff:src/routes.ts#route:GET /rooms, ts:@booking/bff:src/routes.ts#route:POST /reservations
+methods 14, types 3, depth 4, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as routes.ts
+    participant P1 as ReservationsApi
+    participant P2 as HttpClient
+    Note over P0: DELETE /api/reservations
+    P0->>P0: cancel()
+    activate P0
+    P0->>P1: cancel()
+    activate P1
+    P1->>P2: delete()
+    activate P2
+    P2->>P2: send()
+    deactivate P2
+    deactivate P1
+    deactivate P0
+
+sequenceDiagram
+    autonumber
+    participant P0 as routes.ts
+    participant P1 as ReservationsApi
+    participant P2 as HttpClient
+    Note over P0: GET /api/reservations
+    P0->>P0: list()
+    activate P0
+    P0->>P1: list()
+    activate P1
+    P1->>P2: get()
+    activate P2
+    P2->>P2: send()
+    deactivate P2
+    deactivate P1
+    deactivate P0
+
+sequenceDiagram
+    autonumber
+    participant P0 as routes.ts
+    participant P1 as ReservationsApi
+    Note over P0: GET /api/v1/rooms
+    P0->>P1: list() (see above)
+
+sequenceDiagram
+    autonumber
+    participant P0 as routes.ts
+    participant P1 as ReservationsApi
+    participant P2 as HttpClient
+    Note over P0: POST /api/reservations
+    P0->>P0: create()
+    activate P0
+    P0->>P1: create()
+    activate P1
+    P1->>P2: post()
+    activate P2
+    P2->>P2: send()
+    deactivate P2
+    deactivate P1
+    deactivate P0
+
+## T:Booking.Api.Controllers.RoomsController (controller, reach 11): M:Booking.Api.Controllers.RoomsController.Import(System.String), M:Booking.Api.Controllers.RoomsController.List
+methods 11, types 10, depth 2, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as RoomsController
+    participant P1 as RoomImporter
+    Note over P0: Import()
+    P0-)P1: new RoomImporter
+    P0->>P1: Parse()
+
+sequenceDiagram
+    autonumber
+    participant P0 as RoomsController
+    participant P1 as AvailabilityService
+    participant P2 as MemoryCache
+    participant P3 as RedisCache
+    participant P4 as InMemoryReservationRepository
+    participant P5 as PricingService
+    participant P6 as Calendar
+    Note over P0: List()
+    P0->>P1: IsFree()
+    activate P1
+    alt MemoryCache
+        P1->>P2: TryGet() [ICache]
+    else RedisCache
+        P1->>P3: TryGet() [ICache]
+    end
+    P1->>P4: ForRoom() [IReservationRepository]
+    deactivate P1
+    P0->>P5: Quote()
+    activate P5
+    P5->>P6: Today()
+    deactivate P5
+
+## ts:@booking/web:src/main.ts (entrypoint, reach 8): ts:@booking/web:src/main.ts#(top-level)
+methods 8, types 6, depth 3, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as main.ts
+    participant P1 as ReservationList
+    participant P2 as money.ts
+    participant P3 as dates.ts
+    participant P4 as badge.ts
+    participant P5 as HttpClient
+    Note over P0: (top-level)()
+    P0->>P1: render()
+    activate P1
+    P1->>P2: formatMoney()
+    P1->>P3: formatNights()
+    P1->>P4: Badge()
+    deactivate P1
+    P0->>P1: reload()
+    activate P1
+    P1->>P5: get()
+    activate P5
+    P5->>P5: send()
+    deactivate P5
+    deactivate P1
+
+## T:Program (entrypoint, reach 2): M:Program.{Main}$(System.String[])
+methods 2, types 2, depth 1, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as Program
+    participant P1 as ServiceCollectionExtensions
+    Note over P0: Main (top-level statements)()
+    P0->>P1: AddBooking()
+
+## ts:@booking/bff:src/server.ts (entrypoint, reach 2): ts:@booking/bff:src/server.ts#(top-level)
+methods 2, types 2, depth 1, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as server.ts
+    participant P1 as register.ts
+    Note over P0: (top-level)()
+    P0->>P1: register()
+
