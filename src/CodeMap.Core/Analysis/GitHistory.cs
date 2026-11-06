@@ -101,6 +101,9 @@ public sealed class GitHistory
             var psi = new ProcessStartInfo("git")
             {
                 WorkingDirectory = directory,
+                // Its own (empty) stdin: under `codemap mcp` ours is the protocol pipe, and on Windows a child that
+                // inherits it blocks at startup until the client writes again (I/O on the pipe is serialized).
+                RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -109,6 +112,7 @@ public sealed class GitHistory
             foreach (var arg in args) psi.ArgumentList.Add(arg);
             using var process = Process.Start(psi);
             if (process == null) return null;
+            process.StandardInput.Close();
             var stdout = process.StandardOutput.ReadToEndAsync();
             _ = process.StandardError.ReadToEndAsync();
             process.WaitForExit();

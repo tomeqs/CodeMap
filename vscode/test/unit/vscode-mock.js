@@ -16,6 +16,10 @@ class Emitter {
   fire(value) {
     for (const listener of this.listeners) listener(value);
   }
+
+  dispose() {
+    this.listeners = [];
+  }
 }
 
 class Uri {
@@ -80,10 +84,12 @@ function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
     Uri,
     Position,
     Range,
+    EventEmitter: Emitter,
     ViewColumn: { Active: -1, Beside: -2, One: 1, Two: 2 },
     ProgressLocation: { Notification: 15, Window: 10 },
     StatusBarAlignment: { Left: 1, Right: 2 },
     env: {
+      appName: 'Visual Studio Code',
       clipboard: { writeText: async (text) => log.clipboard.push(text) },
       openExternal: async (uri) => void log.external.push(uri.fsPath),
     },
@@ -135,7 +141,10 @@ function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
       registerWebviewPanelSerializer: () => ({ dispose() {} }),
       withProgress: async (options, task) => task({ report() {} }, { onCancellationRequested() {} }),
       showErrorMessage: async (message) => void log.errors.push(message),
-      showInformationMessage: async (message) => void log.infos.push(message),
+      showInformationMessage: async (message, ...items) => {
+        log.infos.push(message);
+        return typeof log.answer === 'function' ? log.answer(message, items) : undefined;
+      },
       showWarningMessage: async (message) => void log.warnings.push(message),
       setStatusBarMessage: () => ({ dispose() {} }),
       showQuickPick: async (items) => {
@@ -156,7 +165,17 @@ function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
       },
       asRelativePath: (p) => path.relative(workspaceRoot ?? '', p),
       openTextDocument: async (uri) => ({ uri }),
-      fs: { writeFile: async (uri, content) => void log.saved.push({ file: uri.fsPath, content: content.toString() }) },
+      isTrusted: true,
+      fs: {
+        writeFile: async (uri, content) => void log.saved.push({ file: uri.fsPath, content: content.toString() }),
+        readFile: async (uri) => {
+          const saved = log.saved.filter((s) => s.file === uri.fsPath).pop();
+          if (saved) return Buffer.from(saved.content);
+          if (uri.fsPath in (log.existing ?? {})) return Buffer.from(log.existing[uri.fsPath]);
+          throw Object.assign(new Error('FileNotFound'), { code: 'FileNotFound' });
+        },
+        createDirectory: async () => {},
+      },
       onDidSaveTextDocument: (listener) => saveEmitter.event(listener),
       onDidCreateFiles: () => ({ dispose() {} }),
       onDidDeleteFiles: () => ({ dispose() {} }),
@@ -188,4 +207,4 @@ function fakeContext(extensionPath, storagePath) {
   };
 }
 
-module.exports = { createMock, fakeContext, installMock, Uri };
+module.exports = { createMock, Emitter, fakeContext, installMock, Uri };

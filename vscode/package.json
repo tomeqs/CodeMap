@@ -1,8 +1,8 @@
 {
   "name": "codemap-3d",
   "displayName": "CodeMap 3D",
-  "description": "Interactive 3D map of your C# and TypeScript / JavaScript code: dependencies, architecture layers, DI lifetimes, call flows and sequence diagrams, one click away from the code.",
-  "version": "0.2.4",
+  "description": "Interactive 3D map of your C# and TypeScript / JavaScript code: dependencies, architecture layers, DI lifetimes, call flows and sequence diagrams, one click away from the code. Includes an MCP server that lets AI agents read and improve the structure.",
+  "version": "0.3.0",
   "publisher": "tomeqs",
   "license": "MIT",
   "repository": {
@@ -30,7 +30,9 @@
     "dependency graph",
     "code map",
     "sequence diagram",
-    "3d"
+    "3d",
+    "mcp",
+    "ai"
   ],
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -42,7 +44,10 @@
     "workspace"
   ],
   "activationEvents": [
-    "onWebviewPanel:codemap.map"
+    "onWebviewPanel:codemap.map",
+    "onMcpServerDefinitionProvider:codemap.mcp",
+    "workspaceContains:**/*.{sln,slnx,slnf,csproj}",
+    "workspaceContains:**/{package.json,tsconfig.json,jsconfig.json}"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -89,6 +94,16 @@
       {
         "command": "codemap.chooseTarget",
         "title": "Choose What to Analyze…",
+        "category": "CodeMap"
+      },
+      {
+        "command": "codemap.copyMcpConfig",
+        "title": "Copy MCP Server Configuration",
+        "category": "CodeMap"
+      },
+      {
+        "command": "codemap.addMcpConfig",
+        "title": "Add MCP Server to Workspace (mcp.json)",
         "category": "CodeMap"
       }
     ],
@@ -177,6 +192,11 @@
           "default": "auto",
           "description": "Graphics API for the 3D map. Reopen the map to apply."
         },
+        "codemap.mcpServer": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Offer CodeMap's MCP server (`codemap mcp`) to the editor's AI agents (VS Code's agent mode, Cursor) in trusted workspaces: they can read the structure of the code, its findings and refactoring proposals, and pictures of the map."
+        },
         "codemap.analyzerPath": {
           "type": "string",
           "default": "",
@@ -196,7 +216,13 @@
           "markdownDescription": "Node.js (18 or newer) that analyzes TypeScript and JavaScript. Empty: the Node.js built into VS Code, so nothing needs to be installed. Set it to a `node` executable for very large code bases (VS Code's Node.js has a smaller memory limit)."
         }
       }
-    }
+    },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "codemap.mcp",
+        "label": "CodeMap"
+      }
+    ]
   },
   "scripts": {
     "prepare-assets": "node scripts/prepare.js",

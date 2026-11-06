@@ -28,6 +28,25 @@ With only C#, CodeMap opens the solution; with only TypeScript / JavaScript, the
 
 The map updates itself when you save source or project files (`.cs`, `.csproj`, `.ts`, `.js`, `package.json`, `tsconfig.json`…); the camera and the selection stay where they were.
 
+## For AI agents: the MCP server
+
+The extension offers CodeMap's MCP server (`codemap mcp`) to the editor's AI agents: **Copilot's agent mode** in VS Code
+(1.101 or newer) and the **Cursor** agent. Nothing to configure: in a trusted workspace the server is in the agent's tool
+list, running on the same analyzer as the map. With it, the agent can:
+
+- read the structure before changing the code: layers, coupling, what depends on what, down to `file:line`;
+- find spaghetti code, layer violations, DI mistakes, dead code and mistakes inside function bodies (lost exceptions, missed `await`s, `async void`…), with the evidence;
+- get concrete refactorings (break a cycle at its cheapest cut, split a god class along its groups of members, move an envious method…), try them on a copy of the map first, and after editing check that the structure really got better;
+- look at the 3D map itself: `render_map` returns pictures of any view, with a cycle, a path or a finding lit up (needs Chrome, Edge or Chromium installed).
+
+| | |
+|---|---|
+| **CodeMap: Copy MCP Server Configuration** | The configuration for another agent: `mcp.json` (Claude Desktop, Windsurf…), `claude mcp add` for Claude Code, or VS Code's format |
+| **CodeMap: Add MCP Server to Workspace (mcp.json)** | Writes it to `.cursor/mcp.json` (Cursor) or `.vscode/mcp.json` (VS Code), e.g. to share it with the team or for an editor without the automatic registration |
+| `codemap.mcpServer` | `false` stops offering the server to the editor's agents |
+
+The tools, prompts and options are described in the [main README](https://github.com/tomeqs/CodeMap#mcp-server-for-ai-agents).
+
 ## Requirements
 
 - **.NET SDK 8 or newer** (`dotnet` on PATH): the extension runs the CodeMap analyzer on it. You don't need to build or restore the solution, although restored projects give more complete results.
@@ -43,6 +62,7 @@ The map updates itself when you save source or project files (`.cs`, `.csproj`, 
 | `codemap.includeExternal` | `false` | Include framework, NuGet and npm code |
 | `codemap.gitHistory` | `true` | Churn, hotspots and change coupling from git |
 | `codemap.renderer` | `auto` | Graphics API of the map: WebGPU where the editor supports it, otherwise WebGL 2 (`webgpu` / `webgl` to prefer one; when it is missing, the other is used) |
+| `codemap.mcpServer` | `true` | Offer the MCP server to the editor's AI agents (VS Code agent mode, Cursor) in trusted workspaces |
 | `codemap.analyzerPath` | | Use another analyzer (a `codemap` executable or `codemap.dll`) |
 | `codemap.dotnetPath` | `dotnet` | The dotnet that runs the bundled analyzer |
 | `codemap.nodePath` | | Node.js 18+ for TypeScript / JavaScript instead of the one inside VS Code (for very large code bases: VS Code's Node.js has a lower memory limit) |

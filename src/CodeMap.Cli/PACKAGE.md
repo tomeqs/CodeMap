@@ -19,5 +19,29 @@ codemap --version                    # which languages are available here
 - **Insights**: architecture layers and upward dependencies, DI lifetime problems (captive dependencies, request scope,
   unreachable providers), cycles, hotspots from git history, possibly unused code.
 
+## For AI agents: `codemap mcp`
+
+An MCP server on stdio, so that an AI agent (Claude Code, Cursor, VS Code's agent mode…) can understand the structure of
+the code and improve it. It:
+- reads the map;
+- finds spaghetti code, layer violations, DI mistakes, dead code and mistakes inside function bodies, with evidence down
+  to `file:line`;
+- proposes concrete refactorings and simulates them on a copy of the map;
+- compares the map before and after;
+- returns PNG pictures of the 3D map (with Chrome, Edge or Chromium installed).
+
+It only reads; it never edits files.
+
+```bash
+claude mcp add codemap -- codemap mcp                 # Claude Code, in the project's folder
+```
+
+```json
+{ "mcpServers": { "codemap": { "command": "codemap", "args": ["mcp", "--root", "${workspaceFolder}"] } } }
+```
+
+The JSON is for `.cursor/mcp.json` (Cursor) and most agents' `mcp.json`. The VS Code extension offers the server to
+VS Code and Cursor by itself.
+
 Standalone executables (no .NET needed), the VS Code extension and the documentation:
 https://github.com/tomeqs/CodeMap

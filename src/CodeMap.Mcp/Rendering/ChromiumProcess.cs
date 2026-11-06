@@ -25,11 +25,13 @@ internal sealed class ChromiumProcess : IAsyncDisposable
 
     private readonly Process _process;
     private readonly string _profile;
+    private readonly IDisposable? _job;
 
-    private ChromiumProcess(Process process, string profile, string webSocketUrl)
+    private ChromiumProcess(Process process, string profile, string webSocketUrl, IDisposable? job)
     {
         _process = process;
         _profile = profile;
+        _job = job;
         WebSocketUrl = webSocketUrl;
     }
 
@@ -38,7 +40,7 @@ internal sealed class ChromiumProcess : IAsyncDisposable
 
     public bool HasExited => _process.HasExited;
 
-    public static async Task<ChromiumProcess> StartAsync(string executable, bool webgpu, CancellationToken ct)
+    public static async Task<ChromiumProcess> StartAsync(string executable, bool webgpu, CancellationToken ct, TextWriter? log = null)
     {
         var profile = Path.Combine(Path.GetTempPath(), "codemap-browser-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
@@ -47,7 +49,8 @@ internal sealed class ChromiumProcess : IAsyncDisposable
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = false,
+            // Never our stdin: it is the protocol pipe, which a child on Windows blocks on.
+            RedirectStandardInput = true,
             CreateNoWindow = true,
         };
         foreach (var arg in new[]
@@ -65,6 +68,9 @@ internal sealed class ChromiumProcess : IAsyncDisposable
         psi.ArgumentList.Add("about:blank");
 
         var process = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start {executable}.");
+        // Windows: the browser dies with codemap even when codemap is killed. (Elsewhere, McpCommand stops on SIGTERM / SIGHUP.)
+        var job = OperatingSystem.IsWindows() ? WindowsJob.KillOnClose(process, log ?? TextWriter.Null) : null;
+        process.StandardInput.Close();
         var stderr = new Queue<string>();
         process.OutputDataReceived += (_, _) => { };
         process.ErrorDataReceived += (_, e) =>
@@ -82,26 +88,43 @@ internal sealed class ChromiumProcess : IAsyncDisposable
         // Chromium writes the port it chose (and the browser's path) to DevToolsActivePort in the profile.
         var file = Path.Combine(profile, "DevToolsActivePort");
         var deadline = DateTime.UtcNow.AddSeconds(30);
-        while (DateTime.UtcNow < deadline)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            if (process.HasExited) break;
-            if (File.Exists(file) && Parse(await ReadShared(file).ConfigureAwait(false)) is { } endpoint)
+            while (DateTime.UtcNow < deadline)
             {
-                return new ChromiumProcess(process, profile, $"ws://127.0.0.1:{endpoint.Port}{endpoint.Path}");
-            }
+                ct.ThrowIfCancellationRequested();
+                if (process.HasExited) break;
+                if (File.Exists(file) && Parse(await ReadShared(file).ConfigureAwait(false)) is { } endpoint)
+                {
+                    return new ChromiumProcess(process, profile, $"ws://127.0.0.1:{endpoint.Port}{endpoint.Path}", job);
+                }
 
-            await Task.Delay(100, ct).ConfigureAwait(false);
+                await Task.Delay(100, ct).ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // Cancelled while it started: it must not stay behind.
+            Abandon(process, job, profile);
+            throw;
         }
 
         var exited = process.HasExited;
-        Kill(process);
-        TryDelete(profile);
+        var exitCode = exited ? process.ExitCode : 0;
+        Abandon(process, job, profile);
         string said;
         lock (stderr) said = stderr.Count > 0 ? $" It said: {string.Join(" / ", stderr)}" : "";
         throw new InvalidOperationException((exited
-            ? $"{Path.GetFileName(executable)} stopped right after starting (exit code {process.ExitCode})."
+            ? $"{Path.GetFileName(executable)} stopped right after starting (exit code {exitCode})."
             : $"{Path.GetFileName(executable)} did not open its DevTools port within 30 s.") + said);
+    }
+
+    private static void Abandon(Process process, IDisposable? job, string profile)
+    {
+        Kill(process);
+        job?.Dispose();
+        process.Dispose();
+        TryDelete(profile);
     }
 
     /// <summary>DevToolsActivePort: the port on the first line, the browser target's path on the second.</summary>
@@ -126,9 +149,19 @@ internal sealed class ChromiumProcess : IAsyncDisposable
         }
     }
 
+    /// <summary>Waits for the browser to exit by itself (after Browser.close), up to <paramref name="timeout"/>.</summary>
+    public async Task WaitForExitAsync(TimeSpan timeout)
+    {
+        using var cts = new CancellationTokenSource(timeout);
+        try { await _process.WaitForExitAsync(cts.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException) { }
+    }
+
     public ValueTask DisposeAsync()
     {
         Kill(_process);
+        _job?.Dispose();
         _process.Dispose();
         TryDelete(_profile);
         return ValueTask.CompletedTask;
@@ -138,7 +171,10 @@ internal sealed class ChromiumProcess : IAsyncDisposable
     {
         try
         {
-            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            // Windows: the whole tree (the job object covers a killed codemap too). Elsewhere the browser process only: a
+            // tree kill there first SIGSTOPs it and walks every process on the machine, and a stopped Chrome on macOS
+            // can take the window server down with it (it froze a CI runner). Its helpers end when it does.
+            if (!process.HasExited) process.Kill(entireProcessTree: OperatingSystem.IsWindows());
             process.WaitForExit(5000);
         }
         catch (InvalidOperationException) { }

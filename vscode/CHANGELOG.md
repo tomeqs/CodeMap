@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+- **An MCP server for AI agents**, `codemap mcp`. The extension offers it to Copilot's agent mode in VS Code (1.101 or newer) and to the Cursor agent by itself, in trusted workspaces (`codemap.mcpServer` turns it off). *CodeMap: Copy MCP Server Configuration* gives the configuration for Claude Code, Claude Desktop and other agents, and *CodeMap: Add MCP Server to Workspace* writes it to `.cursor/mcp.json` or `.vscode/mcp.json`. With it, an agent can:
+  - **read the structure** before changing the code: overview of the projects and namespaces with their coupling, instability and layer, any node with what it uses and what uses it, why A depends on B (the references, `file:line`), call flows from the entry points, Mermaid diagrams.
+  - **find problems, with evidence**: cycles with their cheapest cut, tangles, hubs, god classes, feature envy, hidden change coupling, shotgun surgery, hotspots, layer violations (computed and by convention), SDP and main-sequence zones, oversized types and methods, DI mistakes (captive dependencies, circular registrations, over-injection), dead code. Each finding has a stable id, its nodes, locations, evidence and a suggestion. A **health score** (A–E) shows how each part counts.
+  - **find mistakes inside function bodies**, C# and TypeScript / JavaScript: swallowed exceptions, `throw ex`, `async void`, `.Result` / `.Wait()`, floating promises, `forEach(async …)`, unreachable code, self-comparisons, duplicate `case`s, loose equality, and the compiler's own warnings that point at bugs (nullable warnings only where the project enables them). `codemap --checks` adds them to the map's file too.
+  - **get refactorings**: break a cycle, invert a layer violation, move a type or an envious method, split a god class along its groups of members, merge a tiny namespace, delete dead code, fix a DI lifetime. Each with steps in the code, its cost, and what it would fix, checked by a simulation.
+  - **try changes first**: `simulate` applies moves, merges, removed or inverted dependencies, extracted interfaces, splits and lifetime changes to a copy of the map and shows what they change.
+  - **compare** two maps (a baseline and the code after the edits): score, findings, cycles, dependencies, moved and renamed types and namespaces.
+  - **look at the map**: `render_map` returns PNG pictures of any view (galaxy, city, layers, DI, flow, matrix), with a node, a path, a cycle, a DI issue or a finding lit up, drawn in a headless Chrome, Edge or Chromium that closes with the server.
+
 ## 0.2.4
 
 - The map starts in editors without WebGL 2 (Cursor or VS Code with hardware acceleration off, a machine without a GPU): it draws with WebGPU instead, whichever renderer is set, rather than failing with "Cannot read properties of null (reading 'getSupportedExtensions')". With neither WebGPU nor WebGL 2, it says so and offers *Open in Browser*.

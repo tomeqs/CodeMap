@@ -79,6 +79,7 @@ jobs:
 
       - name: Smoke test
         if: matrix.smoke
+        timeout-minutes: 15
         run: |
           exe=./publish/codemap${{ runner.os == 'Windows' && '.exe' || '' }}
           "$exe" --version
@@ -90,6 +91,8 @@ jobs:
           "$exe" samples -o smoke-mixed -f json -q
           grep -q '"T:Shop.Domain.Orders.Order"' smoke-mixed/samples.codemap.json
           grep -q '"ts:project:@shop/domain"' smoke-mixed/samples.codemap.json
+          # The MCP server, as an agent uses it: analysis, findings, proposals, a diagram and a picture of the map.
+          node tests/mcp-smoke.mjs "$exe"
 
       - name: Archive
         run: |
