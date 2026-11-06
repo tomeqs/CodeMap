@@ -6,19 +6,53 @@ namespace CodeMap.Pipeline;
 /// <summary>Churn, authors and age of every type from the git history, then hotspots and change coupling.</summary>
 internal static class GitEnrichment
 {
-    public static void Apply(CodeGraph graph, AnalyzerOptions options, Action<string> log)
+    private const string ShallowWarning = "The repository is a shallow clone";
+
+    /// <summary>The history of the repository the graph's root is in; null when there is none or it is empty.</summary>
+    public static GitHistory? Read(CodeGraph graph, AnalyzerOptions options, Action<string> log)
+    {
+        var history = GitHistory.Read(graph.Source.Root, options.GitSince, options.GitMaxCommits, log);
+        return history is { CommitCount: > 0 } ? history : null;
+    }
+
+    public static void Apply(CodeGraph graph, GitHistory history, AnalyzerOptions options)
     {
         var root = graph.Source.Root;
-        var history = GitHistory.Read(root, options.GitSince, options.GitMaxCommits, log);
-        if (history is not { CommitCount: > 0 }) return;
-
         ApplyChurn(graph, history, root);
         GraphMetrics.ComputeHotspots(graph);
         ChangeCouplingAnalysis.Compute(graph, history, root);
-        graph.Source.Git = new GitInfo { Branch = history.Branch, Commit = history.Head, CommitsAnalyzed = history.CommitCount, Since = options.GitSince, Shallow = history.Shallow };
-        if (history.Shallow)
+        Finish(graph, new GitInfo { Branch = history.Branch, Commit = history.Head, CommitsAnalyzed = history.CommitCount, Since = options.GitSince, Shallow = history.Shallow });
+    }
+
+    /// <summary>The same from git data taken from another map (a saved one, or the analysis a simulation started from).</summary>
+    public static void Apply(CodeGraph graph, GitSnapshot snapshot)
+    {
+        if (snapshot.Git == null) return;
+        var byId = graph.Nodes.ToDictionary(n => n.Id, StringComparer.Ordinal);
+        foreach (var (id, metrics) in snapshot.Metrics)
         {
-            graph.Analysis.Warnings.Add($"The repository is a shallow clone with only {history.CommitCount} commit(s): churn, hotspots and change coupling see just these (git fetch --unshallow gives them the whole history).");
+            if (!byId.TryGetValue(id, out var node) || !NodeLevels.IsType(node) || node.External) continue;
+            foreach (var (name, value) in metrics) node.SetMetric(name, value);
+        }
+
+        GraphMetrics.ComputeHotspots(graph);
+        var pairs = snapshot.ChangeCoupling.Where(p => byId.ContainsKey(p.Source) && byId.ContainsKey(p.Target))
+            .Select(p => new ChangeCouplingInfo { Source = p.Source, Target = p.Target, SharedCommits = p.SharedCommits, Strength = p.Strength })
+            .ToList();
+        ChangeCouplingAnalysis.Attach(graph, pairs);
+        var git = snapshot.Git;
+        Finish(graph, new GitInfo { Branch = git.Branch, Commit = git.Commit, CommitsAnalyzed = git.CommitsAnalyzed, Since = git.Since, Shallow = git.Shallow });
+    }
+
+    /// <summary>Warnings this step writes (taken out again when a map is turned back into its raw graph).</summary>
+    public static bool IsGitWarning(string warning) => warning.StartsWith(ShallowWarning, StringComparison.Ordinal);
+
+    private static void Finish(CodeGraph graph, GitInfo git)
+    {
+        graph.Source.Git = git;
+        if (git.Shallow)
+        {
+            graph.Analysis.Warnings.Add($"{ShallowWarning} with only {git.CommitsAnalyzed} commit(s): churn, hotspots and change coupling see just these (git fetch --unshallow gives them the whole history).");
         }
     }
 
@@ -51,5 +85,32 @@ internal static class GitEnrichment
             node.SetMetric("authors", authors.Count);
             node.SetMetric("ageDays", Math.Max(0, (now - last) / 86400));
         }
+    }
+}
+
+/// <summary>The git data of a finished map: per-type churn metrics, change coupling and where it came from.</summary>
+internal sealed class GitSnapshot
+{
+    private static readonly string[] Names = { "commits", "churn", "authors", "ageDays" };
+
+    public GitInfo? Git { get; private init; }
+    public Dictionary<string, List<(string Name, double Value)>> Metrics { get; } = new(StringComparer.Ordinal);
+    public List<ChangeCouplingInfo> ChangeCoupling { get; private init; } = new();
+
+    public static GitSnapshot Capture(CodeGraph graph)
+    {
+        var snapshot = new GitSnapshot
+        {
+            Git = graph.Source.Git,
+            ChangeCoupling = graph.Analysis.ChangeCoupling.ToList(),
+        };
+        foreach (var node in graph.Nodes)
+        {
+            if (node.Metrics == null || !NodeLevels.IsType(node)) continue;
+            var values = Names.Where(node.Metrics.ContainsKey).Select(n => (n, node.Metrics[n])).ToList();
+            if (values.Count > 0) snapshot.Metrics[node.Id] = values;
+        }
+
+        return snapshot;
     }
 }
