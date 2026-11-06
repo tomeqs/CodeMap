@@ -6,6 +6,7 @@ import { Resolver, compilerOptions, createHost } from './program.mjs';
 import { folderId, moduleId, packageId, projectId } from './ids.mjs';
 import { declareComponent, declareModule } from './extract/declarations.mjs';
 import { collectReferences } from './extract/references.mjs';
+import { collectDiagnostics } from './extract/checks.mjs';
 import { collectComponentImports, collectImports } from './extract/imports.mjs';
 import { applyFrameworks, finishAllRoutes, finishDi } from './frameworks/index.mjs';
 
@@ -26,6 +27,7 @@ export function analyze(ts, request, log = () => {}) {
   const files = new Map(); // file name as the compiler writes it → where it sits on the map
   const stats = { unresolved: 0, unresolvedExamples: [], generated: 0 };
   const warnings = [];
+  const diagnostics = [];
   const projectsByName = new Map(projects.map((p) => [p.name, p]));
   const ensurePackage = (name, version) => {
     if (!graph.has(packageId(name))) graph.addNode({ id: packageId(name), kind: 'package', name, fullName: name, signature: version || undefined, external: true });
@@ -121,6 +123,11 @@ export function analyze(ts, request, log = () => {}) {
       collectImports(ctx, sf, info);
     }
 
+    // Checks inside function bodies (--checks): not in test files.
+    if (options.checks) {
+      for (const [sf, info] of declared) if (!info.isTest) diagnostics.push(...collectDiagnostics(ctx, sf, info));
+    }
+
     // .vue / .svelte / .astro: a file on the map with the imports of its scripts.
     for (const file of project.components) {
       const info = files.get(toPosix(file));
@@ -170,8 +177,13 @@ export function analyze(ts, request, log = () => {}) {
     },
     nodes,
     edges,
-    analysis: di ? { warnings, di } : { warnings },
+    analysis: { warnings, ...(di ? { di } : {}), ...(options.checks ? { diagnostics: sortDiagnostics(diagnostics) } : {}) },
   };
+}
+
+/** By file, line, column and rule, as CodeMap orders them. */
+function sortDiagnostics(list) {
+  return list.sort((a, b) => cmp(a.location.file, b.location.file) || a.location.line - b.location.line || a.column - b.column || cmp(a.rule, b.rule));
 }
 
 /**

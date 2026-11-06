@@ -83,6 +83,24 @@ public static class FragmentValidator
             if (di.Registrations.Count == 0 && di.Dependencies.Count == 0) graph.Analysis.Di = null;
         }
 
+        if (graph.Analysis.Diagnostics is { } diagnostics)
+        {
+            var kept = new List<CodeDiagnostic>();
+            foreach (var d in diagnostics)
+            {
+                if (string.IsNullOrWhiteSpace(d.Rule) || d.Location == null || Relative(d.Location, root) is not { } location) continue;
+                d.Location = location;
+                if (d.Severity is not ("error" or "warning" or "info")) d.Severity = "warning";
+                if (d.Source is not ("compiler" or "codemap")) d.Source = "codemap";
+                if (string.IsNullOrWhiteSpace(d.Category)) d.Category = "correctness";
+                if (d.Node != null && !ids.Contains(d.Node)) d.Node = null;
+                kept.Add(d);
+            }
+
+            Count(diagnostics.Count - kept.Count, "diagnostics without a rule or a place in the root");
+            graph.Analysis.Diagnostics = Analysis.CodeDiagnostics.Capped(kept).ToList();
+        }
+
         Count(foreign, $"nodes had ids outside '{plugin.IdPrefix}'");
         Count(duplicates, "duplicate node ids");
         Count(levels, "unknown levels");

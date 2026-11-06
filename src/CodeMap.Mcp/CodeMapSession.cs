@@ -208,6 +208,7 @@ internal sealed class CodeMapSession : IDisposable
         Git = o.Git,
         GitSince = o.GitSince,
         GitMaxCommits = o.GitMaxCommits,
+        CodeChecks = o.CodeChecks,
     };
 
     // ------------------------------------------------------------------ baselines

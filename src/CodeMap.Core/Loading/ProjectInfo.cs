@@ -16,6 +16,12 @@ public sealed class ProjectInfo
     public bool IsTestProject { get; set; }
     public bool UseWindowsDesktop { get; set; }
 
+    /// <summary>The project's &lt;Nullable&gt; setting (enable, warnings, annotations, disable), or null when not set.</summary>
+    public string? Nullable { get; set; }
+
+    /// <summary>Warnings the project turns off (&lt;NoWarn&gt;), as compiler ids (CS0168).</summary>
+    public HashSet<string> NoWarn { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>True when the project was synthesised from a folder of loose .cs files.</summary>
     public bool IsVirtual { get; set; }
 

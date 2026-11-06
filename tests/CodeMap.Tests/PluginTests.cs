@@ -208,6 +208,36 @@ public class PluginTests
     }
 
     [Fact]
+    public void Diagnostics_from_a_plugin_are_checked()
+    {
+        using var ws = new TestWorkspace().File("good/codemap-plugin.json", Manifest("good", "good:"));
+        var plugin = PluginManifest.Load(Path.Combine(ws.Root, "good", "codemap-plugin.json"));
+        var graph = new CodeGraph();
+        graph.Nodes.Add(new GraphNode { Id = "good:a", Kind = "module", Name = "a", Location = new SourceLocation { File = "a.x", Line = 1, EndLine = 9 } });
+        CodeDiagnostic Diagnostic(string rule, string file, string? node = null, string severity = "warning") =>
+            new() { Rule = rule, Severity = severity, Message = "m", Location = new SourceLocation { File = file, Line = 3 }, Node = node };
+        graph.Analysis.Diagnostics = new List<CodeDiagnostic>
+        {
+            Diagnostic("ok", "a.x", "good:a"),
+            Diagnostic("unknown-node", "a.x", "good:missing", severity: "fatal"),
+            Diagnostic("", "a.x"),
+            Diagnostic("outside", "../elsewhere.x"),
+        };
+        graph.Analysis.Diagnostics.AddRange(Enumerable.Range(0, CodeDiagnostics.MaxPerRule + 5).Select(_ => Diagnostic("many", "a.x")));
+
+        FragmentValidator.Validate(graph, plugin, ws.Root);
+
+        var kept = graph.Analysis.Diagnostics!;
+        Assert.Equal("good:a", kept.Single(d => d.Rule == "ok").Node);
+        var unknown = kept.Single(d => d.Rule == "unknown-node");
+        Assert.Null(unknown.Node);
+        Assert.Equal("warning", unknown.Severity);
+        Assert.DoesNotContain(kept, d => d.Rule is "" or "outside");
+        Assert.Equal(CodeDiagnostics.MaxPerRule, kept.Count(d => d.Rule == "many"));
+        Assert.Contains(graph.Analysis.Warnings, w => w.Contains("2 diagnostics without a rule or a place in the root"));
+    }
+
+    [Fact]
     public void Parent_cycles_from_a_plugin_are_cut()
     {
         using var ws = new TestWorkspace().File("good/codemap-plugin.json", Manifest("good", "good:"));

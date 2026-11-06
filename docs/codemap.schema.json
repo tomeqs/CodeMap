@@ -117,6 +117,24 @@
           }
         },
         "di": { "$ref": "#/$defs/di" },
+        "diagnostics": {
+          "type": "array",
+          "description": "Problems inside function bodies: compiler warnings and CodeMap's own checks (only with --checks).",
+          "items": {
+            "type": "object",
+            "required": ["rule", "source", "severity", "category", "message", "location"],
+            "properties": {
+              "rule": { "type": "string", "description": "A compiler code (CS0162, TS2367) or a CodeMap rule (empty-catch, floating-promise...)." },
+              "source": { "enum": ["compiler", "codemap"] },
+              "severity": { "enum": ["error", "warning", "info"] },
+              "category": { "type": "string", "description": "correctness, async, exceptions, resources, concurrency, nullability, dead-code" },
+              "message": { "type": "string" },
+              "location": { "$ref": "#/$defs/location" },
+              "column": { "type": "integer", "minimum": 1 },
+              "node": { "type": "string", "description": "The innermost node the line is in." }
+            }
+          }
+        },
         "warnings": { "type": "array", "items": { "type": "string" } }
       }
     }

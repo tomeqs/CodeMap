@@ -84,7 +84,7 @@ CodeMap uruchamia `command` w folderze wtyczki i pisze na **stdin** żądanie (U
   "target": "/abs/folder-albo-plik",
   "output": "/tmp/codemap-…/fragment.json",
   "codemapVersion": "0.1.0",
-  "options": { "includeTests": true, "includeGenerated": false, "includeExternal": false }
+  "options": { "includeTests": true, "includeGenerated": false, "includeExternal": false, "checks": false }
 }
 ```
 
@@ -107,6 +107,9 @@ Dokument [CodeMap JSON](format.md) w wersji `1.x`:
 * `edges`: zależności (`calls` i `instantiates` z `line` pierwszego wystąpienia; własne rodzaje są dozwolone);
 * `location` względem `root`, z `/`; metryki `loc` i `complexity` (1 + liczba decyzji, jak w C#), tagi ról (`entrypoint`, `test`, `controller`…);
 * `source` (`path`, `root`, `kind`, `name`), `analysis.warnings`;
+* gdy `options.checks` jest `true`: `analysis.diagnostics`, problemy w treści funkcji (`rule`, `source`, `severity`, `category`, `message`, `location`, `column`, opcjonalnie `node`;
+  [format](format.md#diagnostics)). Bez `node` CodeMap przypisze najgłębszy węzeł, którego deklaracja obejmuje linię; wyniki spoza `root` albo bez `rule` odrzuci,
+  a każdej reguły zostawi najwyżej 300;
 * opcjonalnie `analysis.di`: rejestracje kontenera (`registrations`, z `framework`) i zależności konstruktorów (`dependencies`: `consumer`, `service`, `external`, `many`, `optional`). Czasy życia, implementacje i problemy policzy CodeMap według reguł kontenera: `microsoft` (domyślny), `nest`, `angular`; dla nieznanej nazwy tylko powiązania i brakujące rejestracje.
 
 Metryki pochodne (coupling, fan-in/out, abstractness…), cykle, warstwy, nieużywany kod, hotspoty i statystyki liczy CodeMap.
