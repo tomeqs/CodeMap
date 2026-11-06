@@ -91,7 +91,7 @@ public sealed class McpServerTests
         Assert.Contains("analyze", c.Client.ServerInstructions);
 
         var tools = await c.Client.ListToolsAsync();
-        Assert.Equal(new[] { "analyze", "call_flow", "compare", "describe_node", "diagram", "explain_dependency", "list_findings", "overview", "search_nodes", "simulate", "snapshots" },
+        Assert.Equal(new[] { "analyze", "call_flow", "compare", "describe_node", "diagram", "explain_dependency", "list_findings", "overview", "propose_refactorings", "search_nodes", "simulate", "snapshots" },
             tools.Select(t => t.Name).Order(StringComparer.Ordinal));
         Assert.All(tools, t =>
         {
@@ -330,6 +330,28 @@ public sealed class McpServerTests
         Assert.Contains("operations[0].to", bad);
         var operations = await c.Client.ReadResourceAsync("codemap://operations");
         Assert.Contains("invertDependency", ((TextResourceContents)operations.Contents[0]).Text);
+    }
+
+    [Fact]
+    public async Task Proposals_come_with_operations_that_simulate_takes_as_they_are()
+    {
+        await using var c = await ShopAsync();
+        var (json, text, error) = await c.CallAsync("propose_refactorings", new { limit = 3 });
+        Assert.False(error, text);
+        var first = json.GetProperty("proposals")[0];
+        Assert.Equal("fix-di", first.GetProperty("kind").GetString());
+        Assert.Contains(first.GetProperty("predicted").GetProperty("resolves").EnumerateArray(), r => r.GetString()!.StartsWith("di.captive@"));
+        Assert.NotEmpty(first.GetProperty("steps").EnumerateArray());
+
+        var operations = first.GetProperty("operations");
+        Assert.Equal("setLifetime", operations[0].GetProperty("op").GetString());
+        var (simulated, simText, simError) = await c.CallAsync("simulate", new { operations });
+        Assert.False(simError, simText);
+        Assert.Contains(simulated.GetProperty("findings").GetProperty("resolved").EnumerateArray(), f => f.GetProperty("rule").GetString() == "di.captive");
+
+        var (_, bad, isError) = await c.CallAsync("propose_refactorings", new { finding = "nope@nothing" });
+        Assert.True(isError);
+        Assert.Contains("No finding", bad);
     }
 
     [Fact]
