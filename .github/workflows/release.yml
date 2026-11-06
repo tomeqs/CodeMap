@@ -79,6 +79,7 @@ jobs:
 
       - name: Smoke test
         if: matrix.smoke
+        timeout-minutes: 15
         run: |
           exe=./publish/codemap${{ runner.os == 'Windows' && '.exe' || '' }}
           "$exe" --version

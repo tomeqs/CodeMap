@@ -36,21 +36,37 @@ public static class CodeMapMcpServer
         since the analysis. Prefer fixing errors and warnings in the spaghetti and structure categories first.
         """;
 
-    /// <summary>Runs the server over a pair of streams (stdin/stdout for <c>codemap mcp</c>) until the client goes away.</summary>
+    /// <summary>
+    /// Runs the server over a pair of streams (stdin/stdout for <c>codemap mcp</c>) until the client goes away, or until
+    /// <paramref name="ct"/> stops it. A stop returns once the session is closed (the browser of render_map with it),
+    /// without waiting for the transport: its input may still be open, and a read of it cannot be interrupted.
+    /// </summary>
     public static async Task RunAsync(CodeMapMcpOptions options, Stream input, Stream output, CancellationToken ct)
     {
         using var session = new CodeMapSession(options);
-        // Stopped (a signal, Ctrl+C): the session closes at once, and with it the browser of render_map. The input may
-        // still be open, and a read of it cannot be interrupted, so the end of the transport is not waited for.
-        using var closeOnStop = ct.Register(() =>
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var closeOnStop = ct.Register(() => Task.Run(() =>
         {
             try { session.Dispose(); }
             catch (Exception ex) { options.Log.WriteLine($"Closing the session: {ex.Message}"); }
-        });
-        await using var transport = new StreamServerTransport(input, output, "codemap");
-        await using var server = McpServer.Create(transport, CreateOptions(session));
+            finally { closed.TrySetResult(); }
+        }));
+
+        var transport = new StreamServerTransport(input, output, "codemap");
+        var server = McpServer.Create(transport, CreateOptions(session));
         if (options.Path != null) session.Start(session.Resolve(options.Path));
-        await server.RunAsync(ct).ConfigureAwait(false);
+        var serving = server.RunAsync(ct);
+        await Task.WhenAny(serving, closed.Task).ConfigureAwait(false);
+        if (ct.IsCancellationRequested)
+        {
+            await closed.Task.ConfigureAwait(false);
+            return;
+        }
+
+        // The client went away (end of input): an orderly end.
+        await serving.ConfigureAwait(false);
+        await server.DisposeAsync().ConfigureAwait(false);
+        await transport.DisposeAsync().ConfigureAwait(false);
     }
 
     /// <summary>The protocol side: tools, prompts, resources and instructions, all working on one session.</summary>

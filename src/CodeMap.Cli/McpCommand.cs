@@ -90,16 +90,16 @@ internal static class McpCommand
             },
             Version = typeof(CodeMap.Model.CodeGraph).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
         };
+        // The server ends with its input, or returns once a stop has closed its session (and the browser). Should even
+        // closing hang, the process ends 15 s after the stop.
         var running = CodeMapMcpServer.RunAsync(options, protocolIn, protocolOut, stop.Token);
-        var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (stop.Token.Register(() => stopped.TrySetResult()))
+        var giveUp = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (stop.Token.Register(() => Task.Delay(TimeSpan.FromSeconds(15)).ContinueWith(_ => giveUp.TrySetResult(), TaskScheduler.Default)))
         {
-            Task.WaitAny(running, stopped.Task);
+            Task.WaitAny(running, giveUp.Task);
         }
 
-        // Asked to stop: the session is closed by then, but the server may still be blocked reading an open stdin
-        // (which cannot be interrupted). A few seconds to finish, then the process ends anyway.
-        if (!running.IsCompleted) Task.WaitAny(running, Task.Delay(TimeSpan.FromSeconds(2)));
+        if (!running.IsCompleted) Console.Error.WriteLine("codemap mcp: the session did not close within 15 s of the stop.");
         if (running.IsCompleted)
         {
             try

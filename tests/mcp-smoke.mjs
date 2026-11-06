@@ -65,7 +65,13 @@ function request(method, params, seconds = 300) {
   });
 }
 
+// Where it is, for a run that never ends: CI shows the last step instead of an hour of silence.
+let now = 'starting codemap mcp';
+let lastPassed = 'nothing yet';
+setTimeout(() => fail(`still running after 10 minutes, at: ${now} (last passed: ${lastPassed})`), 10 * 60 * 1000).unref();
+
 async function call(name, args = {}) {
+  now = `${name} ${JSON.stringify(args)}`;
   const result = await request('tools/call', { name, arguments: args });
   const text = result.content?.filter((c) => c.type === 'text').map((c) => c.text).join('\n') ?? '';
   if (result.isError) throw new Error(`${name}: ${text}`);
@@ -75,6 +81,7 @@ async function call(name, args = {}) {
 function check(condition, what) {
   if (!condition) throw new Error(what);
   console.log(`  ✓ ${what}`);
+  lastPassed = what;
 }
 
 function fail(message) {
@@ -126,6 +133,7 @@ try {
   // folder goes with it).
   const byEof = (process.env.CODEMAP_SMOKE_STOP ?? (process.platform === 'win32' ? 'eof' : 'sigterm')) === 'eof';
   const how = byEof ? 'the end of its input' : 'SIGTERM';
+  now = `stopping it with ${how}`;
   const exited = new Promise((resolve) => server.once('exit', (code, signal) => resolve({ code, signal })));
   if (byEof) server.stdin.end();
   else server.kill('SIGTERM');

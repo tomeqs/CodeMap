@@ -179,10 +179,11 @@ internal sealed class MapRenderer : IAsyncDisposable
     {
         _page = null;
         _shown = null;
-        if (_cdp != null) await _cdp.DisposeAsync().ConfigureAwait(false);
-        _cdp = null;
+        // The browser first: killing it is what matters, and its DevTools socket then closes at once.
         if (_chrome != null) await _chrome.DisposeAsync().ConfigureAwait(false);
         _chrome = null;
+        if (_cdp != null) await _cdp.DisposeAsync().ConfigureAwait(false);
+        _cdp = null;
     }
 
     public async ValueTask DisposeAsync()

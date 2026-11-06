@@ -118,7 +118,9 @@ internal sealed class CdpClient : IAsyncDisposable
         _stop.Cancel();
         try
         {
-            if (_socket.State == WebSocketState.Open) await _socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None).ConfigureAwait(false);
+            // Bounded: a browser that no longer answers must not hold up closing.
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            if (_socket.State == WebSocketState.Open) await _socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, timeout.Token).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException)
         {

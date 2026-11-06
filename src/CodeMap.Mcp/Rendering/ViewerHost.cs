@@ -57,7 +57,10 @@ internal sealed class ViewerHost : IAsyncDisposable
     {
         if (_app != null)
         {
-            await _app.StopAsync().ConfigureAwait(false);
+            // Not Kestrel's 30 s of graceful shutdown: the only client is the browser, which is gone by now.
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            try { await _app.StopAsync(timeout.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
             await _app.DisposeAsync().ConfigureAwait(false);
         }
     }

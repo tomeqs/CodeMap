@@ -31,6 +31,7 @@ jobs:
         env:
           CODEMAP_REQUIRE_NODE: '1'
       - name: codemap mcp in its own process (stdout only for the protocol)
+        timeout-minutes: 15
         run: |
           dotnet build src/CodeMap.Cli -c Release --no-restore -v q
           node tests/mcp-smoke.mjs dotnet src/CodeMap.Cli/bin/Release/net8.0/codemap.dll
