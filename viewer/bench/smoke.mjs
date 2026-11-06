@@ -58,6 +58,27 @@ try {
       });
     }
 
+    await test('the automation API (codemap mcp render_map) waits for a still map, says what it shows and highlights', async () => {
+      const info = await page.evaluate(async () => {
+        const app = window.codemap;
+        const idle = await app.idle({ timeout: 30000 });
+        const described = app.describe();
+        const ids = app.view.units.slice(0, 3).map((u) => u.node.id);
+        app.highlight(ids, 'three units');
+        const after = app.describe();
+        app.select(null);
+        return { idle, described, after, ids };
+      });
+      assert.equal(info.idle, true);
+      assert.equal(info.described.view, 'galaxy');
+      assert.ok(info.described.units > 10, `units: ${info.described.units}`);
+      assert.equal(info.described.renderer, await page.evaluate(() => window.codemap.stage.backend));
+      assert.ok(info.described.hud.some((l) => /\d+ links/.test(l)), info.described.hud.join(' | '));
+      assert.ok(info.described.legend.length > 0, 'the legend has lines');
+      assert.equal(info.after.selection, info.ids[0]);
+      assert.ok(info.after.hud.some((l) => l.includes('three units')), info.after.hud.join(' | '));
+    });
+
     for (const view of ['galaxy', 'city', 'layers', 'di', 'flow', 'matrix', 'auto']) {
       await test(`${view} view draws`, async () => {
         await page.evaluate((v) => (v === 'auto' ? window.codemap.setLevel('auto') : window.codemap.setView(v)), view);

@@ -91,7 +91,7 @@ public sealed class McpServerTests
         Assert.Contains("analyze", c.Client.ServerInstructions);
 
         var tools = await c.Client.ListToolsAsync();
-        Assert.Equal(new[] { "analyze", "call_flow", "compare", "describe_node", "diagram", "explain_dependency", "list_findings", "overview", "propose_refactorings", "search_nodes", "simulate", "snapshots" },
+        Assert.Equal(new[] { "analyze", "call_flow", "compare", "describe_node", "diagram", "explain_dependency", "list_findings", "overview", "propose_refactorings", "render_map", "search_nodes", "simulate", "snapshots" },
             tools.Select(t => t.Name).Order(StringComparer.Ordinal));
         Assert.All(tools, t =>
         {

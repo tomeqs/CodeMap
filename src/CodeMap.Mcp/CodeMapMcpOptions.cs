@@ -24,6 +24,12 @@ public sealed class CodeMapMcpOptions
     /// <summary>The most characters a tool answer may have; longer answers are shortened and marked truncated.</summary>
     public int MaxOutput { get; init; } = 30_000;
 
+    /// <summary>The viewer page (with its placeholder for the graph) render_map draws with; null when there is none.</summary>
+    public Func<string?> ViewerHtml { get; init; } = () => null;
+
+    /// <summary>The browser render_map uses (else CODEMAP_BROWSER, else Edge, Chrome or Chromium where they are installed).</summary>
+    public string? Browser { get; init; }
+
     /// <summary>Where the server writes what it does (stderr: stdout is the protocol).</summary>
     public TextWriter Log { get; init; } = TextWriter.Null;
 

@@ -16,7 +16,7 @@ internal static partial class Tools
 
     public static List<ToolDef> All() => new()
     {
-        Analyze, Overview, SearchNodes, DescribeNode, ExplainDependency, ListFindings, ProposeRefactorings, Simulate, Compare, Snapshots, Diagram, CallFlowTool,
+        Analyze, Overview, SearchNodes, DescribeNode, ExplainDependency, ListFindings, ProposeRefactorings, Simulate, Compare, Snapshots, Diagram, RenderMap, CallFlowTool,
     };
 
     // ------------------------------------------------------------------ analyze

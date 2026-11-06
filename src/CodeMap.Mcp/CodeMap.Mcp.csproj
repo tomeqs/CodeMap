@@ -11,6 +11,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Kestrel serves the viewer to the headless browser that renders the map (render_map). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\CodeMap.Core\CodeMap.Core.csproj" />
     <ProjectReference Include="..\CodeMap.Server\CodeMap.Server.csproj" />
   </ItemGroup>

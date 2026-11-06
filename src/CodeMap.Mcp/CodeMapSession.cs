@@ -49,6 +49,7 @@ internal sealed class CodeMapSession : IDisposable
     private readonly List<(string Name, Snapshot Snapshot)> _simulations = new();
     private int _simulationCount;
     private LanguageRegistry? _registry;
+    private Rendering.MapRenderer? _renderer;
     private AnalysisJob? _job;
     private string? _watchRoot;
     private int _changeCount;
@@ -76,6 +77,12 @@ internal sealed class CodeMapSession : IDisposable
     }
 
     public LanguageRegistry Registry => _registry ??= _options.Registry();
+
+    /// <summary>Pictures of the map (started on first use: a headless browser).</summary>
+    public Rendering.MapRenderer Renderer
+    {
+        get { lock (_gate) return _renderer ??= new Rendering.MapRenderer(_options.ViewerHtml, _options.Browser, _options.Log); }
+    }
 
     /// <summary>Sets the root from the client (its first MCP root) unless one was given.</summary>
     public void OfferRoot(string? folder)
@@ -365,11 +372,16 @@ internal sealed class CodeMapSession : IDisposable
 
     public void Dispose()
     {
+        Rendering.MapRenderer? renderer;
         lock (_gate)
         {
             _job?.Cancel.Cancel();
             StopWatching();
+            renderer = _renderer;
+            _renderer = null;
         }
+
+        renderer?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(10));
 
         if (Directory.Exists(_spillFolder))
         {

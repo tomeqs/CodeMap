@@ -256,6 +256,7 @@ The server only reads; it never edits files.
 | `simulate` | Tries refactorings on a copy of the map, without touching the code: move types, members or namespaces, merge namespaces, remove or invert dependencies (an interface where the user is), extract interfaces, split types, remove dead code, change DI lifetimes. Shows what each would change: the score, findings, cycles, layers. The result (`sim-N`) is a graph every tool reads. |
 | `compare` | What changed between two maps (a baseline and the current map after edits): the score and each part, findings resolved and new, cycles and upward dependencies, dependencies, moved and renamed types and namespaces, metrics. |
 | `snapshots` | Saves the current map as a named baseline before refactoring; every tool takes `graph: "<name>"`. |
+| `render_map` | A PNG of the 3D map with a caption of what it shows (view, level, units, the HUD and the legend). Any view (galaxy, city, layers, DI, flow, matrix) at any level, with a node and its neighbours, dependencies or dependents lit up, a path between two nodes, a cycle, a DI issue, a call flow, or any nodes highlighted (e.g. those of a finding). |
 
 * **Prompts:** `review_architecture`, `plan_refactoring` and `check_changes` start the usual tasks.
 * **Checks:** `analyze` also checks the code inside function bodies (`checks: false`, or `codemap mcp --no-checks`, turns
@@ -263,6 +264,10 @@ The server only reads; it never edits files.
 * **Resources:**
   * `codemap://rules` describes every finding rule (what it finds, its thresholds, why it matters);
   * `codemap://operations` describes the operations `simulate` takes.
+* **Pictures:** `render_map` draws in a headless Chrome, Edge or Chromium (found where each system installs them, or
+  in Playwright's cache). `codemap mcp --browser <path>` or `CODEMAP_BROWSER` points at another one. No GPU is needed:
+  the map is drawn with WebGL 2 on SwiftShader (`CODEMAP_RENDERER=webgpu` tries WebGPU). A map with over 3,000 types is
+  drawn by namespace unless a level is asked for. Without a browser, `diagram` draws the same structure in Mermaid.
 * **Answers:**
   * every answer is JSON, with a `meta` block;
   * `meta.stale` says the sources changed since the analysis;
