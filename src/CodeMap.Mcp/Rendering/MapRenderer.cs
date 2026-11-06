@@ -179,7 +179,23 @@ internal sealed class MapRenderer : IAsyncDisposable
     {
         _page = null;
         _shown = null;
-        // The browser first: killing it is what matters, and its DevTools socket then closes at once.
+        // Ask the browser to close (it ends its helpers itself), then kill what is left: the browser first, as closing it
+        // is what matters, and its DevTools socket then closes at once.
+        if (_chrome is { HasExited: false } && _cdp != null)
+        {
+            try
+            {
+                using var closing = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                await _cdp.SendAsync("Browser.close", ct: closing.Token, timeout: TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is CdpException or TimeoutException or OperationCanceledException or System.Net.WebSockets.WebSocketException or ObjectDisposedException or InvalidOperationException)
+            {
+                // It closed the socket before answering, or no longer answers: the kill below takes over.
+            }
+
+            await _chrome.WaitForExitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+        }
+
         if (_chrome != null) await _chrome.DisposeAsync().ConfigureAwait(false);
         _chrome = null;
         if (_cdp != null) await _cdp.DisposeAsync().ConfigureAwait(false);

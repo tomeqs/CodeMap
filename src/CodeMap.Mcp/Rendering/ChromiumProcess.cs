@@ -149,6 +149,15 @@ internal sealed class ChromiumProcess : IAsyncDisposable
         }
     }
 
+    /// <summary>Waits for the browser to exit by itself (after Browser.close), up to <paramref name="timeout"/>.</summary>
+    public async Task WaitForExitAsync(TimeSpan timeout)
+    {
+        using var cts = new CancellationTokenSource(timeout);
+        try { await _process.WaitForExitAsync(cts.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException) { }
+    }
+
     public ValueTask DisposeAsync()
     {
         Kill(_process);
@@ -162,7 +171,10 @@ internal sealed class ChromiumProcess : IAsyncDisposable
     {
         try
         {
-            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            // Windows: the whole tree (the job object covers a killed codemap too). Elsewhere the browser process only: a
+            // tree kill there first SIGSTOPs it and walks every process on the machine, and a stopped Chrome on macOS
+            // can take the window server down with it (it froze a CI runner). Its helpers end when it does.
+            if (!process.HasExited) process.Kill(entireProcessTree: OperatingSystem.IsWindows());
             process.WaitForExit(5000);
         }
         catch (InvalidOperationException) { }
