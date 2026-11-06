@@ -151,4 +151,26 @@ public static partial class FindingsAnalysis
                 suggestion: wholeType ? $"Delete {c.Short(owner)} if nothing outside the analyzed code (reflection, configuration, other repositories) uses it." : "Delete them if nothing outside the analyzed code (reflection, serialization, other repositories) uses them.");
         }
     }
+
+    /// <summary>The diagnostics of the checks inside function bodies (--checks), one finding each.</summary>
+    private static void CodeChecks(Context c)
+    {
+        var ordinal = new Dictionary<(string, string), int>();
+        foreach (var d in c.Graph.Analysis.Diagnostics ?? new List<CodeDiagnostic>())
+        {
+            if (d.Node != null && c.Skip(d.Node)) continue;
+            var where = d.Node ?? d.Location.File;
+            var n = ordinal[(d.Rule, where)] = ordinal.GetValueOrDefault((d.Rule, where)) + 1;
+            var rule = "code." + d.Rule;
+            c.Add(rule, n == 1 ? where : $"{where}#{n}", d.Severity,
+                $"{d.Rule} in {(d.Node != null ? c.Short(d.Node) : d.Location.File)}",
+                d.Message,
+                impact: 1,
+                nodes: d.Node != null ? new[] { d.Node } : Array.Empty<string>(),
+                locations: new[] { new FindingLocation { File = d.Location.File, Line = d.Location.Line, EndLine = d.Location.EndLine > d.Location.Line ? d.Location.EndLine : 0, Node = d.Node, Note = d.Source == "compiler" ? "compiler" : null } },
+                evidence: Evidence(("line", d.Location.Line), ("column", d.Column)),
+                category: FindingCategory.Code,
+                proposalKinds: Array.Empty<string>());
+        }
+    }
 }

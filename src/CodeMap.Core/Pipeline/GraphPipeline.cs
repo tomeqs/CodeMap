@@ -71,6 +71,13 @@ public static class GraphPipeline
             foreach (var node in fragment.Nodes.Where(n => n.Kind == NodeKinds.Project)) languageOfProject.TryAdd(node.Id, language.Info);
         }
 
+        if (!options.CodeChecks) graph.Analysis.Diagnostics = null;
+        else
+        {
+            graph.Analysis.Diagnostics = CodeDiagnostics.Sorted(graph.Analysis.Diagnostics ?? new List<CodeDiagnostic>());
+            CodeDiagnostics.Place(graph);
+        }
+
         ct.ThrowIfCancellationRequested();
         var history = options.Git ? GitEnrichment.Read(graph, options, log) : null;
         return new RawGraph(graph, languageOfProject, options, history, carriedGit: null);

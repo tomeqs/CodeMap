@@ -31,7 +31,8 @@ internal static partial class Tools
           "path":{"type":"string","description":"What to analyze, absolute or relative to the root. Default: the current map's path, else the root."},
           "refresh":{"type":"boolean","description":"Analyze again even if a map of this path exists (after editing code)."},
           "waitSeconds":{"type":"number","description":"How long to wait for the result (0-300, default 45)."},
-          "git":{"type":"boolean","description":"Read git history for churn, hotspots and change coupling (default true)."}
+          "git":{"type":"boolean","description":"Read git history for churn, hotspots and change coupling (default true)."},
+          "checks":{"type":"boolean","description":"Check the code inside function bodies too: swallowed exceptions, sync over async, floating promises, unreachable code, compiler warnings that point at bugs (default true)."}
         }}
         """,
         async (call, ct) =>
@@ -48,10 +49,11 @@ internal static partial class Tools
                 return Summary(session, current, "done", reused: true);
 
             var analyzer = session.Options.Analyzer;
-            if (call.String("git") != null) analyzer = new AnalyzerOptions
+            if (call.String("git") != null || call.String("checks") != null) analyzer = new AnalyzerOptions
             {
                 IncludeExternal = analyzer.IncludeExternal, IncludeGenerated = analyzer.IncludeGenerated, IncludeTests = analyzer.IncludeTests,
-                GitSince = analyzer.GitSince, GitMaxCommits = analyzer.GitMaxCommits, Git = call.Bool("git", true),
+                GitSince = analyzer.GitSince, GitMaxCommits = analyzer.GitMaxCommits,
+                Git = call.Bool("git", analyzer.Git), CodeChecks = call.Bool("checks", analyzer.CodeChecks),
             };
 
             var job = session.Running is { } running && running.Path == path && !refresh ? running : session.Start(path, analyzer);
@@ -97,6 +99,7 @@ internal static partial class Tools
             stats = new SortedDictionary<string, int>(g.Stats.Where(p => !p.Key.StartsWith("edges.", StringComparison.Ordinal)).ToDictionary(p => p.Key, p => p.Value), StringComparer.Ordinal),
             health = Answers.Score(report.Score),
             findings = new { total = report.Findings.Count, bySeverity = report.BySeverity, byCategory = report.ByCategory, worst = report.Findings.Take(8).Select(Answers.Brief).ToList() },
+            codeChecks = g.Analysis.Diagnostics is { } diagnostics ? new { total = diagnostics.Count, byRule = diagnostics.GroupBy(d => d.Rule).OrderByDescending(x => x.Count()).Take(12).ToDictionary(x => x.Key, x => x.Count()) } : null,
             warnings = g.Analysis.Warnings.Take(10).ToList(),
             next = "overview for the architecture, list_findings for all problems, describe_node / explain_dependency for details, call_flow for what an entry point does.",
         };

@@ -68,7 +68,8 @@ public sealed class HealthScore
         var coupling = Clamp(0.5 * distance + 0.5 * Math.Min(1, 10 * hubs));
 
         // Findings: errors, warnings and infos per type (cycles and dead code are counted elsewhere or not at all).
-        var counted = findings.Where(f => !f.Rule.StartsWith("cycle.", StringComparison.Ordinal) && f.Rule is not ("tangle" or "dead-code")).ToList();
+        // Checks inside function bodies are not structure: with or without --checks the score is the same.
+        var counted = findings.Where(f => !f.Rule.StartsWith("cycle.", StringComparison.Ordinal) && f.Rule is not ("tangle" or "dead-code") && f.Category != FindingCategory.Code).ToList();
         int Of(string severity) => counted.Count(f => f.Severity == severity);
         var (errors, warnings, infos) = (Of(FindingSeverity.Error), Of(FindingSeverity.Warning), Of(FindingSeverity.Info));
         var density = (5.0 * errors + 2.0 * warnings + 0.5 * infos) / Math.Max(10, types.Count);

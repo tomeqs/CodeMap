@@ -29,6 +29,7 @@ public static partial class FindingsAnalysis
         History(context);
         DependencyInjection(context);
         DeadCode(context);
+        CodeChecks(context);
 
         var findings = context.Findings
             .GroupBy(f => f.Id, StringComparer.Ordinal).Select(g => g.First())

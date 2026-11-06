@@ -188,7 +188,14 @@ public static class ProjectLoader
             ImplicitUsings = Flag("ImplicitUsings"),
             AllowUnsafe = Flag("AllowUnsafeBlocks"),
             UseWindowsDesktop = Flag("UseWPF") || Flag("UseWindowsForms"),
+            Nullable = Prop("Nullable")?.Trim().ToLowerInvariant(),
         };
+
+        foreach (var code in (Prop("NoWarn") ?? "").Split(new[] { ';', ',', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (code.StartsWith("$(", StringComparison.Ordinal)) continue;
+            info.NoWarn.Add(char.IsDigit(code[0]) ? "CS" + code.PadLeft(4, '0') : code);
+        }
 
         foreach (var (item, expand) in evaluation.Items("ProjectReference"))
         {

@@ -132,7 +132,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
                 target = full,
                 output,
                 codemapVersion = typeof(CodeGraph).Assembly.GetName().Version?.ToString(3),
-                options = new { includeTests = options.IncludeTests, includeGenerated = options.IncludeGenerated, includeExternal = options.IncludeExternal },
+                options = new { includeTests = options.IncludeTests, includeGenerated = options.IncludeGenerated, includeExternal = options.IncludeExternal, checks = options.CodeChecks },
             });
 
             var lastLines = new Queue<string>();

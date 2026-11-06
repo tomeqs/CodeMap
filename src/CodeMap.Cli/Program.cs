@@ -40,6 +40,8 @@ internal static class Cli
                                    (much smaller output for very large solutions)
               --lang <list>        only these languages, e.g. csharp or typescript (default: all that are found)
               --plugins <dir>      also look for language plugins in <dir>
+              --checks             also check the code inside function bodies (swallowed exceptions, sync over async,
+                                   floating promises, unreachable code, selected compiler warnings); in the .md report
               --no-git             do not read git history (churn / hotspots)
               --git-since <when>   limit git history, e.g. "1 year ago"
               --indent             pretty-print JSON
@@ -50,6 +52,7 @@ internal static class Cli
               --root <dir>         folder that relative paths start from (default: the client's root, else the current one)
               --no-watch           do not watch the sources (answers then never say the analysis is stale)
               --max-output <n>     the most characters of one tool answer (default 30000; longer lists are cut)
+              --no-checks          do not check function bodies (on by default for agents)
               (--lang, --plugins, --no-git, --git-since, --no-tests, --generated, --external work as for analysis)
 
         App options (codemap / codemap ui):
@@ -164,6 +167,9 @@ internal static class Cli
                     break;
                 case "--no-git":
                     options.Analyzer.Git = false;
+                    break;
+                case "--checks":
+                    options.Analyzer.CodeChecks = true;
                     break;
                 case "--git-since":
                     options.Analyzer.GitSince = Next();

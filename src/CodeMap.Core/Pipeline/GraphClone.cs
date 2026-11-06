@@ -98,6 +98,17 @@ public static class GraphClone
             Hidden = c.Hidden,
         }).ToList(),
         Di = analysis.Di == null ? null : Clone(analysis.Di),
+        Diagnostics = analysis.Diagnostics?.Select(d => new CodeDiagnostic
+        {
+            Rule = d.Rule,
+            Source = d.Source,
+            Severity = d.Severity,
+            Category = d.Category,
+            Message = d.Message,
+            Location = Clone(d.Location)!,
+            Column = d.Column,
+            Node = d.Node,
+        }).ToList(),
         Warnings = analysis.Warnings.ToList(),
     };
 

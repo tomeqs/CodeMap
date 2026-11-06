@@ -216,7 +216,39 @@ public sealed class AnalysisResult
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DiAnalysis? Di { get; set; }
 
+    /// <summary>Problems inside function bodies: compiler warnings and CodeMap's own checks. Only when the analysis checks code (--checks).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CodeDiagnostic>? Diagnostics { get; set; }
+
     public List<string> Warnings { get; set; } = new();
+}
+
+/// <summary>A problem in the code a check found: a likely bug, a lost exception, a forgotten await…</summary>
+public sealed class CodeDiagnostic
+{
+    /// <summary>The check: a compiler code (CS0162, TS2367) or a CodeMap rule (empty-catch, floating-promise…).</summary>
+    public string Rule { get; set; } = "";
+
+    /// <summary>compiler | codemap</summary>
+    public string Source { get; set; } = "codemap";
+
+    /// <summary>error | warning | info</summary>
+    public string Severity { get; set; } = "warning";
+
+    /// <summary>correctness | async | exceptions | resources | concurrency | nullability | dead-code</summary>
+    public string Category { get; set; } = "correctness";
+
+    public string Message { get; set; } = "";
+
+    /// <summary>Where it is: the file (relative to the root) and its lines.</summary>
+    public SourceLocation Location { get; set; } = new();
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int Column { get; set; }
+
+    /// <summary>The innermost node it is in (a member, else a type or file).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Node { get; set; }
 }
 
 public sealed class LayeringInfo

@@ -15,8 +15,8 @@ public sealed class CodeMapMcpOptions
     /// <summary>Watch the analyzed folder and mark the analysis stale when sources change.</summary>
     public bool Watch { get; init; } = true;
 
-    /// <summary>Options of every analysis (git, tests, generated code…).</summary>
-    public AnalyzerOptions Analyzer { get; init; } = new();
+    /// <summary>Options of every analysis (git, tests, generated code…); agents get the checks inside function bodies too.</summary>
+    public AnalyzerOptions Analyzer { get; init; } = new() { CodeChecks = true };
 
     /// <summary>The languages: C# and the plugins found.</summary>
     public Func<LanguageRegistry> Registry { get; init; } = () => LanguageRegistry.Default;

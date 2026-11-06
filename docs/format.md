@@ -23,7 +23,7 @@ JSON Schema: [`codemap.schema.json`](codemap.schema.json).
 | `stats` | `{ string: int }` | liczniki: `projects`, `namespaces`, `types`, `members`, `edges`, `lines`, `files`, `cycles`, `edges.<kind>`… |
 | `nodes` | `Node[]` | węzły |
 | `edges` | `Edge[]` | krawędzie |
-| `analysis` | obiekt | wnioski: `cycles`, `hotspots`, `mostComplex`, `mostDepended`, `unusedCandidates`, `warnings` |
+| `analysis` | obiekt | wnioski: `cycles`, `hotspots`, `mostComplex`, `mostDepended`, `unusedCandidates`, `layers`, `changeCoupling`, `di`, `diagnostics`, `warnings` |
 
 ## Węzeł (`Node`)
 
@@ -183,6 +183,7 @@ Typy zewnętrzne pojawiają się w krawędziach tylko z opcją `--external`. Odw
   "layers": [{ "level": "namespace", "layers": [["namespace:Shop.Domain/Shop.Domain.Common"], ["..."]], "upward": [...] }],
   "changeCoupling": [{ "source": "T:A", "target": "T:B", "sharedCommits": 7, "strength": 0.78, "hidden": true }],
   "di": { "registrations": [...], "dependencies": [...], "issues": [...] },
+  "diagnostics": [{ "rule": "sync-over-async", "source": "codemap", "severity": "warning", "category": "async", "message": "...", "location": { "file": "src/A.cs", "line": 12, "endLine": 12 }, "column": 25, "node": "M:App.A.Run" }],
   "warnings": ["Could not read ..."]
 }
 ```
@@ -279,6 +280,34 @@ W TypeScripcie zależności to parametry konstruktora (typ albo token z `@Inject
 | `unreachable` | `error` | Angular: usługa z `providedIn: 'root'` potrzebuje usługi, którą dostarczają tylko komponenty (`NullInjectorError`) |
 
 Każdy problem ma też `consumer`, `service` i czytelny `message`. Kolejność: błędy, ostrzeżenia, uwagi.
+
+### `diagnostics`
+
+Problemy w treści funkcji. Jest tylko wtedy, gdy analiza sprawdza kod (`codemap --checks`; `codemap mcp` robi to domyślnie). Kolejność: plik, linia, kolumna, reguła;
+najwyżej 300 wyników jednej reguły w projekcie. Kod testów i wygenerowany nie jest sprawdzany.
+
+| Pole | Opis |
+|---|---|
+| `rule` | kod kompilatora (`CS0162`, `TS2367`) albo reguła CodeMap (`empty-catch`, `floating-promise`…) |
+| `source` | `compiler` albo `codemap` |
+| `severity` | `error`, `warning`, `info` |
+| `category` | `correctness`, `async`, `exceptions`, `resources`, `concurrency`, `nullability`, `dead-code` |
+| `message` | co jest nie tak i jak to poprawić |
+| `location`, `column` | plik (względem `root`), linie i kolumna (od 1) |
+| `node` | najgłębszy węzeł, którego deklaracja obejmuje tę linię (składowa, a gdy jej nie ma: typ albo plik); wtyczka może go podać sama |
+
+Ostrzeżenia kompilatora C# z listy, która nie myli się bez przywróconych pakietów: CS0162, CS4014, CS0168, CS0219, CS1717, CS1718,
+CS0665, CS0642, CS0252, CS0253, CS0659, CS0661, CS0108, CS0114, a ostrzeżenia o null (CS8600–CS8604) tylko w projektach z włączonym `<Nullable>`.
+`NoWarn` projektu jest respektowane; ostrzeżenia zależne od typów (CS4014, CS0252/3, CS86xx) są pomijane w składowych z nierozwiązanymi typami.
+Reguły CodeMap dla C#: `empty-catch`, `swallowed-exception`, `rethrow-loses-stack`, `throw-in-finally`, `async-void` (poza obsługą zdarzeń),
+`sync-over-async` (`.Result`, `.Wait()`, `.GetAwaiter().GetResult()`, poza `Main`), `lock-on-this`, `float-equality`, `recursive-property`,
+`disposable-not-disposed`.
+
+TypeScript: kody 2367, 2801, 2774, 2454, 6133 (z `noUnusedLocals` / `noUnusedParameters`), 18047, 18048, 2531, 2532 (z `strictNullChecks`);
+w pliku z nierozwiązanymi importami tylko 2367, 2801 i 2774. Reguły CodeMap: `empty-catch`, `swallowed-exception`, `floating-promise`,
+`misused-promise-condition`, `foreach-async`, `async-promise-executor`, `unreachable-code`, `self-assignment`, `self-comparison`,
+`duplicate-case`, `constant-condition`, `loose-equality` (poza `== null` i porównaniami dwóch napisów, liczb czy wartości logicznych).
+Reguły oparte na typach pomijają `any` i typy, których kompilator nie rozwiązał.
 
 ## Przykładowe zapytania
 

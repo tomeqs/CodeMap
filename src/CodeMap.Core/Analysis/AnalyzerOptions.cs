@@ -19,5 +19,11 @@ public sealed class AnalyzerOptions
 
     public int GitMaxCommits { get; set; } = 20000;
 
+    /// <summary>
+    /// Check the code inside function bodies too: selected compiler warnings and CodeMap's own rules (swallowed
+    /// exceptions, sync over async, floating promises…), in <see cref="Model.AnalysisResult.Diagnostics"/>.
+    /// </summary>
+    public bool CodeChecks { get; set; }
+
     public Action<string>? Log { get; set; }
 }

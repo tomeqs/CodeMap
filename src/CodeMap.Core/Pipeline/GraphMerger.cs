@@ -34,6 +34,12 @@ internal static class GraphMerger
             }
 
             graph.Edges.AddRange(fragment.Edges);
+            if (fragment.Analysis.Diagnostics is { } diagnostics)
+            {
+                foreach (var diagnostic in diagnostics) diagnostic.Location = rebase(diagnostic.Location)!;
+                (graph.Analysis.Diagnostics ??= new List<CodeDiagnostic>()).AddRange(diagnostics);
+            }
+
             if (fragment.Analysis.Di is { } setup)
             {
                 foreach (var registration in setup.Registrations) registration.Location = rebase(registration.Location);

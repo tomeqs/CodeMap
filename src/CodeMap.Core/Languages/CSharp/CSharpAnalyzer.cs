@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using CodeMap.Analysis;
 using CodeMap.Loading;
@@ -82,6 +83,7 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
         foreach (var project in ordered) DeclareProject(builder, project, byPath, load.Root);
 
         var factory = new CompilationFactory(warnings);
+        var diagnostics = new List<CodeDiagnostic>();
         var compilations = new Dictionary<string, CSharpCompilation>(StringComparer.OrdinalIgnoreCase);
         var projectLines = new Dictionary<string, (int Files, int Lines)>();
 
@@ -101,11 +103,14 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
                 .Where(t => options.IncludeGenerated || !IsGenerated(t, ct))
                 .ToList();
 
+            var checks = options.CodeChecks && !project.IsTestProject ? new ConcurrentBag<CodeDiagnostic>() : null;
             Parallel.ForEach(trees, new ParallelOptions { CancellationToken = ct }, tree =>
             {
                 var model = compilation.GetSemanticModel(tree, ignoreAccessibility: true);
                 new TypeAnalyzer(builder, model, project.Name, project.IsTestProject).Run(ct);
+                if (checks != null) CSharpCodeChecks.Run(model, Path.GetRelativePath(load.Root, tree.FilePath).Replace('\\', '/'), project, checks, ct);
             });
+            if (checks != null) diagnostics.AddRange(CodeDiagnostics.Capped(checks));
 
             projectLines[project.Name] = (trees.Count, trees.Sum(t => t.GetText(ct).Lines.Count));
             log($"  {project.Name}: {trees.Count} file(s)");
@@ -123,6 +128,7 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
         }
 
         graph.Analysis.Di = ContainerSetup(builder, graph);
+        if (options.CodeChecks) graph.Analysis.Diagnostics = CodeDiagnostics.Sorted(diagnostics);
         graph.Analysis.Warnings = warnings;
         graph.Source.Path = load.SourcePath;
         graph.Source.Root = load.Root;
