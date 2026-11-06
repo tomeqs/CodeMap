@@ -21,6 +21,31 @@ codemap MySolution.sln            →  MySolution.codemap.json   (the graph: a f
 | **Flow: the call flow from a controller action, with a sequence diagram** | **Auto: semantic zoom, a type unfolded into its members** |
 | ![flow](docs/img/flow.png) | ![zoom](docs/img/zoom.png) |
 
+## Supported languages
+
+* **C#**: built in, with Roslyn. [More below](#generating-files-ci-reports).
+  * **What you can open:** a solution (`.sln`, `.slnx`, `.slnf`), a project (`.csproj`), a `.cs` file or a folder.
+  * **Projects:** .NET Framework, .NET Standard and .NET (Core, 5 and newer). They are read the way MSBuild reads them
+    (imports, `Directory.Build.props` / `.targets`, central package versions), without building.
+  * **Recognised:**
+    * ASP.NET Core controllers, Razor Pages, Blazor components, SignalR hubs and middleware;
+    * dependency injection with `Microsoft.Extensions.DependencyInjection`, including keyed services, factories,
+      typed `HttpClient`s and Aspire's `Add…DbContext`;
+    * EF Core `DbContext`s, hosted services, and MediatR and message handlers;
+    * test projects: xUnit, NUnit, MSTest and TUnit.
+* **TypeScript** (`.ts`, `.tsx`, `.mts`, `.cts`) and **JavaScript** (`.js`, `.jsx`, `.mjs`, `.cjs`, CommonJS too):
+  a plugin that needs Node.js 18 or newer. It ships in the releases, and the VS Code extension runs it on VS Code's
+  own Node.js. [More below](#typescript-and-javascript).
+  * **What you can open:** a folder, a `package.json`, a `tsconfig.json` / `jsconfig.json`, or a single file.
+  * **Monorepos:** npm, pnpm and yarn workspaces and tsconfig `paths`, without `npm install`.
+  * **Recognised:**
+    * Express, NestJS and Angular;
+    * file-based routes in Next.js, SvelteKit, SolidStart, Astro and Nuxt;
+    * `.vue`, `.svelte` and `.astro` components, with the imports of their scripts.
+* **Both in one repository:** one map with C# and TypeScript side by side.
+* **Other languages** can be added as [plugins](docs/plugins.md). Python, Java and Go are on the
+  [ideas list](#ideas-for-the-future).
+
 ## Quick start
 
 ### Ready-made program (nothing to install)
