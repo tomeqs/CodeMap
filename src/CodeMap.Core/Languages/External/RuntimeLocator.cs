@@ -73,8 +73,10 @@ public static class RuntimeLocator
     {
         try
         {
-            using var process = Process.Start(new ProcessStartInfo(path, "--version") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false });
+            // Its own stdin, not ours (the protocol pipe under `codemap mcp`, which a child on Windows blocks on).
+            using var process = Process.Start(new ProcessStartInfo(path, "--version") { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false });
             if (process == null) return null;
+            process.StandardInput.Close();
             var output = process.StandardOutput.ReadToEndAsync();
             if (!process.WaitForExit(5000))
             {

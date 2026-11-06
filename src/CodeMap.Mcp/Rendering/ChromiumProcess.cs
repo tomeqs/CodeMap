@@ -47,7 +47,8 @@ internal sealed class ChromiumProcess : IAsyncDisposable
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = false,
+            // Never our stdin: it is the protocol pipe, which a child on Windows blocks on.
+            RedirectStandardInput = true,
             CreateNoWindow = true,
         };
         foreach (var arg in new[]
@@ -65,6 +66,7 @@ internal sealed class ChromiumProcess : IAsyncDisposable
         psi.ArgumentList.Add("about:blank");
 
         var process = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start {executable}.");
+        process.StandardInput.Close();
         var stderr = new Queue<string>();
         process.OutputDataReceived += (_, _) => { };
         process.ErrorDataReceived += (_, e) =>

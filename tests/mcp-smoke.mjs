@@ -90,8 +90,11 @@ try {
   }
   check(true, `tools/list: ${names.length} tools`);
 
-  const analyzed = (await call('analyze', { path: path.join(shop, 'Shop.sln'), waitSeconds: 300 })).json;
-  check(analyzed.status === 'done' && analyzed.stats?.types > 20, `analyze: ${analyzed.stats?.types} types in ${analyzed.map?.seconds} s`);
+  // An analysis still running after waitSeconds answers status "running": ask again, as an agent would.
+  let analyzed = (await call('analyze', { path: path.join(shop, 'Shop.sln'), waitSeconds: 120 })).json;
+  for (let again = 0; analyzed.status === 'running' && again < 2; again++) analyzed = (await call('analyze', { waitSeconds: 120 })).json;
+  if (analyzed.status !== 'done') throw new Error(`analyze: still ${analyzed.status} after 6 minutes: ${JSON.stringify(analyzed.progress ?? analyzed)}`);
+  check(analyzed.stats?.types > 20, `analyze: ${analyzed.stats?.types} types in ${analyzed.map?.seconds} s`);
   check(typeof analyzed.health?.score === 'number', `health score ${analyzed.health?.score} (${analyzed.health?.grade})`);
 
   const findings = (await call('list_findings', { limit: 5 })).json;
