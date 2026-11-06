@@ -25,7 +25,7 @@ public static class CodeMapMcpServer
         4. describe_node / explain_dependency / call_flow / diagram - drill into a node, the references behind a dependency
            (file:line), what an entry point does, or draw it as Mermaid.
         5. Before refactoring, snapshots {action: save} keeps the current map as a baseline. Edit the code, then
-           analyze {refresh: true} and compare the new findings and score with the baseline (any tool takes graph: "<baseline>").
+           analyze {refresh: true} and compare: the score, findings resolved and new, cycles, upward dependencies, moves.
 
         Names: tools take node ids, full names, names or the end of a full name (Orders.OrderService); an ambiguous name returns
         the candidate ids. Lists are paged (limit, cursor). Every answer has a meta block; meta.stale means the sources changed
@@ -161,7 +161,7 @@ internal static class McpPrompts
                 3. Save a baseline (snapshots action: save, name: before).
                 4. Write a plan of small, safe steps: for each step the files and lines to change, what to move / extract / invert, and
                    which findings it removes. Prefer the cheapest cut of a cycle and dependency inversion over large moves.
-                5. After the code is changed, analyze with refresh: true and compare list_findings and the score against graph: before.
+                5. After the code is changed, analyze with refresh: true and compare with before: before.
                 """),
         new(new Prompt
             {
@@ -173,7 +173,7 @@ internal static class McpPrompts
             args => $"""
                 Check the structural effect of the latest code changes with the CodeMap tools.
                 1. analyze with refresh: true.
-                2. Compare with the baseline '{Arg(args, "baseline", "before")}': overview and list_findings on both (graph: '{Arg(args, "baseline", "before")}' vs current).
+                2. compare with before: '{Arg(args, "baseline", "before")}' (the current map is the after).
                 3. Report the score before and after, findings that disappeared, new findings (with file:line), and new cycles or upward
                    dependencies. If something got worse, say what to change to fix it.
                 """),

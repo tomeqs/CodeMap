@@ -277,6 +277,7 @@ The server only reads; it never edits files.
 | `search_nodes` | Nodes by name, kind, level, tags and metric range, sorted by a metric (e.g. the most complex methods). |
 | `call_flow` | The entry points (controllers, handlers, background services, routes…), or what one does: the call tree through interfaces to the implementation DI injects, and a sequence diagram. |
 | `diagram` | Mermaid: dependencies, layers, one cycle with its cheapest cut, a class with its neighbours, DI wiring, a sequence. |
+| `compare` | What changed between two maps (a baseline and the current map after edits): the score and each part, findings resolved and new, cycles and upward dependencies, dependencies, moved and renamed types and namespaces, metrics. |
 | `snapshots` | Saves the current map as a named baseline before refactoring; every tool takes `graph: "<name>"`. |
 
 * **Prompts:** `review_architecture`, `plan_refactoring` and `check_changes` start the usual tasks.
@@ -620,7 +621,7 @@ is still mapped, and unresolved symbols are simply skipped.
 
 * architecture rules (e.g. "Domain must not depend on Infrastructure") with violations marked on the map
   (the automatically computed layers are a good starting point)
-* comparing two versions of the graph (an architecture diff between commits / in a PR)
+* an architecture diff between commits in the app and as a comment on a PR (the MCP server's `compare` already does it for two maps)
 * a VR/WebXR mode for the City view
 * code ownership (authors from git) as the colour of districts
 * a Visual Studio extension with the map in an editor panel (VS Code already has one)
