@@ -24,9 +24,11 @@ public static class CodeMapMcpServer
            dead code... Each finding has ids of the nodes involved, file:line places and a suggestion.
         4. describe_node / explain_dependency / call_flow / diagram - drill into a node, the references behind a dependency
            (file:line), what an entry point does, or draw it as Mermaid.
-        5. simulate tries a refactoring on a copy of the map first (move, invert, extract, split, merge, remove; see
+        5. propose_refactorings turns findings into concrete refactorings (steps with file:line, cost, simulator operations,
+           and, verified by a simulation, what each really fixes).
+        6. simulate tries a refactoring on a copy of the map first (move, invert, extract, split, merge, remove; see
            codemap://operations) and shows what it would change; every tool reads the result as graph: "sim-N".
-        6. Before refactoring, snapshots {action: save} keeps the current map as a baseline. Edit the code, then
+        7. Before refactoring, snapshots {action: save} keeps the current map as a baseline. Edit the code, then
            analyze {refresh: true} and compare: the score, findings resolved and new, cycles, upward dependencies, moves.
 
         Names: tools take node ids, full names, names or the end of a full name (Orders.OrderService); an ambiguous name returns
@@ -152,8 +154,9 @@ internal static class McpPrompts
             args => $"""
                 Plan a refactoring with the CodeMap tools. Goal: {Arg(args, "goal", "the worst structural findings")}.
                 1. analyze, then list_findings (detail: full) for the findings that match the goal.
-                2. For each, read the evidence: explain_dependency for the references to cut (file:line), describe_node for the types to
-                   split or move, call_flow for the behaviour that must keep working.
+                2. propose_refactorings for them; read the evidence of the best: explain_dependency for the references to cut (file:line),
+                   describe_node for the types to split or move, call_flow for the behaviour that must keep working. simulate
+                   variations of the proposed operations when the proposal is not quite right.
                 3. Save a baseline (snapshots action: save, name: before).
                 4. Write a plan of small, safe steps: for each step the files and lines to change, what to move / extract / invert, and
                    which findings it removes. Prefer the cheapest cut of a cycle and dependency inversion over large moves.
