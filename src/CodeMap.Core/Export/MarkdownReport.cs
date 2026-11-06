@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using CodeMap.Insights;
 using CodeMap.Model;
 
 namespace CodeMap.Export;
@@ -28,6 +29,8 @@ public static class MarkdownReport
         {
             if (graph.Stats.TryGetValue(key, out var value)) sb.AppendLine($"| {key} | {value} |");
         }
+
+        WriteFindings(sb, FindingsAnalysis.Compute(graph));
 
         sb.AppendLine();
         sb.AppendLine("## Projects");
@@ -100,6 +103,35 @@ public static class MarkdownReport
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>The health score with its parts, and the 25 worst findings with where they are.</summary>
+    private static void WriteFindings(StringBuilder sb, FindingsReport report)
+    {
+        var score = report.Score;
+        sb.AppendLine();
+        sb.AppendLine($"## Health: {score.Score}/100 ({score.Grade})");
+        sb.AppendLine();
+        sb.AppendLine("| Part | Penalty | Why |");
+        sb.AppendLine("|---|---|---|");
+        foreach (var part in score.Components)
+        {
+            sb.AppendLine($"| {part.Name} | −{part.Penalty.ToString("0.#", CultureInfo.InvariantCulture)} of {part.Weight.ToString("0", CultureInfo.InvariantCulture)} | {part.Explanation} |");
+        }
+
+        if (report.Findings.Count == 0) return;
+        sb.AppendLine();
+        var counts = string.Join(", ", report.BySeverity.OrderBy(p => FindingSeverity.Order(p.Key)).Select(p => $"{p.Value} {p.Key}{(p.Value == 1 ? "" : "s")}"));
+        sb.AppendLine($"## Findings ({counts})");
+        sb.AppendLine();
+        foreach (var finding in report.Findings.Take(25))
+        {
+            var where = finding.Locations.Count > 0 ? $" — {finding.Locations[0]}" : "";
+            sb.AppendLine($"- **{finding.Severity}** `{finding.Rule}` {finding.Title}{where}  ");
+            sb.AppendLine($"  {finding.Message}{(finding.Suggestion != null ? $" *{finding.Suggestion}*" : "")}");
+        }
+
+        if (report.Findings.Count > 25) sb.AppendLine($"- … and {report.Findings.Count - 25} more (`codemap mcp` lists them all).");
     }
 
     private static void WriteLayers(StringBuilder sb, CodeGraph graph, Dictionary<string, GraphNode> byId)

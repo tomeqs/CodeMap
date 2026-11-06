@@ -1,0 +1,370 @@
+{
+  "findings": [
+    {
+      "id": "di.captive@T:Shop.Infrastructure.Reporting.DailyReportService→T:Shop.Application.Orders.OrderQueries",
+      "rule": "di.captive",
+      "category": "di",
+      "severity": "error",
+      "title": "DailyReportService holds a shorter-lived OrderQueries",
+      "message": "DailyReportService lives as a singleton but depends on scoped OrderQueries: one instance gets shared by every request and outlives its scope.",
+      "nodes": [
+        "T:Shop.Infrastructure.Reporting.DailyReportService",
+        "T:Shop.Application.Orders.OrderQueries"
+      ],
+      "locations": [
+        {
+          "file": "src/Shop.Infrastructure/Reporting/DailyReportService.cs",
+          "line": 10,
+          "endLine": 18,
+          "node": "T:Shop.Infrastructure.Reporting.DailyReportService",
+          "note": "the consumer"
+        },
+        {
+          "file": "src/Shop.Infrastructure/ServiceCollectionExtensions.cs",
+          "line": 34,
+          "node": "M:Shop.Infrastructure.ServiceCollectionExtensions.AddShop(Microsoft.Extensions.DependencyInjection.IServiceCollection)",
+          "note": "registers DailyReportService as singleton"
+        },
+        {
+          "file": "src/Shop.Infrastructure/ServiceCollectionExtensions.cs",
+          "line": 33,
+          "node": "M:Shop.Infrastructure.ServiceCollectionExtensions.AddShop(Microsoft.Extensions.DependencyInjection.IServiceCollection)",
+          "note": "registers OrderQueries as scoped"
+        }
+      ],
+      "evidence": {},
+      "suggestion": "Give DailyReportService the shorter lifetime, or let it create a scope (IServiceScopeFactory) / take a factory for OrderQueries.",
+      "proposalKinds": [
+        "fix-di"
+      ],
+      "rank": 3010
+    },
+    {
+      "id": "cycle.namespace@namespace:Shop.Application/Shop.Application.Orders",
+      "rule": "cycle.namespace",
+      "category": "spaghetti",
+      "severity": "warning",
+      "title": "Cycle between 2 namespaces",
+      "message": "Shop.Application.Orders, Shop.Application.Pricing depend on each other in a circle. Cutting 1 dependency (3 of its 8 references) breaks it: Shop.Application.Pricing → Shop.Application.Orders.",
+      "nodes": [
+        "namespace:Shop.Application/Shop.Application.Pricing",
+        "namespace:Shop.Application/Shop.Application.Orders"
+      ],
+      "locations": [
+        {
+          "file": "src/Shop.Application/Pricing/DiscountPolicies.cs",
+          "line": 57,
+          "node": "M:Shop.Application.Pricing.DiscountPolicies.Preview(Shop.Domain.Orders.Order)",
+          "note": "calls OrderSummary.From"
+        }
+      ],
+      "evidence": {
+        "size": 2,
+        "cutDependencies": 1,
+        "cutWeight": 3,
+        "totalWeight": 8
+      },
+      "facts": [
+        "Shop.Application.Pricing → Shop.Application.Orders: 3 references (calls ×1, returns ×1, uses ×1), e.g. src/Shop.Application/Pricing/DiscountPolicies.cs:57"
+      ],
+      "suggestion": "Make the cut dependencies point down: move the types that cause them, or invert them (an interface in the lower namespace, implemented above it).",
+      "proposalKinds": [
+        "break-cycle",
+        "invert-dependency",
+        "move-type"
+      ],
+      "rank": 2023
+    },
+    {
+      "id": "cycle.namespace@namespace:Shop.Domain/Shop.Domain.Customers",
+      "rule": "cycle.namespace",
+      "category": "spaghetti",
+      "severity": "warning",
+      "title": "Cycle between 2 namespaces",
+      "message": "Shop.Domain.Customers, Shop.Domain.Orders depend on each other in a circle. Cutting 1 dependency (3 of its 10 references) breaks it: Shop.Domain.Orders → Shop.Domain.Customers.",
+      "nodes": [
+        "namespace:Shop.Domain/Shop.Domain.Orders",
+        "namespace:Shop.Domain/Shop.Domain.Customers"
+      ],
+      "locations": [
+        {
+          "file": "src/Shop.Domain/Orders/Order.cs",
+          "line": 16,
+          "node": "M:Shop.Domain.Orders.Order.#ctor(System.Guid,Shop.Domain.Customers.Customer,System.String)",
+          "note": "calls Customer.Attach"
+        },
+        {
+          "file": "src/Shop.Domain/Orders/Order.cs",
+          "line": 19,
+          "node": "P:Shop.Domain.Orders.Order.Customer",
+          "note": "holds Customer"
+        },
+        {
+          "file": "src/Shop.Domain/Orders/Order.cs",
+          "line": 8,
+          "node": "T:Shop.Domain.Orders.Order",
+          "note": "injects Customer"
+        }
+      ],
+      "evidence": {
+        "size": 2,
+        "cutDependencies": 1,
+        "cutWeight": 3,
+        "totalWeight": 10
+      },
+      "facts": [
+        "Shop.Domain.Orders → Shop.Domain.Customers: 3 references (calls ×1, holds ×1, injects ×1), e.g. src/Shop.Domain/Orders/Order.cs:16"
+      ],
+      "suggestion": "Make the cut dependencies point down: move the types that cause them, or invert them (an interface in the lower namespace, implemented above it).",
+      "proposalKinds": [
+        "break-cycle",
+        "invert-dependency",
+        "move-type"
+      ],
+      "rank": 2023
+    },
+    {
+      "id": "cycle.type@T:Shop.Domain.Customers.Customer",
+      "rule": "cycle.type",
+      "category": "spaghetti",
+      "severity": "info",
+      "title": "Cycle between 2 types",
+      "message": "Customer, Order depend on each other in a circle. Cutting 1 dependency (3 of its 8 references) breaks it: Order → Customer.",
+      "nodes": [
+        "T:Shop.Domain.Orders.Order",
+        "T:Shop.Domain.Customers.Customer"
+      ],
+      "locations": [
+        {
+          "file": "src/Shop.Domain/Orders/Order.cs",
+          "line": 16,
+          "node": "M:Shop.Domain.Orders.Order.#ctor(System.Guid,Shop.Domain.Customers.Customer,System.String)",
+          "note": "calls Customer.Attach"
+        },
+        {
+          "file": "src/Shop.Domain/Orders/Order.cs",
+          "line": 19,
+          "node": "P:Shop.Domain.Orders.Order.Customer",
+          "note": "holds Customer"
+        },
+        {
+          "file": "src/Shop.Domain/Orders/Order.cs",
+          "line": 8,
+          "node": "T:Shop.Domain.Orders.Order",
+          "note": "injects Customer"
+        }
+      ],
+      "evidence": {
+        "size": 2,
+        "cutDependencies": 1,
+        "cutWeight": 3,
+        "totalWeight": 8
+      },
+      "facts": [
+        "Order → Customer: 3 references (calls ×1, holds ×1, injects ×1), e.g. src/Shop.Domain/Orders/Order.cs:16"
+      ],
+      "suggestion": "Break the cut references: depend on an interface the lower type owns, pass the data instead of the object, raise an event, or merge the types if they are one concept.",
+      "proposalKinds": [
+        "break-cycle",
+        "invert-dependency"
+      ],
+      "rank": 1023
+    },
+    {
+      "id": "cycle.type@T:Shop.Application.Orders.OrderSummary",
+      "rule": "cycle.type",
+      "category": "spaghetti",
+      "severity": "info",
+      "title": "Cycle between 2 types",
+      "message": "OrderSummary, DiscountPolicies depend on each other in a circle. Cutting 1 dependency (2 of its 5 references) breaks it: OrderSummary → DiscountPolicies.",
+      "nodes": [
+        "T:Shop.Application.Orders.OrderSummary",
+        "T:Shop.Application.Pricing.DiscountPolicies"
+      ],
+      "locations": [
+        {
+          "file": "src/Shop.Application/Orders/OrderQueries.cs",
+          "line": 31,
+          "node": "M:Shop.Application.Orders.OrderSummary.From(Shop.Domain.Orders.Order)",
+          "note": "calls DiscountPolicies.Describe"
+        },
+        {
+          "file": "src/Shop.Application/Orders/OrderQueries.cs",
+          "line": 30,
+          "node": "M:Shop.Application.Orders.OrderSummary.From(Shop.Domain.Orders.Order)",
+          "note": "uses DiscountPolicies"
+        }
+      ],
+      "evidence": {
+        "size": 2,
+        "cutDependencies": 1,
+        "cutWeight": 2,
+        "totalWeight": 5
+      },
+      "facts": [
+        "OrderSummary → DiscountPolicies: 2 references (calls ×1, uses ×1), e.g. src/Shop.Application/Orders/OrderQueries.cs:31"
+      ],
+      "suggestion": "Break the cut references: depend on an interface the lower type owns, pass the data instead of the object, raise an event, or merge the types if they are one concept.",
+      "proposalKinds": [
+        "break-cycle",
+        "invert-dependency"
+      ],
+      "rank": 1022
+    },
+    {
+      "id": "tiny-namespace@namespace:Shop.Infrastructure/Shop.Infrastructure.Reporting",
+      "rule": "tiny-namespace",
+      "category": "structure",
+      "severity": "info",
+      "title": "Shop.Infrastructure.Reporting is a tiny namespace",
+      "message": "Shop.Infrastructure.Reporting holds 1 type (DailyReportService), and 100% of its dependencies are with Shop.Infrastructure.",
+      "nodes": [
+        "namespace:Shop.Infrastructure/Shop.Infrastructure.Reporting",
+        "namespace:Shop.Infrastructure/Shop.Infrastructure",
+        "T:Shop.Infrastructure.Reporting.DailyReportService"
+      ],
+      "locations": [
+        {
+          "file": "src/Shop.Infrastructure/Reporting/DailyReportService.cs",
+          "line": 10,
+          "endLine": 18,
+          "node": "T:Shop.Infrastructure.Reporting.DailyReportService"
+        }
+      ],
+      "evidence": {
+        "types": 1,
+        "partnerShare": 1,
+        "partnerWeight": 1
+      },
+      "suggestion": "Move DailyReportService into Shop.Infrastructure and remove Shop.Infrastructure.Reporting.",
+      "proposalKinds": [
+        "merge-namespaces",
+        "move-type"
+      ],
+      "rank": 1005
+    },
+    {
+      "id": "feature-envy@M:Shop.Infrastructure.Payments.FakePaymentGateway.ChargeAsync(System.Guid,Shop.Domain.Common.Money,System.Threading.CancellationToken)",
+      "rule": "feature-envy",
+      "category": "spaghetti",
+      "severity": "info",
+      "title": "FakePaymentGateway.ChargeAsync envies PaymentOptions",
+      "message": "FakePaymentGateway.ChargeAsync uses 3 attributes of PaymentOptions and one other class but none of its own class.",
+      "nodes": [
+        "M:Shop.Infrastructure.Payments.FakePaymentGateway.ChargeAsync(System.Guid,Shop.Domain.Common.Money,System.Threading.CancellationToken)",
+        "T:Shop.Infrastructure.Payments.PaymentOptions"
+      ],
+      "locations": [
+        {
+          "file": "src/Shop.Infrastructure/Payments/FakePaymentGateway.cs",
+          "line": 9,
+          "endLine": 19,
+          "node": "M:Shop.Infrastructure.Payments.FakePaymentGateway.ChargeAsync(System.Guid,Shop.Domain.Common.Money,System.Threading.CancellationToken)"
+        }
+      ],
+      "evidence": {
+        "atfd": 3,
+        "atfd.limit": 2,
+        "laa": 0,
+        "laa.limit": 0.333,
+        "fdp": 2,
+        "fdp.limit": 2
+      },
+      "suggestion": "Move ChargeAsync (or the part of it that works on that data) to PaymentOptions.",
+      "proposalKinds": [
+        "move-member"
+      ],
+      "rank": 1003
+    },
+    {
+      "id": "dead-code@T:Shop.Application.Orders.OrderQueries",
+      "rule": "dead-code",
+      "category": "dead-code",
+      "severity": "info",
+      "title": "1 member of OrderQueries is not used",
+      "message": "Nothing references OrderQueries.LegacyFormat.",
+      "nodes": [
+        "T:Shop.Application.Orders.OrderQueries",
+        "M:Shop.Application.Orders.OrderQueries.LegacyFormat(Shop.Domain.Orders.Order)"
+      ],
+      "locations": [
+        {
+          "file": "src/Shop.Application/Orders/OrderQueries.cs",
+          "line": 25,
+          "endLine": 25,
+          "node": "M:Shop.Application.Orders.OrderQueries.LegacyFormat(Shop.Domain.Orders.Order)"
+        }
+      ],
+      "evidence": {
+        "members": 1,
+        "loc": 1
+      },
+      "suggestion": "Delete them if nothing outside the analyzed code (reflection, serialization, other repositories) uses them.",
+      "proposalKinds": [
+        "remove-dead-code"
+      ],
+      "rank": 1002
+    }
+  ],
+  "score": {
+    "score": 81,
+    "grade": "B",
+    "components": [
+      {
+        "name": "cycles",
+        "weight": 25,
+        "value": 0.264,
+        "penalty": 6.6,
+        "explanation": "27% of namespaces, 9% of types and 0% of projects are in cycles."
+      },
+      {
+        "name": "layers",
+        "weight": 20,
+        "value": 0.083,
+        "penalty": 1.7,
+        "explanation": "2% of the dependency weight between namespaces points up (6 of 288 references)."
+      },
+      {
+        "name": "coupling",
+        "weight": 20,
+        "value": 0.269,
+        "penalty": 5.4,
+        "explanation": "Average distance from the main sequence 0.32; 2% of types are hubs or use 20+ types."
+      },
+      {
+        "name": "findings",
+        "weight": 20,
+        "value": 0.261,
+        "penalty": 5.2,
+        "explanation": "1 errors, 0 warnings and 2 infos (other than cycles and dead code) for 46 types."
+      },
+      {
+        "name": "size",
+        "weight": 15,
+        "value": 0,
+        "penalty": 0,
+        "explanation": "0% of the code is in types of 500+ lines; 0% of methods have complexity 15+."
+      }
+    ],
+    "summary": "81/100 (B): most is lost to cycles (−6.6) and coupling (−5.4)."
+  },
+  "bySeverity": {
+    "error": 1,
+    "info": 5,
+    "warning": 2
+  },
+  "byCategory": {
+    "dead-code": 1,
+    "di": 1,
+    "spaghetti": 5,
+    "structure": 1
+  },
+  "byRule": {
+    "cycle.namespace": 2,
+    "cycle.type": 2,
+    "dead-code": 1,
+    "di.captive": 1,
+    "feature-envy": 1,
+    "tiny-namespace": 1
+  }
+}
