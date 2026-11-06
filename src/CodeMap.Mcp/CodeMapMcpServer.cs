@@ -40,6 +40,13 @@ public static class CodeMapMcpServer
     public static async Task RunAsync(CodeMapMcpOptions options, Stream input, Stream output, CancellationToken ct)
     {
         using var session = new CodeMapSession(options);
+        // Stopped (a signal, Ctrl+C): the session closes at once, and with it the browser of render_map. The input may
+        // still be open, and a read of it cannot be interrupted, so the end of the transport is not waited for.
+        using var closeOnStop = ct.Register(() =>
+        {
+            try { session.Dispose(); }
+            catch (Exception ex) { options.Log.WriteLine($"Closing the session: {ex.Message}"); }
+        });
         await using var transport = new StreamServerTransport(input, output, "codemap");
         await using var server = McpServer.Create(transport, CreateOptions(session));
         if (options.Path != null) session.Start(session.Resolve(options.Path));

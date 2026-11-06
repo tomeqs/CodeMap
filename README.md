@@ -271,6 +271,8 @@ The server only reads; it never edits files.
   in Playwright's cache). `codemap mcp --browser <path>` or `CODEMAP_BROWSER` points at another one. No GPU is needed:
   the map is drawn with WebGL 2 on SwiftShader (`CODEMAP_RENDERER=webgpu` tries WebGPU). A map with over 3,000 types is
   drawn by namespace unless a level is asked for. Without a browser, `diagram` draws the same structure in Mermaid.
+  The browser is closed after 10 minutes without a picture, and with the server: when the client closes it, stops it
+  with SIGTERM or Ctrl+C, or (on Windows) kills it. Only a hard kill (SIGKILL) on Linux or macOS leaves it running.
 * **Answers:**
   * every answer is JSON, with a `meta` block;
   * `meta.stale` says the sources changed since the analysis;

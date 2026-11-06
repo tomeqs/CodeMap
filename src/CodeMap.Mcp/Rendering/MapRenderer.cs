@@ -149,7 +149,7 @@ internal sealed class MapRenderer : IAsyncDisposable
         _log.WriteLine($"render: starting {executable}");
         try
         {
-            _chrome = await ChromiumProcess.StartAsync(executable, Renderer == "webgpu", ct).ConfigureAwait(false);
+            _chrome = await ChromiumProcess.StartAsync(executable, Renderer == "webgpu", ct, _log).ConfigureAwait(false);
             _cdp = await CdpClient.ConnectAsync(_chrome.WebSocketUrl, ct).ConfigureAwait(false);
             _page = await CdpPage.OpenAsync(_cdp, ct).ConfigureAwait(false);
             _host ??= await ViewerHost.StartAsync(ct).ConfigureAwait(false);

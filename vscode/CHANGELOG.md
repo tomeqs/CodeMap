@@ -9,7 +9,7 @@
   - **get refactorings**: break a cycle, invert a layer violation, move a type or an envious method, split a god class along its groups of members, merge a tiny namespace, delete dead code, fix a DI lifetime. Each with steps in the code, its cost, and what it would fix, checked by a simulation.
   - **try changes first**: `simulate` applies moves, merges, removed or inverted dependencies, extracted interfaces, splits and lifetime changes to a copy of the map and shows what they change.
   - **compare** two maps (a baseline and the code after the edits): score, findings, cycles, dependencies, moved and renamed types and namespaces.
-  - **look at the map**: `render_map` returns PNG pictures of any view (galaxy, city, layers, DI, flow, matrix), with a node, a path, a cycle, a DI issue or a finding lit up, drawn in a headless Chrome, Edge or Chromium.
+  - **look at the map**: `render_map` returns PNG pictures of any view (galaxy, city, layers, DI, flow, matrix), with a node, a path, a cycle, a DI issue or a finding lit up, drawn in a headless Chrome, Edge or Chromium that closes with the server.
 
 ## 0.2.4
 

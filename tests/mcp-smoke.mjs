@@ -7,6 +7,8 @@
 //
 // A picture needs Chrome, Edge or Chromium: without one, or when it cannot draw, render_map only warns.
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,6 +20,9 @@ if (!command) {
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const shop = path.join(repo, 'samples', 'Shop');
+// The browser for render_map runs on a throw-away profile, codemap-browser-* in the temp folder, deleted once it is closed.
+const browserProfiles = () => fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('codemap-browser-'));
+const profilesBefore = new Set(browserProfiles());
 const server = spawn(command, [...before, 'mcp', '--root', shop, '--no-watch'], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
 const stderr = [];
 server.stderr.on('data', (data) => stderr.push(String(data)));
@@ -116,9 +121,21 @@ try {
     console.log(`::warning::render_map: ${error.message.split('\n')[0]}`);
   }
 
+  // Stop it as a client does: SIGTERM where there are signals, the end of its input on Windows (CODEMAP_SMOKE_STOP=eof
+  // or sigterm picks one). It has to exit by itself, and close the browser it started for render_map (whose profile
+  // folder goes with it).
+  const byEof = (process.env.CODEMAP_SMOKE_STOP ?? (process.platform === 'win32' ? 'eof' : 'sigterm')) === 'eof';
+  const how = byEof ? 'the end of its input' : 'SIGTERM';
+  const exited = new Promise((resolve) => server.once('exit', (code, signal) => resolve({ code, signal })));
+  if (byEof) server.stdin.end();
+  else server.kill('SIGTERM');
+  const stopped = await Promise.race([exited, new Promise((resolve) => setTimeout(() => resolve(null), 30000))]);
+  if (!stopped) throw new Error(`codemap mcp did not stop within 30 s of ${how}`);
+  check(stopped.code === 0, `stops on ${how} (exit code ${stopped.code}${stopped.signal ? `, ${stopped.signal}` : ''})`);
+  const left = browserProfiles().filter((p) => !profilesBefore.has(p));
+  check(left.length === 0, `no browser left behind${left.length ? `: ${left.join(', ')}` : ''}`);
+
   console.log('codemap mcp smoke test passed.');
-  server.stdin.end();
-  server.kill();
   process.exit(0);
 } catch (error) {
   fail(error.message);

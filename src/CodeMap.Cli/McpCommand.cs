@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using CodeMap.Analysis;
 using CodeMap.Languages;
 using CodeMap.Languages.External;
@@ -64,6 +65,12 @@ internal static class McpCommand
             stop.Cancel();
         };
 
+        // A client that stops the server with SIGTERM (or whose terminal goes away: SIGHUP) gets the same clean stop as
+        // Ctrl+C: the session closes, and with it the browser used for render_map. (On Windows, where a kill cannot be
+        // caught, the browser is in a job object that dies with codemap.)
+        using var terminate = Register(PosixSignal.SIGTERM, stop);
+        using var hangUp = Register(PosixSignal.SIGHUP, stop);
+
         var options = new CodeMapMcpOptions
         {
             Path = path,
@@ -83,14 +90,48 @@ internal static class McpCommand
             },
             Version = typeof(CodeMap.Model.CodeGraph).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
         };
-        try
+        var running = CodeMapMcpServer.RunAsync(options, protocolIn, protocolOut, stop.Token);
+        var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (stop.Token.Register(() => stopped.TrySetResult()))
         {
-            CodeMapMcpServer.RunAsync(options, protocolIn, protocolOut, stop.Token).GetAwaiter().GetResult();
+            Task.WaitAny(running, stopped.Task);
         }
-        catch (OperationCanceledException) when (stop.IsCancellationRequested)
+
+        // Asked to stop: the session is closed by then, but the server may still be blocked reading an open stdin
+        // (which cannot be interrupted). A few seconds to finish, then the process ends anyway.
+        if (!running.IsCompleted) Task.WaitAny(running, Task.Delay(TimeSpan.FromSeconds(2)));
+        if (running.IsCompleted)
         {
+            try
+            {
+                running.GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex) when (stop.IsCancellationRequested)
+            {
+                // Asked to stop: what failed on the way out (a tool call meeting the closed session) is not an error.
+                Console.Error.WriteLine($"codemap mcp stopped: {ex.Message}");
+            }
         }
 
         return 0;
+    }
+
+    private static PosixSignalRegistration? Register(PosixSignal signal, CancellationTokenSource stop)
+    {
+        try
+        {
+            return PosixSignalRegistration.Create(signal, context =>
+            {
+                context.Cancel = true;
+                stop.Cancel();
+            });
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return null;
+        }
     }
 }
