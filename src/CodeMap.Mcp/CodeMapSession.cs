@@ -34,6 +34,9 @@ internal sealed class CodeMapSession : IDisposable
     /// <summary>Baselines kept in memory; older ones are written to disk and read back when used.</summary>
     public const int BaselinesInMemory = 4;
 
+    /// <summary>Simulations kept (the most recent ones).</summary>
+    public const int SimulationsKept = 6;
+
     private readonly object _gate = new();
     private readonly CodeMapMcpOptions _options;
     private readonly Dictionary<string, Snapshot> _baselines = new(StringComparer.OrdinalIgnoreCase);
@@ -43,6 +46,8 @@ internal sealed class CodeMapSession : IDisposable
     private readonly List<FileSystemWatcher> _watchers = new();
     private readonly List<string> _changed = new();
     private readonly string _spillFolder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "codemap-mcp", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    private readonly List<(string Name, Snapshot Snapshot)> _simulations = new();
+    private int _simulationCount;
     private LanguageRegistry? _registry;
     private AnalysisJob? _job;
     private string? _watchRoot;
@@ -147,6 +152,7 @@ internal sealed class CodeMapSession : IDisposable
         if (reference.Equals("previous", StringComparison.OrdinalIgnoreCase))
             return Previous ?? throw new ToolException("There is no previous analysis: it appears after analyze with refresh: true.");
 
+        if (Simulation(reference) is { } simulation) return simulation;
         if (Baseline(reference) is { } baseline) return baseline;
         if (reference.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
         {
@@ -162,7 +168,7 @@ internal sealed class CodeMapSession : IDisposable
             }
         }
 
-        throw new ToolException($"Unknown graph '{reference}'. Use current, previous, a baseline ({string.Join(", ", BaselineNames().DefaultIfEmpty("none saved"))}) or a .codemap.json path.");
+        throw new ToolException($"Unknown graph '{reference}'. Use current, previous, a baseline ({string.Join(", ", BaselineNames().DefaultIfEmpty("none saved"))}), a simulation ({string.Join(", ", SimulationNames().DefaultIfEmpty("none"))}) or a .codemap.json path.");
     }
 
     private Snapshot Analyze(string path, AnalyzerOptions options, CancellationToken ct)
@@ -210,6 +216,39 @@ internal sealed class CodeMapSession : IDisposable
         GitMaxCommits = o.GitMaxCommits,
         CodeChecks = o.CodeChecks,
     };
+
+    // ------------------------------------------------------------------ simulations
+
+    /// <summary>Keeps a simulated map under a name (sim-N unless given); the oldest of more than <see cref="SimulationsKept"/> is dropped.</summary>
+    public string AddSimulation(Snapshot snapshot, string? name = null)
+    {
+        lock (_gate)
+        {
+            name ??= $"sim-{++_simulationCount}";
+            _simulations.RemoveAll(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            _simulations.Add((name, snapshot));
+            while (_simulations.Count > SimulationsKept) _simulations.RemoveAt(0);
+            return name;
+        }
+    }
+
+    public Snapshot? Simulation(string name)
+    {
+        lock (_gate) return _simulations.LastOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).Snapshot;
+    }
+
+    public IEnumerable<string> SimulationNames()
+    {
+        lock (_gate) return _simulations.Select(x => x.Name).ToList();
+    }
+
+    /// <summary>A graph the session already holds, without loading or analyzing anything.</summary>
+    public Snapshot? Find(string? reference)
+    {
+        if (string.IsNullOrWhiteSpace(reference) || reference.Equals("current", StringComparison.OrdinalIgnoreCase)) return Current;
+        if (reference.Equals("previous", StringComparison.OrdinalIgnoreCase)) return Previous;
+        return Simulation(reference) ?? (IsSpilled(reference) ? null : Baseline(reference));
+    }
 
     // ------------------------------------------------------------------ baselines
 

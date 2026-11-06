@@ -252,13 +252,16 @@ The server only reads; it never edits files.
 | `search_nodes` | Nodes by name, kind, level, tags and metric range, sorted by a metric (e.g. the most complex methods). |
 | `call_flow` | The entry points (controllers, handlers, background services, routes…), or what one does: the call tree through interfaces to the implementation DI injects, and a sequence diagram. |
 | `diagram` | Mermaid: dependencies, layers, one cycle with its cheapest cut, a class with its neighbours, DI wiring, a sequence. |
+| `simulate` | Tries refactorings on a copy of the map, without touching the code: move types, members or namespaces, merge namespaces, remove or invert dependencies (an interface where the user is), extract interfaces, split types, remove dead code, change DI lifetimes. Shows what each would change: the score, findings, cycles, layers. The result (`sim-N`) is a graph every tool reads. |
 | `compare` | What changed between two maps (a baseline and the current map after edits): the score and each part, findings resolved and new, cycles and upward dependencies, dependencies, moved and renamed types and namespaces, metrics. |
 | `snapshots` | Saves the current map as a named baseline before refactoring; every tool takes `graph: "<name>"`. |
 
 * **Prompts:** `review_architecture`, `plan_refactoring` and `check_changes` start the usual tasks.
 * **Checks:** `analyze` also checks the code inside function bodies (`checks: false`, or `codemap mcp --no-checks`, turns
   that off). Its problems are findings of the `code` category.
-* **Resources:** `codemap://rules` describes every finding rule (what it finds, its thresholds, why it matters).
+* **Resources:**
+  * `codemap://rules` describes every finding rule (what it finds, its thresholds, why it matters);
+  * `codemap://operations` describes the operations `simulate` takes.
 * **Answers:**
   * every answer is JSON, with a `meta` block;
   * `meta.stale` says the sources changed since the analysis;

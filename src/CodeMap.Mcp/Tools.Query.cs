@@ -219,6 +219,7 @@ internal static partial class Tools
                 current = session.Current == null ? null : Describe("current", session.Current),
                 previous = session.Previous == null ? null : Describe("previous", session.Previous),
                 baselines = session.BaselineNames().Select(b => new { name = b, onDisk = session.IsSpilled(b) ? true : (bool?)null }).ToList(),
+                simulations = session.SimulationNames().ToList(),
             };
         });
 
