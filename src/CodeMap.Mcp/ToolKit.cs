@@ -164,6 +164,19 @@ internal static class Answers
         };
     }
 
+    /// <summary>A picture with its caption: the image, the caption as text, and the caption as structured content.</summary>
+    public static CallToolResult Image(ImageAnswer image, object meta)
+    {
+        var caption = JsonSerializer.SerializeToNode(image.Caption, Json) as JsonObject ?? new JsonObject();
+        caption["meta"] = JsonSerializer.SerializeToNode(meta, Json);
+        var text = caption.ToJsonString(Json);
+        return new CallToolResult
+        {
+            Content = new List<ContentBlock> { ImageContentBlock.FromBytes(image.Png, "image/png"), new TextContentBlock { Text = text } },
+            StructuredContent = JsonDocument.Parse(text).RootElement.Clone(),
+        };
+    }
+
     public static CallToolResult Error(string message) => new()
     {
         IsError = true,

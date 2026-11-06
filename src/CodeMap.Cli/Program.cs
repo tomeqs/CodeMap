@@ -53,6 +53,7 @@ internal static class Cli
               --no-watch           do not watch the sources (answers then never say the analysis is stale)
               --max-output <n>     the most characters of one tool answer (default 30000; longer lists are cut)
               --no-checks          do not check function bodies (on by default for agents)
+              --browser <path>     Chrome, Edge or Chromium for render_map (default: CODEMAP_BROWSER, else the installed one)
               (--lang, --plugins, --no-git, --git-since, --no-tests, --generated, --external work as for analysis)
 
         App options (codemap / codemap ui):

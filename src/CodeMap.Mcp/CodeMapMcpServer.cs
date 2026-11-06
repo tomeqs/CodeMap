@@ -22,8 +22,8 @@ public static class CodeMapMcpServer
         2. overview - the architecture: containers with coupling and layers, the health score, the worst findings.
         3. list_findings - problems with evidence: cycles and their cheapest cut, god classes, hubs, layer violations, DI mistakes,
            dead code... Each finding has ids of the nodes involved, file:line places and a suggestion.
-        4. describe_node / explain_dependency / call_flow / diagram - drill into a node, the references behind a dependency
-           (file:line), what an entry point does, or draw it as Mermaid.
+        4. describe_node / explain_dependency / call_flow / diagram / render_map - drill into a node, the references behind a
+           dependency (file:line), what an entry point does, draw it as Mermaid, or look at the 3D map as a picture.
         5. propose_refactorings turns findings into concrete refactorings (steps with file:line, cost, simulator operations,
            and, verified by a simulation, what each really fixes).
         6. simulate tries a refactoring on a copy of the map first (move, invert, extract, split, merge, remove; see
@@ -71,8 +71,8 @@ public static class CodeMapMcpServer
                     try
                     {
                         var payload = await tool.Run(call, ct).ConfigureAwait(false);
-                        var snapshot = payload is Snapshot s ? s : CurrentOf(session, call);
-                        return Answers.Result(payload, Answers.Meta(session, snapshot), session.Options.MaxOutput);
+                        var meta = Answers.Meta(session, CurrentOf(session, call));
+                        return payload is ImageAnswer image ? Answers.Image(image, meta) : Answers.Result(payload, meta, session.Options.MaxOutput);
                     }
                     catch (ToolException ex)
                     {

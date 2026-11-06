@@ -15,7 +15,7 @@ internal static class McpCommand
         var protocolIn = Console.OpenStandardInput();
         Console.SetOut(Console.Error);
 
-        string? path = null, root = null, plugins = null;
+        string? path = null, root = null, plugins = null, browser = null;
         List<string>? languages = null;
         var watch = true;
         var maxOutput = 30_000;
@@ -27,7 +27,7 @@ internal static class McpCommand
             switch (arg)
             {
                 case "-h" or "--help":
-                    Console.Error.WriteLine("codemap mcp [path] [--root <dir>] [--no-watch] [--max-output <n>] [--lang <list>] [--plugins <dir>] [--no-git] [--no-checks] [--git-since <when>] [--no-tests] [--generated] [--external]");
+                    Console.Error.WriteLine("codemap mcp [path] [--root <dir>] [--no-watch] [--max-output <n>] [--lang <list>] [--plugins <dir>] [--browser <path>] [--no-git] [--no-checks] [--git-since <when>] [--no-tests] [--generated] [--external]");
                     return 0;
                 case "--root": root = Path.GetFullPath(Next()); break;
                 case "--no-watch": watch = false; break;
@@ -36,6 +36,7 @@ internal static class McpCommand
                     break;
                 case "--lang": languages = Next().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(); break;
                 case "--plugins": plugins = Path.GetFullPath(Next()); break;
+                case "--browser": browser = Next(); break;
                 case "--no-git": analyzer.Git = false; break;
                 case "--no-checks": analyzer.CodeChecks = false; break;
                 case "--git-since": analyzer.GitSince = Next(); break;
@@ -72,6 +73,14 @@ internal static class McpCommand
             Registry = Registry,
             MaxOutput = maxOutput,
             Log = Console.Error,
+            Browser = browser,
+            ViewerHtml = () =>
+            {
+                using var stream = typeof(McpCommand).Assembly.GetManifestResourceStream("CodeMap.viewer.html");
+                if (stream == null) return null;
+                using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
+                return reader.ReadToEnd();
+            },
             Version = typeof(CodeMap.Model.CodeGraph).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
         };
         try

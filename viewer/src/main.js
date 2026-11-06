@@ -717,6 +717,56 @@ class App {
     else this.reveal(id);
   }
 
+  // ------------------------------------------------------------------ automation (codemap mcp's render_map, the smoke tests)
+
+  /**
+   * Resolves true when the map is still: a graph is on screen, its layout has settled, the intro has played and the
+   * camera has stopped, for a few frames in a row; false after `timeout` milliseconds.
+   */
+  idle({ timeout = 60000 } = {}) {
+    const start = performance.now();
+    let quiet = 0;
+    return new Promise((resolve) => {
+      const check = () => {
+        const view = this.view;
+        const still = !!view?.units?.length && view.settled !== false && !view.store?.introRunning && !this.stage.flight;
+        quiet = still ? quiet + 1 : 0;
+        if (quiet >= 3) return resolve(true);
+        if (performance.now() - start > timeout) return resolve(false);
+        requestAnimationFrame(check);
+      };
+      requestAnimationFrame(check);
+    });
+  }
+
+  /** What is on screen, in words: the view, level, how many units and links, the HUD and the legend. */
+  describe() {
+    const lines = (el) => (el?.innerText ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
+    return {
+      view: this.state?.view ?? null,
+      level: this.state?.semantic ? 'auto' : this.state?.level ?? null,
+      scope: this.state?.scope ?? null,
+      units: this.view?.units?.length ?? 0,
+      links: this.view?.links?.length ?? 0,
+      renderer: this.stage.backend,
+      selection: this.selection?.nodeId ?? null,
+      hud: lines(this.hud),
+      legend: lines(this.legend),
+    };
+  }
+
+  /** Lights up these nodes (by the units that show them) and the links between them, with a line of text in the HUD. */
+  highlight(ids, text = '') {
+    const nodes = (ids ?? []).filter((id) => this.model.get(id));
+    if (!nodes.length) return this.select(null);
+    this.selection = { nodeId: nodes[0], unitId: null, mode: 'cycle', cycle: { nodes, level: this.state.level } };
+    this.applyHighlight();
+    this.statusLine = text || `${nodes.length} highlighted`;
+    const first = this.unitFor(this.model.get(nodes[0]));
+    if (first) this.view.focus(first);
+    this.updateHud();
+  }
+
   /** Makes a node visible (switching level / scope / filters if needed), selects and focuses it. */
   reveal(id) {
     const node = this.model.get(id);
