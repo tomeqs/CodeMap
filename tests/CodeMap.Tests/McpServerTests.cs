@@ -91,7 +91,7 @@ public sealed class McpServerTests
         Assert.Contains("analyze", c.Client.ServerInstructions);
 
         var tools = await c.Client.ListToolsAsync();
-        Assert.Equal(new[] { "analyze", "call_flow", "describe_node", "diagram", "explain_dependency", "list_findings", "overview", "search_nodes", "snapshots" },
+        Assert.Equal(new[] { "analyze", "call_flow", "compare", "describe_node", "diagram", "explain_dependency", "list_findings", "overview", "search_nodes", "snapshots" },
             tools.Select(t => t.Name).Order(StringComparer.Ordinal));
         Assert.All(tools, t =>
         {
@@ -274,6 +274,37 @@ public sealed class McpServerTests
         Assert.Equal("done", refreshed.GetProperty("status").GetString());
         Assert.False(refreshed.GetProperty("meta").TryGetProperty("stale", out _));
         Assert.NotNull(c.Session.Previous);
+    }
+
+    [Fact]
+    public async Task Compare_shows_what_a_refactoring_changed_against_a_baseline()
+    {
+        using var ws = new TestWorkspace().Project("App");
+        const string cycle = """
+            namespace App.Orders { public class Order { public App.Customers.Customer? Owner; public void Notify() => Owner!.Tell(); } }
+            namespace App.Customers { public class Customer { public void Tell() { } public App.Orders.Order? Last; } }
+            """;
+        ws.File("App/A.cs", cycle);
+        await using var c = await Connection.OpenAsync();
+        await c.CallAsync("analyze", new { path = ws.Root });
+        await c.CallAsync("snapshots", new { action = "save", name = "before" });
+        var (_, sameText, sameError) = await c.CallAsync("compare");
+        Assert.True(sameError);
+        Assert.Contains("same analysis", sameText);
+
+        ws.File("App/A.cs", cycle.Replace(" public App.Orders.Order? Last;", ""));
+        await c.CallAsync("analyze", new { refresh = true });
+        var (diff, _, error) = await c.CallAsync("compare");
+        Assert.False(error);
+        Assert.Equal("before", diff.GetProperty("before").GetProperty("graph").GetString());
+        Assert.Contains(diff.GetProperty("findings").GetProperty("resolved").EnumerateArray(), f => f.GetProperty("rule").GetString() == "cycle.namespace");
+        var namespaces = diff.GetProperty("cycles").EnumerateArray().Single(x => x.GetProperty("level").GetString() == "namespace");
+        Assert.Equal(1, namespaces.GetProperty("resolved").GetArrayLength());
+        Assert.True(diff.GetProperty("score").GetProperty("delta").GetInt32() >= 0);
+        Assert.Contains(diff.GetProperty("summary").EnumerateArray(), l => l.GetString()!.Contains("namespace cycles: 1 → 0"));
+
+        var (previous, _, _) = await c.CallAsync("compare", new { before = "previous" });
+        Assert.True(previous.GetProperty("findings").GetProperty("resolved").GetArrayLength() > 0); // previous is the map before refresh
     }
 
     [Fact]
