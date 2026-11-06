@@ -238,16 +238,8 @@ public sealed class JobManager : IDisposable
             StopWatchingLocked();
             try
             {
-                // The root itself, and each folder in it that can hold code, with everything below: node_modules
-                // and build output are left out (thousands of folders that would each take a watch).
-                var ignored = IgnoredFolders(LanguageRegistry.Default);
-                _watchers.Add(Watch(root, recursive: false));
-                foreach (var dir in Directory.EnumerateDirectories(root))
-                {
-                    var name = System.IO.Path.GetFileName(dir);
-                    if (!name.StartsWith('.') && !ignored.Contains(name)) _watchers.Add(Watch(dir, recursive: true));
-                }
-
+                _watchers.AddRange(SourceChangeFilter.Watch(root, LanguageRegistry.Default, OnSourceChanged,
+                    (_, e) => _hub.Publish(new { type = "watch-error", message = e.GetException().Message })));
                 _watchPath = path;
                 _watchRoot = root;
                 _debounce = new Timer(_ => ScheduleRerun(), null, Timeout.Infinite, Timeout.Infinite);
@@ -276,22 +268,6 @@ public sealed class JobManager : IDisposable
         if (wasWatching) _hub.Publish(new { type = "watch", enabled = false });
     }
 
-    private FileSystemWatcher Watch(string folder, bool recursive)
-    {
-        var watcher = new FileSystemWatcher(folder)
-        {
-            IncludeSubdirectories = recursive,
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
-        };
-        watcher.Changed += OnSourceChanged;
-        watcher.Created += OnSourceChanged;
-        watcher.Deleted += OnSourceChanged;
-        watcher.Renamed += OnSourceChanged;
-        watcher.Error += (_, e) => _hub.Publish(new { type = "watch-error", message = e.GetException().Message });
-        watcher.EnableRaisingEvents = true;
-        return watcher;
-    }
-
     private void StopWatchingLocked()
     {
         foreach (var watcher in _watchers) watcher.Dispose();
@@ -309,23 +285,9 @@ public sealed class JobManager : IDisposable
         _debounce?.Change(1200, Timeout.Infinite);
     }
 
-    internal static bool IsRelevant(string path, string? root = null) => IsRelevant(path, LanguageRegistry.Default, root);
+    internal static bool IsRelevant(string path, string? root = null) => SourceChangeFilter.IsRelevant(path, LanguageRegistry.Default, root);
 
-    /// <summary>
-    /// A change worth a new analysis: a file some language reads, outside build output, dependencies and hidden
-    /// folders (.git…) of the watched <paramref name="root"/> (the root itself may be anywhere, ~/.local/… too).
-    /// </summary>
-    internal static bool IsRelevant(string path, LanguageRegistry registry, string? root = null)
-    {
-        var ignored = IgnoredFolders(registry);
-        var inside = root != null ? System.IO.Path.GetRelativePath(root, path) : path;
-        var parts = inside.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.SkipLast(1).Any(p => p.StartsWith('.') || ignored.Contains(p))) return false;
-        return registry.Languages.Any(l => l.IsWatched(path));
-    }
-
-    private static HashSet<string> IgnoredFolders(LanguageRegistry registry) =>
-        new(new[] { "bin", "obj", "node_modules" }.Concat(registry.Languages.SelectMany(l => l.IgnoredFolders)), StringComparer.OrdinalIgnoreCase);
+    internal static bool IsRelevant(string path, LanguageRegistry registry, string? root = null) => SourceChangeFilter.IsRelevant(path, registry, root);
 
     private void ScheduleRerun()
     {

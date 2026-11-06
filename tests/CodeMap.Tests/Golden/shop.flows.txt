@@ -1,0 +1,141 @@
+## T:Shop.Api.Controllers.OrdersController (controller, reach 39): M:Shop.Api.Controllers.OrdersController.Get(System.Guid,System.Threading.CancellationToken), M:Shop.Api.Controllers.OrdersController.History(System.Guid,System.Threading.CancellationToken), M:Shop.Api.Controllers.OrdersController.Place(Shop.Application.Orders.PlaceOrderCommand,System.Threading.CancellationToken)
+methods 39, types 23, depth 3, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as OrdersController
+    participant P1 as OrderQueries
+    participant P2 as InMemoryOrderRepository
+    participant P3 as OrderSummary
+    participant P4 as DiscountPolicies
+    Note over P0: Get()
+    P0->>P1: SummaryAsync()
+    activate P1
+    P1->>P2: FindAsync() [IOrderRepository]
+    P1->>P3: From()
+    activate P3
+    P3->>P4: Describe()
+    deactivate P3
+    deactivate P1
+
+sequenceDiagram
+    autonumber
+    participant P0 as OrdersController
+    participant P1 as OrderQueries
+    participant P2 as InMemoryOrderRepository
+    participant P3 as OrderSummary
+    Note over P0: History()
+    P0->>P1: HistoryAsync()
+    activate P1
+    P1->>P2: ForCustomerAsync() [IOrderRepository]
+    P1->>P3: From() (see above)
+    deactivate P1
+
+sequenceDiagram
+    autonumber
+    participant P0 as OrdersController
+    participant P1 as PlaceOrderHandler
+    participant P2 as InMemoryCatalog
+    participant P3 as Order
+    participant P4 as OrderLine
+    participant P5 as PricingCalculator
+    participant P6 as BulkDiscount
+    participant P7 as CategoryDiscount
+    participant P8 as LoyaltyDiscount
+    participant P9 as AggregateRoot
+    participant P10 as InMemoryOrderRepository
+    participant P11 as FakePaymentGateway
+    participant P12 as InProcessEventBus
+    Note over P0: Place()
+    P0->>P1: HandleAsync() [ICommandHandler#60;TCommand, TResult#62;]
+    activate P1
+    P1->>P2: GetAsync() [ICustomerDirectory]
+    P1-)P3: new Order
+    P1->>P2: GetAsync() [ICatalog]
+    P1->>P3: AddLine()
+    activate P3
+    P3->>P4: Increase()
+    P3-)P4: new OrderLine
+    deactivate P3
+    P1->>P5: Calculate()
+    activate P5
+    loop each DiscountPolicy
+        P5->>P6: AppliesTo() [DiscountPolicy]
+        P5->>P7: AppliesTo() [DiscountPolicy]
+        P5->>P8: AppliesTo() [DiscountPolicy]
+    end
+    loop each DiscountPolicy
+        P5->>P6: DiscountFor() [DiscountPolicy]
+        P5->>P7: DiscountFor() [DiscountPolicy]
+        P5->>P8: DiscountFor() [DiscountPolicy]
+    end
+    P5->>P5: IsBlackFriday()
+    deactivate P5
+    P1->>P3: Place()
+    activate P3
+    P3->>P9: Raise()
+    deactivate P3
+    P1->>P10: AddAsync() [IOrderRepository]
+    P1->>P11: ChargeAsync() [IPaymentGateway]
+    P1->>P3: MarkPaid()
+    P1->>P12: PublishAsync() [IEventBus]
+    P1->>P9: ClearEvents()
+    deactivate P1
+
+## T:Shop.Application.Orders.PlaceOrderHandler (handler, reach 27): M:Shop.Application.Orders.PlaceOrderHandler.HandleAsync(Shop.Application.Orders.PlaceOrderCommand,System.Threading.CancellationToken)
+methods 27, types 18, depth 2, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as PlaceOrderHandler
+    participant P1 as InMemoryCatalog
+    participant P2 as Order
+    participant P3 as OrderLine
+    participant P4 as PricingCalculator
+    participant P5 as BulkDiscount
+    participant P6 as CategoryDiscount
+    participant P7 as LoyaltyDiscount
+    participant P8 as AggregateRoot
+    participant P9 as InMemoryOrderRepository
+    participant P10 as FakePaymentGateway
+    participant P11 as InProcessEventBus
+    Note over P0: HandleAsync()
+    P0->>P1: GetAsync() [ICustomerDirectory]
+    P0-)P2: new Order
+    P0->>P1: GetAsync() [ICatalog]
+    P0->>P2: AddLine()
+    activate P2
+    P2->>P3: Increase()
+    P2-)P3: new OrderLine
+    deactivate P2
+    P0->>P4: Calculate()
+    activate P4
+    loop each DiscountPolicy
+        P4->>P5: AppliesTo() [DiscountPolicy]
+        P4->>P6: AppliesTo() [DiscountPolicy]
+        P4->>P7: AppliesTo() [DiscountPolicy]
+    end
+    loop each DiscountPolicy
+        P4->>P5: DiscountFor() [DiscountPolicy]
+        P4->>P6: DiscountFor() [DiscountPolicy]
+        P4->>P7: DiscountFor() [DiscountPolicy]
+    end
+    P4->>P4: IsBlackFriday()
+    deactivate P4
+    P0->>P2: Place()
+    activate P2
+    P2->>P8: Raise()
+    deactivate P2
+    P0->>P9: AddAsync() [IOrderRepository]
+    P0->>P10: ChargeAsync() [IPaymentGateway]
+    P0->>P2: MarkPaid()
+    P0->>P11: PublishAsync() [IEventBus]
+    P0->>P8: ClearEvents()
+
+## T:Program (entrypoint, reach 2): M:Program.{Main}$(System.String[])
+methods 2, types 2, depth 1, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as Program
+    participant P1 as ServiceCollectionExtensions
+    Note over P0: Main (top-level statements)()
+    P0->>P1: AddShop()
+

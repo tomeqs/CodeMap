@@ -37,6 +37,7 @@
   <ItemGroup>
     <ProjectReference Include="..\CodeMap.Core\CodeMap.Core.csproj" />
     <ProjectReference Include="..\CodeMap.Server\CodeMap.Server.csproj" />
+    <ProjectReference Include="..\CodeMap.Mcp\CodeMap.Mcp.csproj" />
   </ItemGroup>
 
   <!--

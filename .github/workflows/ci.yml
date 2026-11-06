@@ -80,6 +80,11 @@ jobs:
           codemap ../samples -o "$RUNNER_TEMP/samples"
           ls "$RUNNER_TEMP/samples"
       - run: npm run build
+      - name: The call flows the C# port is tested against match flow.js (codemap mcp's call_flow = the Flow view)
+        run: |
+          for map in shop booking; do
+            node ../tests/CodeMap.Tests/Golden/flows.mjs ../tests/CodeMap.Tests/Golden/$map.codemap.json | diff - ../tests/CodeMap.Tests/Golden/$map.flows.txt
+          done
       - name: The viewer built into the CLI matches the sources
         run: git diff --exit-code --stat -- ../src/CodeMap.Cli/Assets/viewer.html
       - name: Smoke tests on WebGPU and WebGL 2 (headless Chromium without a GPU)
