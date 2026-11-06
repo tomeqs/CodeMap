@@ -514,7 +514,9 @@ generates HTML without Node.js. After changes in `viewer/`, run `npm run build`.
    reference in the code through the semantic model into an edge of the right kind.
 4. `GraphMetrics` computes metrics, cycles and dead code candidates, `Layering` the layers and upward dependencies,
    `DependencyInjectionAnalysis` connects registrations with constructors, and `GitHistory` and `ChangeCouplingAnalysis`
-   add churn, hotspots and hidden coupling.
+   add churn, hotspots and hidden coupling. These steps can run again: `GraphPipeline.BuildRaw` keeps the raw graph (and
+   the git history, read once), and `GraphPipeline.Derive` makes a finished map from it, or from a changed copy of it,
+   as often as needed; `RawGraph.FromDerived` takes a saved `.codemap.json` back to its raw graph.
 5. Exporters write the result; the HTML is the viewer with the JSON embedded.
 
 Other languages plug in at step 3: a plugin returns the raw graph, and steps 4–5 are shared ([docs/plugins.md](docs/plugins.md)).

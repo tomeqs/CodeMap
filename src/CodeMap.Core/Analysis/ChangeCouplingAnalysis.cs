@@ -45,14 +45,6 @@ public static class ChangeCouplingAnalysis
 
         if (minShared <= 0) minShared = history.CommitCount < 30 ? 2 : 3;
 
-        // Code dependencies between types in either direction (members rolled up to their type).
-        var dependent = new HashSet<(string, string)>();
-        foreach (var edge in GraphView.TypeLevelEdges(graph))
-        {
-            if (!EdgeKinds.IsDependency(edge.Kind)) continue;
-            dependent.Add(Ordered(edge.Source, edge.Target));
-        }
-
         var pairs = shared
             .Where(p => p.Value >= minShared)
             .Select(p => new ChangeCouplingInfo
@@ -61,7 +53,6 @@ public static class ChangeCouplingAnalysis
                 Target = p.Key.B,
                 SharedCommits = p.Value,
                 Strength = Math.Round(2.0 * p.Value / (revisions[p.Key.A] + revisions[p.Key.B]), 3),
-                Hidden = !dependent.Contains(p.Key),
             })
             .Where(p => p.Strength >= minStrength)
             .OrderByDescending(p => p.SharedCommits * p.Strength)
@@ -69,7 +60,24 @@ public static class ChangeCouplingAnalysis
             .ThenBy(p => p.Target, StringComparer.Ordinal)
             .Take(MaxPairs)
             .ToList();
+        Attach(graph, pairs);
+    }
 
+    /// <summary>
+    /// Puts coupled pairs (strongest first) on the graph: in the analysis, as <c>changesWith</c> edges, and marked
+    /// hidden when no code dependency joins the two.
+    /// </summary>
+    internal static void Attach(CodeGraph graph, List<ChangeCouplingInfo> pairs)
+    {
+        // Code dependencies between types in either direction (members rolled up to their type).
+        var dependent = new HashSet<(string, string)>();
+        foreach (var edge in GraphView.TypeLevelEdges(graph))
+        {
+            if (!EdgeKinds.IsDependency(edge.Kind)) continue;
+            dependent.Add(Ordered(edge.Source, edge.Target));
+        }
+
+        foreach (var pair in pairs) pair.Hidden = !dependent.Contains(Ordered(pair.Source, pair.Target));
         graph.Analysis.ChangeCoupling = pairs;
         foreach (var pair in pairs)
         {
