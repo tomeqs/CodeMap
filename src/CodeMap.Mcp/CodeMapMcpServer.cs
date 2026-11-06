@@ -24,7 +24,9 @@ public static class CodeMapMcpServer
            dead code... Each finding has ids of the nodes involved, file:line places and a suggestion.
         4. describe_node / explain_dependency / call_flow / diagram - drill into a node, the references behind a dependency
            (file:line), what an entry point does, or draw it as Mermaid.
-        5. Before refactoring, snapshots {action: save} keeps the current map as a baseline. Edit the code, then
+        5. simulate tries a refactoring on a copy of the map first (move, invert, extract, split, merge, remove; see
+           codemap://operations) and shows what it would change; every tool reads the result as graph: "sim-N".
+        6. Before refactoring, snapshots {action: save} keeps the current map as a baseline. Edit the code, then
            analyze {refresh: true} and compare: the score, findings resolved and new, cycles, upward dependencies, moves.
 
         Names: tools take node ids, full names, names or the end of a full name (Orders.OrderService); an ambiguous name returns
@@ -108,13 +110,7 @@ public static class CodeMapMcpServer
     }
 
     /// <summary>The graph an answer was about: the one named in its arguments, else the current one.</summary>
-    private static Snapshot? CurrentOf(CodeMapSession session, ToolCall call)
-    {
-        var reference = call.String("graph");
-        if (reference == null || reference.Equals("current", StringComparison.OrdinalIgnoreCase)) return session.Current;
-        if (reference.Equals("previous", StringComparison.OrdinalIgnoreCase)) return session.Previous;
-        return session.Baseline(reference);
-    }
+    private static Snapshot? CurrentOf(CodeMapSession session, ToolCall call) => session.Find(call.String("graph"));
 }
 
 /// <summary>Prompts: ready-made tasks for the agent.</summary>
@@ -196,5 +192,14 @@ internal static class McpResources
                 MimeType = "application/json",
             },
             () => JsonSerializer.Serialize(FindingRules.All, Answers.Json)),
+        new(new Resource
+            {
+                Uri = "codemap://operations",
+                Name = "operations",
+                Title = "Simulation operations",
+                Description = "The refactorings the simulate tool can try on a copy of the map, with their fields.",
+                MimeType = "text/plain",
+            },
+            () => Tools.OperationsHelp),
     };
 }

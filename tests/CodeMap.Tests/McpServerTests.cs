@@ -91,7 +91,7 @@ public sealed class McpServerTests
         Assert.Contains("analyze", c.Client.ServerInstructions);
 
         var tools = await c.Client.ListToolsAsync();
-        Assert.Equal(new[] { "analyze", "call_flow", "compare", "describe_node", "diagram", "explain_dependency", "list_findings", "overview", "search_nodes", "snapshots" },
+        Assert.Equal(new[] { "analyze", "call_flow", "compare", "describe_node", "diagram", "explain_dependency", "list_findings", "overview", "search_nodes", "simulate", "snapshots" },
             tools.Select(t => t.Name).Order(StringComparer.Ordinal));
         Assert.All(tools, t =>
         {
@@ -305,6 +305,31 @@ public sealed class McpServerTests
 
         var (previous, _, _) = await c.CallAsync("compare", new { before = "previous" });
         Assert.True(previous.GetProperty("findings").GetProperty("resolved").GetArrayLength() > 0); // previous is the map before refresh
+    }
+
+    [Fact]
+    public async Task Simulate_tries_a_refactoring_and_every_tool_reads_the_result()
+    {
+        await using var c = await ShopAsync();
+        var (sim, text, error) = await c.CallAsync("simulate", new { operations = new object[] { new { op = "invertDependency", from = "Shop.Application.Pricing", to = "Shop.Application.Orders" } } });
+        Assert.False(error, text);
+        Assert.Equal("sim-1", sim.GetProperty("name").GetString());
+        Assert.Contains(sim.GetProperty("findings").GetProperty("resolved").EnumerateArray(), f => f.GetProperty("rule").GetString() == "cycle.namespace");
+        Assert.Equal("T:Shop.Application.Pricing.IOrderSummary", sim.GetProperty("predictedIds").EnumerateObject().First().Value.GetString());
+
+        var (overview, _, _) = await c.CallAsync("overview", new { graph = "sim-1" });
+        Assert.Equal("simulation", overview.GetProperty("meta").GetProperty("graph").GetProperty("origin").GetString());
+        var (chained, chainedText, chainedError) = await c.CallAsync("simulate", new { @base = "sim-1", name = "lifetimes", operations = new object[] { new { op = "setLifetime", service = "DailyReportService", lifetime = "scoped" } } });
+        Assert.False(chainedError, chainedText);
+        Assert.Equal("lifetimes", chained.GetProperty("name").GetString());
+        var (list, _, _) = await c.CallAsync("snapshots");
+        Assert.Equal(new[] { "sim-1", "lifetimes" }, list.GetProperty("simulations").EnumerateArray().Select(x => x.GetString()));
+
+        var (_, bad, isError) = await c.CallAsync("simulate", new { operations = new object[] { new { op = "moveType", type = "OrderSummary", to = "Nowhere" } } });
+        Assert.True(isError);
+        Assert.Contains("operations[0].to", bad);
+        var operations = await c.Client.ReadResourceAsync("codemap://operations");
+        Assert.Contains("invertDependency", ((TextResourceContents)operations.Contents[0]).Text);
     }
 
     [Fact]

@@ -31,6 +31,9 @@ internal sealed class ToolCall(CodeMapSession session, RequestContext<CallToolRe
     public CodeMapSession Session { get; } = session;
     public RequestContext<CallToolRequestParams> Request { get; } = request;
 
+    /// <summary>An argument as it came (arrays and objects of operations).</summary>
+    public JsonElement? Raw(string name) => Arg(name);
+
     private JsonElement? Arg(string name) =>
         _args.TryGetValue(name, out var value) && value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) ? value : null;
 
