@@ -1,0 +1,119 @@
+{
+  "protocol": 1,
+  "id": "python",
+  "idPrefix": "py:",
+  "name": "Python",
+  "version": "0.1.0",
+  "command": [
+    "python3",
+    "-B",
+    "-X",
+    "utf8",
+    "./src/cli.py"
+  ],
+  "runtime": {
+    "name": "python3",
+    "minVersion": "3.9",
+    "candidates": [
+      ["python3"],
+      ["python"],
+      ["py", "-3"]
+    ],
+    "envVar": "CODEMAP_PYTHON",
+    "help": "Python needs Python 3.9 or newer (https://www.python.org/downloads); or set CODEMAP_PYTHON to the python executable."
+  },
+  "inputs": "a pyproject.toml, setup.py, setup.cfg, requirements.txt or .py file",
+  "markers": "pyproject.toml, setup.py, requirements.txt or .py files",
+  "detect": {
+    "markers": [
+      "pyproject.toml",
+      "setup.py",
+      "setup.cfg",
+      "Pipfile",
+      "requirements.txt"
+    ],
+    "sources": [
+      ".py"
+    ],
+    "inputs": [
+      "pyproject.toml",
+      "setup.py",
+      "setup.cfg",
+      "Pipfile",
+      "requirements.txt",
+      "requirements*.txt",
+      "*.py"
+    ],
+    "excludeFiles": [
+      "*_pb2.py",
+      "*_pb2_grpc.py"
+    ],
+    "ignoreDirs": [
+      "__pycache__",
+      "__pypackages__",
+      "site-packages",
+      "dist-packages",
+      "*.egg-info",
+      "htmlcov"
+    ],
+    "ignoreMarkers": [
+      "pyvenv.cfg"
+    ],
+    "withoutMarker": true
+  },
+  "display": {
+    "levels": {
+      "project": [
+        "Project",
+        "Projects"
+      ],
+      "namespace": [
+        "Package",
+        "Packages"
+      ],
+      "type": [
+        "Module",
+        "Modules"
+      ],
+      "member": [
+        "Declaration",
+        "Declarations"
+      ]
+    },
+    "external": "PyPI packages"
+  },
+  "unused": {
+    "memberAccessibility": [
+      "private"
+    ],
+    "skipAttributed": true,
+    "skipTags": [
+      "entrypoint",
+      "test",
+      "route",
+      "handler"
+    ],
+    "skipMemberKinds": [
+      "constructor"
+    ],
+    "skipNamePattern": "^__.+__$",
+    "skipParentKinds": [
+      "interface"
+    ],
+    "skipParentTags": [
+      "test"
+    ],
+    "skipTypeTags": [
+      "entrypoint",
+      "controller",
+      "generated",
+      "config",
+      "barrel",
+      "init",
+      "test"
+    ],
+    "skipNames": [
+      "(top-level)"
+    ]
+  }
+}

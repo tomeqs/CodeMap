@@ -8,13 +8,17 @@ Pierwszą wtyczką jest TypeScript / JavaScript ([`analyzers/typescript`](../ana
 z Expressem (trasy), NestJS i Angularem (role, punkty wejścia, kontener DI) rozpoznawanymi po importach.
 Jak wygląda jej wynik, widać na [`samples/shop-ts`](../samples/shop-ts): `codemap samples/shop-ts -f json --indent`.
 
+Druga to Python ([`analyzers/python`](../analyzers/python)): program w Pythonie 3.9+ na jego własnym `ast`, bez instalowania
+pakietów. Nazwy rozwiązuje sam (importy, re-eksporty w `__init__.py`, klasy bazowe, typy z adnotacji i konstruktorów),
+a gdy typu odbiorcy nie da się ustalić, nie zgaduje: wywołanie nie daje krawędzi.
+
 ## Gdzie CodeMap szuka wtyczek
 
 W tej kolejności (dla jednego `id` wygrywa pierwsza znaleziona):
 
 1. foldery z `CODEMAP_PLUGIN_PATH` (rozdzielone `:` albo `;` na Windows) i z opcji `--plugins <folder>`,
 2. `~/.codemap/plugins` (albo `$CODEMAP_HOME/plugins`),
-3. `plugins/` obok programu `codemap` (tam trafia wtyczka TypeScript z wydaniami i z `dotnet build`).
+3. `plugins/` obok programu `codemap` (tam trafiają wtyczki TypeScript i Python z wydaniami i z `dotnet build`).
 
 Folder jest wtyczką, gdy ma plik `codemap-plugin.json`, albo folderem wtyczek, gdy mają go jego podfoldery.
 **Wtyczki nigdy nie są ładowane z analizowanego repozytorium**: wtyczka to program, który się uruchamia.

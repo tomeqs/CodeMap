@@ -11,8 +11,8 @@
     <ApplicationIcon>Assets\codemap.ico</ApplicationIcon>
     <Product>CodeMap</Product>
     <PackageId>CodeMap.Tool</PackageId>
-    <Description>Maps C# solutions (and TypeScript / JavaScript, with Node.js) into a relationship graph (JSON, DGML, GraphML, Cypher) and an interactive 3D map.</Description>
-    <PackageTags>code-map;architecture;dependency-graph;visualization;csharp;roslyn;typescript;javascript;nestjs;angular;dependency-injection;3d</PackageTags>
+    <Description>Maps C# solutions (and TypeScript / JavaScript with Node.js, Python with Python 3.9+) into a relationship graph (JSON, DGML, GraphML, Cypher) and an interactive 3D map.</Description>
+    <PackageTags>code-map;architecture;dependency-graph;visualization;csharp;roslyn;typescript;javascript;python;nestjs;angular;dependency-injection;3d</PackageTags>
     <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>
@@ -63,6 +63,19 @@
   <Target Name="TypeScriptPluginMissing" BeforeTargets="Build" Condition="!Exists('$(TypeScriptCompiler)lib\typescript.js')">
     <Warning Text="The TypeScript plugin is not included: run npm ci in analyzers/typescript to map TypeScript and JavaScript too." />
   </Target>
+
+  <!--
+    The Python language plugin (analyzers/python) goes next to the program too, in plugins/python. Python runs it from
+    its source files with the standard library alone, so there is nothing to build or install first.
+  -->
+  <PropertyGroup>
+    <PythonPlugin>$(MSBuildThisFileDirectory)..\..\analyzers\python\</PythonPlugin>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="$(PythonPlugin)codemap-plugin.json" Link="plugins\python\%(Filename)%(Extension)" />
+    <Content Include="$(PythonPlugin)src\**\*.py" Exclude="$(PythonPlugin)src\**\__pycache__\**" Link="plugins\python\src\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Update="$(PythonPlugin)**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" Pack="false" />
+  </ItemGroup>
 
   <!-- Single-file 3D viewer, produced by `npm run build` in /viewer. -->
   <ItemGroup>

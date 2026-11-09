@@ -13,7 +13,7 @@ namespace CodeMap.Mcp;
 public static class CodeMapMcpServer
 {
     public const string Instructions = """
-        CodeMap maps the structure of C# and TypeScript/JavaScript code: projects, namespaces (folders), types (files), members and
+        CodeMap maps the structure of C#, TypeScript/JavaScript and Python code: projects, namespaces (folders, packages), types (files, modules), members and
         every dependency between them (calls, inheritance, injection, imports...), with metrics, layers, cycles, DI wiring and git
         history. Use it to understand an application before changing it and to find and fix structural problems.
 

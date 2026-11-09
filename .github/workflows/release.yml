@@ -29,9 +29,15 @@ jobs:
           node-version: 22
       - name: TypeScript plugin
         run: npm ci --prefix analyzers/typescript && npm test --prefix analyzers/typescript
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python plugin
+        run: python -B -m unittest discover -s analyzers/python/test
       - run: dotnet test -c Release
         env:
-          CODEMAP_REQUIRE_NODE: '1' 
+          CODEMAP_REQUIRE_NODE: '1'
+          CODEMAP_REQUIRE_PYTHON: '1'
 
   build:
     needs: test
@@ -74,6 +80,11 @@ jobs:
       - name: TypeScript plugin (shipped next to the executable, with its compiler)
         run: npm ci --prefix analyzers/typescript
 
+      - uses: actions/setup-python@v5
+        if: matrix.smoke
+        with:
+          python-version: '3.12'
+
       - name: Publish single-file executable
         run: dotnet publish src/CodeMap.Cli -c Release -r ${{ matrix.rid }} -p:Version=${{ steps.version.outputs.version }} -p:DebugType=none -o publish
 
@@ -91,6 +102,8 @@ jobs:
           "$exe" samples -o smoke-mixed -f json -q
           grep -q '"T:Shop.Domain.Orders.Order"' smoke-mixed/samples.codemap.json
           grep -q '"ts:project:@shop/domain"' smoke-mixed/samples.codemap.json
+          "$exe" analyzers/python/test/fixtures/mini -o smoke-py -f json -q
+          grep -q '"py:mini:src/mini/orders/service.py#OrderService.place"' smoke-py/mini.codemap.json
           # The MCP server, as an agent uses it: analysis, findings, proposals, a diagram and a picture of the map.
           node tests/mcp-smoke.mjs "$exe"
 

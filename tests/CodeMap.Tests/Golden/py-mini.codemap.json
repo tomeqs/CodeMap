@@ -1,0 +1,1577 @@
+{
+  "format": "codemap",
+  "version": "1.1",
+  "generator": {
+    "name": "codemap",
+    "version": "(version)"
+  },
+  "generatedAt": "(time)",
+  "source": {
+    "path": "(repo)/analyzers/python/test/fixtures/mini",
+    "root": "(repo)/analyzers/python/test/fixtures/mini",
+    "kind": "directory",
+    "name": "mini",
+    "languages": [
+      {
+        "id": "python",
+        "name": "Python",
+        "levels": {
+          "project": [
+            "Project",
+            "Projects"
+          ],
+          "namespace": [
+            "Package",
+            "Packages"
+          ],
+          "type": [
+            "Module",
+            "Modules"
+          ],
+          "member": [
+            "Declaration",
+            "Declarations"
+          ]
+        },
+        "external": "PyPI packages"
+      }
+    ]
+  },
+  "stats": {
+    "projects": 1,
+    "namespaces": 3,
+    "types": 6,
+    "members": 32,
+    "packages": 2,
+    "externalTypes": 0,
+    "edges": 69,
+    "files": 6,
+    "lines": 129,
+    "cycles": 0,
+    "edges.imports": 7,
+    "edges.calls": 10,
+    "edges.accesses": 20,
+    "edges.uses": 5,
+    "edges.holds": 4,
+    "edges.instantiates": 7,
+    "edges.throws": 1,
+    "edges.returns": 4,
+    "edges.accepts": 4,
+    "edges.implements": 3,
+    "edges.injects": 1,
+    "edges.catches": 1,
+    "edges.packageReference": 2
+  },
+  "nodes": [
+    {
+      "id": "py:project:mini",
+      "kind": "project",
+      "name": "mini",
+      "fullName": "pyproject.toml",
+      "project": "py:project:mini",
+      "language": "python",
+      "signature": "1.0.0 · Python >=3.9",
+      "location": {
+        "file": "pyproject.toml",
+        "line": 1,
+        "endLine": 1
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "abstractness": 0.167,
+        "ca": 0,
+        "ce": 0,
+        "complexity": 25,
+        "distance": 0.833,
+        "files": 6,
+        "instability": 0,
+        "lines": 129,
+        "loc": 129,
+        "types": 6
+      }
+    },
+    {
+      "id": "py:ns:mini/mini",
+      "kind": "namespace",
+      "name": "mini",
+      "fullName": "mini",
+      "parent": "py:project:mini",
+      "project": "py:project:mini",
+      "namespace": "mini",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 1,
+        "complexity": 4,
+        "distance": 0,
+        "instability": 1,
+        "loc": 21,
+        "types": 2
+      }
+    },
+    {
+      "id": "py:ns:mini/mini.orders",
+      "kind": "namespace",
+      "name": "mini.orders",
+      "fullName": "mini.orders",
+      "parent": "py:project:mini",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "metrics": {
+        "abstractness": 0.333,
+        "ca": 2,
+        "ce": 0,
+        "complexity": 20,
+        "distance": 0.667,
+        "instability": 0,
+        "loc": 102,
+        "types": 3
+      }
+    },
+    {
+      "id": "py:ns:mini/tests",
+      "kind": "namespace",
+      "name": "tests",
+      "fullName": "tests",
+      "parent": "py:project:mini",
+      "project": "py:project:mini",
+      "namespace": "tests",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 1,
+        "complexity": 1,
+        "distance": 0,
+        "instability": 1,
+        "loc": 6,
+        "types": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/__init__.py",
+      "kind": "module",
+      "level": "type",
+      "name": "__init__.py",
+      "fullName": "mini",
+      "parent": "py:ns:mini/mini",
+      "project": "py:project:mini",
+      "namespace": "mini",
+      "accessibility": "public",
+      "location": {
+        "file": "src/mini/__init__.py",
+        "line": 1,
+        "endLine": 5
+      },
+      "tags": [
+        "barrel"
+      ],
+      "doc": "A small shop: orders, a repository and a command line.",
+      "metrics": {
+        "ca": 1,
+        "ce": 2,
+        "complexity": 0,
+        "instability": 0.667,
+        "loc": 5,
+        "members": 0
+      }
+    },
+    {
+      "id": "py:mini:src/mini/cli.py",
+      "kind": "module",
+      "level": "type",
+      "name": "cli.py",
+      "fullName": "mini.cli",
+      "parent": "py:ns:mini/mini",
+      "project": "py:project:mini",
+      "namespace": "mini",
+      "accessibility": "public",
+      "location": {
+        "file": "src/mini/cli.py",
+        "line": 1,
+        "endLine": 16
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 3,
+        "complexity": 4,
+        "instability": 1,
+        "loc": 16,
+        "maxComplexity": 2,
+        "members": 2,
+        "methods": 2
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py",
+      "kind": "module",
+      "level": "type",
+      "name": "model.py",
+      "fullName": "mini.orders.model",
+      "parent": "py:ns:mini/mini.orders",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 1,
+        "endLine": 41
+      },
+      "doc": "What an order is.",
+      "metrics": {
+        "ca": 5,
+        "ce": 0,
+        "complexity": 6,
+        "fields": 5,
+        "instability": 0,
+        "loc": 41,
+        "maxComplexity": 3,
+        "members": 9,
+        "methods": 2,
+        "properties": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/ports.py",
+      "kind": "module",
+      "level": "type",
+      "name": "ports.py",
+      "fullName": "mini.orders.ports",
+      "parent": "py:ns:mini/mini.orders",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "location": {
+        "file": "src/mini/orders/ports.py",
+        "line": 1,
+        "endLine": 12
+      },
+      "metrics": {
+        "ca": 1,
+        "ce": 1,
+        "complexity": 2,
+        "instability": 0.5,
+        "loc": 12,
+        "maxComplexity": 1,
+        "members": 2,
+        "methods": 2
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py",
+      "kind": "module",
+      "level": "type",
+      "name": "service.py",
+      "fullName": "mini.orders.service",
+      "parent": "py:ns:mini/mini.orders",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 1,
+        "endLine": 49
+      },
+      "metrics": {
+        "ca": 3,
+        "ce": 2,
+        "complexity": 12,
+        "constructors": 2,
+        "fields": 3,
+        "instability": 0.4,
+        "loc": 49,
+        "maxComplexity": 3,
+        "members": 12,
+        "methods": 7
+      }
+    },
+    {
+      "id": "py:mini:tests/test_service.py",
+      "kind": "module",
+      "level": "type",
+      "name": "test_service.py",
+      "fullName": "tests.test_service",
+      "parent": "py:ns:mini/tests",
+      "project": "py:project:mini",
+      "namespace": "tests",
+      "accessibility": "public",
+      "location": {
+        "file": "tests/test_service.py",
+        "line": 1,
+        "endLine": 6
+      },
+      "tags": [
+        "test"
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 2,
+        "complexity": 1,
+        "instability": 1,
+        "loc": 6,
+        "maxComplexity": 1,
+        "members": 1,
+        "methods": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/cli.py#(top-level)",
+      "kind": "function",
+      "level": "member",
+      "name": "(top-level)",
+      "fullName": "mini.cli.(top-level)",
+      "parent": "py:mini:src/mini/cli.py",
+      "project": "py:project:mini",
+      "namespace": "mini",
+      "accessibility": "private",
+      "location": {
+        "file": "src/mini/cli.py",
+        "line": 15,
+        "endLine": 16
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "complexity": 2,
+        "fanOut": 1,
+        "loc": 2
+      }
+    },
+    {
+      "id": "py:mini:src/mini/cli.py#main",
+      "kind": "function",
+      "level": "member",
+      "name": "main",
+      "fullName": "mini.cli.main",
+      "parent": "py:mini:src/mini/cli.py",
+      "project": "py:project:mini",
+      "namespace": "mini",
+      "accessibility": "public",
+      "signature": "def main(argv: 'list[str] | None'=None) -> int",
+      "location": {
+        "file": "src/mini/cli.py",
+        "line": 7,
+        "endLine": 12
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "complexity": 2,
+        "fanIn": 1,
+        "fanOut": 4,
+        "loc": 6,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py#Line",
+      "kind": "class",
+      "level": "member",
+      "name": "Line",
+      "fullName": "mini.orders.model.Line",
+      "parent": "py:mini:src/mini/orders/model.py",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "class Line",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 16,
+        "endLine": 19
+      },
+      "attributes": [
+        "dataclass"
+      ],
+      "metrics": {
+        "complexity": 0,
+        "fields": 2,
+        "loc": 4,
+        "members": 2
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py#Line.quantity",
+      "kind": "field",
+      "level": "member",
+      "name": "quantity",
+      "fullName": "mini.orders.model.Line.quantity",
+      "parent": "py:mini:src/mini/orders/model.py#Line",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "quantity: int = 1",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 19,
+        "endLine": 19
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py#Line.sku",
+      "kind": "field",
+      "level": "member",
+      "name": "sku",
+      "fullName": "mini.orders.model.Line.sku",
+      "parent": "py:mini:src/mini/orders/model.py#Line",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "sku: str",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 18,
+        "endLine": 18
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py#Order",
+      "kind": "class",
+      "level": "member",
+      "name": "Order",
+      "fullName": "mini.orders.model.Order",
+      "parent": "py:mini:src/mini/orders/model.py",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "class Order",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 22,
+        "endLine": 37
+      },
+      "attributes": [
+        "dataclass"
+      ],
+      "doc": "An order of a customer.",
+      "metrics": {
+        "complexity": 5,
+        "fields": 3,
+        "loc": 16,
+        "maxComplexity": 3,
+        "members": 5,
+        "methods": 1,
+        "properties": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py#Order.id",
+      "kind": "field",
+      "level": "member",
+      "name": "id",
+      "fullName": "mini.orders.model.Order.id",
+      "parent": "py:mini:src/mini/orders/model.py#Order",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "id: int",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 26,
+        "endLine": 26
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py#Order.lines",
+      "kind": "field",
+      "level": "member",
+      "name": "lines",
+      "fullName": "mini.orders.model.Order.lines",
+      "parent": "py:mini:src/mini/orders/model.py#Order",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "lines: list[Line] = field(default_factory=list)",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 27,
+        "endLine": 27
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py#Order.pay",
+      "kind": "method",
+      "level": "member",
+      "name": "pay",
+      "fullName": "mini.orders.model.Order.pay",
+      "parent": "py:mini:src/mini/orders/model.py#Order",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "def pay(self) -> None",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 34,
+        "endLine": 37
+      },
+      "metrics": {
+        "complexity": 2,
+        "fanIn": 1,
+        "loc": 4
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py#Order.status",
+      "kind": "field",
+      "level": "member",
+      "name": "status",
+      "fullName": "mini.orders.model.Order.status",
+      "parent": "py:mini:src/mini/orders/model.py#Order",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "status: Status = Status.NEW",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 28,
+        "endLine": 28
+      },
+      "extraLocations": [
+        {
+          "file": "src/mini/orders/model.py",
+          "line": 37,
+          "endLine": 37
+        }
+      ],
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py#Order.total",
+      "kind": "property",
+      "level": "member",
+      "name": "total",
+      "fullName": "mini.orders.model.Order.total",
+      "parent": "py:mini:src/mini/orders/model.py#Order",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "def total(self) -> int",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 30,
+        "endLine": 32
+      },
+      "metrics": {
+        "complexity": 3,
+        "loc": 3
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py#OrderError",
+      "kind": "class",
+      "level": "member",
+      "name": "OrderError",
+      "fullName": "mini.orders.model.OrderError",
+      "parent": "py:mini:src/mini/orders/model.py",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "class OrderError(Exception)",
+      "baseType": "Exception",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 40,
+        "endLine": 41
+      },
+      "tags": [
+        "exception"
+      ],
+      "metrics": {
+        "loc": 2
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py#Status",
+      "kind": "enum",
+      "level": "member",
+      "name": "Status",
+      "fullName": "mini.orders.model.Status",
+      "parent": "py:mini:src/mini/orders/model.py",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "class Status(Enum)",
+      "baseType": "enum.Enum",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 8,
+        "endLine": 13
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 6,
+        "maxComplexity": 1,
+        "members": 1,
+        "methods": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/model.py#Status.label",
+      "kind": "method",
+      "level": "member",
+      "name": "label",
+      "fullName": "mini.orders.model.Status.label",
+      "parent": "py:mini:src/mini/orders/model.py#Status",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "def label(self) -> str",
+      "location": {
+        "file": "src/mini/orders/model.py",
+        "line": 12,
+        "endLine": 13
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "loc": 2
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/ports.py#Repository",
+      "kind": "interface",
+      "level": "member",
+      "name": "Repository",
+      "fullName": "mini.orders.ports.Repository",
+      "parent": "py:mini:src/mini/orders/ports.py",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "class Repository(Protocol)",
+      "baseType": "typing.Protocol",
+      "location": {
+        "file": "src/mini/orders/ports.py",
+        "line": 9,
+        "endLine": 12
+      },
+      "metrics": {
+        "complexity": 2,
+        "loc": 4,
+        "maxComplexity": 1,
+        "members": 2,
+        "methods": 2
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/ports.py#Repository.get",
+      "kind": "method",
+      "level": "member",
+      "name": "get",
+      "fullName": "mini.orders.ports.Repository.get",
+      "parent": "py:mini:src/mini/orders/ports.py#Repository",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "def get(self, order_id: int) -> Optional[Order]",
+      "location": {
+        "file": "src/mini/orders/ports.py",
+        "line": 10,
+        "endLine": 10
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/ports.py#Repository.save",
+      "kind": "method",
+      "level": "member",
+      "name": "save",
+      "fullName": "mini.orders.ports.Repository.save",
+      "parent": "py:mini:src/mini/orders/ports.py#Repository",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "def save(self, order: Order) -> None",
+      "location": {
+        "file": "src/mini/orders/ports.py",
+        "line": 12,
+        "endLine": 12
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#MemoryRepository",
+      "kind": "class",
+      "level": "member",
+      "name": "MemoryRepository",
+      "fullName": "mini.orders.service.MemoryRepository",
+      "parent": "py:mini:src/mini/orders/service.py",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "class MemoryRepository(Repository)",
+      "baseType": "mini.orders.ports.Repository",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 9,
+        "endLine": 17
+      },
+      "metrics": {
+        "complexity": 3,
+        "constructors": 1,
+        "fields": 1,
+        "loc": 9,
+        "maxComplexity": 1,
+        "members": 4,
+        "methods": 2
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#MemoryRepository.__init__",
+      "kind": "constructor",
+      "level": "member",
+      "name": "__init__",
+      "fullName": "mini.orders.service.MemoryRepository.__init__",
+      "parent": "py:mini:src/mini/orders/service.py#MemoryRepository",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "def __init__(self) -> None",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 10,
+        "endLine": 11
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 2
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#MemoryRepository._orders",
+      "kind": "field",
+      "level": "member",
+      "name": "_orders",
+      "fullName": "mini.orders.service.MemoryRepository._orders",
+      "parent": "py:mini:src/mini/orders/service.py#MemoryRepository",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "private",
+      "signature": "self._orders: dict[int, Order] = {}",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 11,
+        "endLine": 11
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#MemoryRepository.get",
+      "kind": "method",
+      "level": "member",
+      "name": "get",
+      "fullName": "mini.orders.service.MemoryRepository.get",
+      "parent": "py:mini:src/mini/orders/service.py#MemoryRepository",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "def get(self, order_id: int) -> Order | None",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 13,
+        "endLine": 14
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 2,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#MemoryRepository.save",
+      "kind": "method",
+      "level": "member",
+      "name": "save",
+      "fullName": "mini.orders.service.MemoryRepository.save",
+      "parent": "py:mini:src/mini/orders/service.py#MemoryRepository",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "def save(self, order: Order) -> None",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 16,
+        "endLine": 17
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 2,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#OrderService",
+      "kind": "class",
+      "level": "member",
+      "name": "OrderService",
+      "fullName": "mini.orders.service.OrderService",
+      "parent": "py:mini:src/mini/orders/service.py",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "class OrderService",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 20,
+        "endLine": 45
+      },
+      "metrics": {
+        "complexity": 8,
+        "constructors": 1,
+        "fields": 2,
+        "loc": 26,
+        "maxComplexity": 3,
+        "members": 7,
+        "methods": 4
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#OrderService.__init__",
+      "kind": "constructor",
+      "level": "member",
+      "name": "__init__",
+      "fullName": "mini.orders.service.OrderService.__init__",
+      "parent": "py:mini:src/mini/orders/service.py#OrderService",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "def __init__(self, repository: Repository, notify=print) -> None",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 21,
+        "endLine": 23
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 3,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#OrderService._announce",
+      "kind": "method",
+      "level": "member",
+      "name": "_announce",
+      "fullName": "mini.orders.service.OrderService._announce",
+      "parent": "py:mini:src/mini/orders/service.py#OrderService",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "private",
+      "signature": "def _announce(self, order: Order) -> None",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 41,
+        "endLine": 42
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "loc": 2,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#OrderService._forgotten",
+      "kind": "method",
+      "level": "member",
+      "name": "_forgotten",
+      "fullName": "mini.orders.service.OrderService._forgotten",
+      "parent": "py:mini:src/mini/orders/service.py#OrderService",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "private",
+      "signature": "def _forgotten(self) -> None",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 44,
+        "endLine": 45
+      },
+      "tags": [
+        "unused"
+      ],
+      "metrics": {
+        "complexity": 1,
+        "loc": 2
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#OrderService.notify",
+      "kind": "field",
+      "level": "member",
+      "name": "notify",
+      "fullName": "mini.orders.service.OrderService.notify",
+      "parent": "py:mini:src/mini/orders/service.py#OrderService",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "self.notify = notify",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 23,
+        "endLine": 23
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#OrderService.pay",
+      "kind": "method",
+      "level": "member",
+      "name": "pay",
+      "fullName": "mini.orders.service.OrderService.pay",
+      "parent": "py:mini:src/mini/orders/service.py#OrderService",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "def pay(self, order_id: int) -> None",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 31,
+        "endLine": 39
+      },
+      "metrics": {
+        "complexity": 3,
+        "fanIn": 1,
+        "fanOut": 2,
+        "loc": 9,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#OrderService.place",
+      "kind": "method",
+      "level": "member",
+      "name": "place",
+      "fullName": "mini.orders.service.OrderService.place",
+      "parent": "py:mini:src/mini/orders/service.py#OrderService",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "def place(self, order_id: int, skus: list[str]) -> Order",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 25,
+        "endLine": 29
+      },
+      "metrics": {
+        "complexity": 2,
+        "fanIn": 2,
+        "fanOut": 2,
+        "loc": 5,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#OrderService.repository",
+      "kind": "field",
+      "level": "member",
+      "name": "repository",
+      "fullName": "mini.orders.service.OrderService.repository",
+      "parent": "py:mini:src/mini/orders/service.py#OrderService",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "self.repository = repository",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 22,
+        "endLine": 22
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "py:mini:src/mini/orders/service.py#make_service",
+      "kind": "function",
+      "level": "member",
+      "name": "make_service",
+      "fullName": "mini.orders.service.make_service",
+      "parent": "py:mini:src/mini/orders/service.py",
+      "project": "py:project:mini",
+      "namespace": "mini.orders",
+      "accessibility": "public",
+      "signature": "def make_service() -> OrderService",
+      "location": {
+        "file": "src/mini/orders/service.py",
+        "line": 48,
+        "endLine": 49
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "loc": 2
+      }
+    },
+    {
+      "id": "py:mini:tests/test_service.py#test_place_counts_the_lines",
+      "kind": "function",
+      "level": "member",
+      "name": "test_place_counts_the_lines",
+      "fullName": "tests.test_service.test_place_counts_the_lines",
+      "parent": "py:mini:tests/test_service.py",
+      "project": "py:project:mini",
+      "namespace": "tests",
+      "accessibility": "public",
+      "signature": "def test_place_counts_the_lines()",
+      "location": {
+        "file": "tests/test_service.py",
+        "line": 4,
+        "endLine": 6
+      },
+      "tags": [
+        "test"
+      ],
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 1,
+        "loc": 3
+      }
+    },
+    {
+      "id": "py:pypi:pytest",
+      "kind": "package",
+      "name": "pytest",
+      "fullName": "pytest",
+      "language": "python",
+      "external": true
+    },
+    {
+      "id": "py:pypi:requests",
+      "kind": "package",
+      "name": "requests",
+      "fullName": "requests",
+      "language": "python",
+      "signature": ">=2.31",
+      "external": true
+    }
+  ],
+  "edges": [
+    {
+      "source": "py:mini:src/mini/__init__.py",
+      "target": "py:mini:src/mini/orders/model.py",
+      "kind": "imports",
+      "weight": 2
+    },
+    {
+      "source": "py:mini:src/mini/__init__.py",
+      "target": "py:mini:src/mini/orders/service.py",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/cli.py",
+      "target": "py:mini:src/mini/__init__.py",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/cli.py",
+      "target": "py:mini:src/mini/orders/service.py",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/cli.py#(top-level)",
+      "target": "py:mini:src/mini/cli.py#main",
+      "kind": "calls",
+      "weight": 1,
+      "line": 16
+    },
+    {
+      "source": "py:mini:src/mini/cli.py#main",
+      "target": "py:mini:src/mini/orders/model.py#Order.id",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/cli.py#main",
+      "target": "py:mini:src/mini/orders/model.py#Order.status",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/cli.py#main",
+      "target": "py:mini:src/mini/orders/model.py#Status.label",
+      "kind": "calls",
+      "weight": 1,
+      "line": 11
+    },
+    {
+      "source": "py:mini:src/mini/cli.py#main",
+      "target": "py:mini:src/mini/orders/service.py#OrderService.pay",
+      "kind": "calls",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "py:mini:src/mini/cli.py#main",
+      "target": "py:mini:src/mini/orders/service.py#OrderService.place",
+      "kind": "calls",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "py:mini:src/mini/cli.py#main",
+      "target": "py:mini:src/mini/orders/service.py#make_service",
+      "kind": "calls",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "py:mini:src/mini/cli.py#main",
+      "target": "py:mini:src/mini/orders/model.py#Order",
+      "kind": "uses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/model.py#Order.lines",
+      "target": "py:mini:src/mini/orders/model.py#Line",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/model.py#Order.pay",
+      "target": "py:mini:src/mini/orders/model.py#Order.status",
+      "kind": "accesses",
+      "weight": 2
+    },
+    {
+      "source": "py:mini:src/mini/orders/model.py#Order.pay",
+      "target": "py:mini:src/mini/orders/model.py#OrderError",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 36
+    },
+    {
+      "source": "py:mini:src/mini/orders/model.py#Order.pay",
+      "target": "py:mini:src/mini/orders/model.py#OrderError",
+      "kind": "throws",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/model.py#Order.pay",
+      "target": "py:mini:src/mini/orders/model.py#Status",
+      "kind": "uses",
+      "weight": 4
+    },
+    {
+      "source": "py:mini:src/mini/orders/model.py#Order.status",
+      "target": "py:mini:src/mini/orders/model.py#Status",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/model.py#Order.status",
+      "target": "py:mini:src/mini/orders/model.py#Status",
+      "kind": "uses",
+      "weight": 2
+    },
+    {
+      "source": "py:mini:src/mini/orders/model.py#Order.total",
+      "target": "py:mini:src/mini/orders/model.py#Line.quantity",
+      "kind": "accesses",
+      "weight": 2
+    },
+    {
+      "source": "py:mini:src/mini/orders/model.py#Order.total",
+      "target": "py:mini:src/mini/orders/model.py#Order.lines",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/ports.py",
+      "target": "py:mini:src/mini/orders/model.py",
+      "kind": "uses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/ports.py#Repository.get",
+      "target": "py:mini:src/mini/orders/model.py#Order",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/ports.py#Repository.save",
+      "target": "py:mini:src/mini/orders/model.py#Order",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py",
+      "target": "py:mini:src/mini/orders/model.py",
+      "kind": "imports",
+      "weight": 3
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py",
+      "target": "py:mini:src/mini/orders/ports.py",
+      "kind": "imports",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#MemoryRepository",
+      "target": "py:mini:src/mini/orders/ports.py#Repository",
+      "kind": "implements",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#MemoryRepository.__init__",
+      "target": "py:mini:src/mini/orders/service.py#MemoryRepository._orders",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#MemoryRepository.__init__",
+      "target": "py:mini:src/mini/orders/model.py#Order",
+      "kind": "uses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#MemoryRepository._orders",
+      "target": "py:mini:src/mini/orders/model.py#Order",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#MemoryRepository.get",
+      "target": "py:mini:src/mini/orders/service.py#MemoryRepository._orders",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#MemoryRepository.get",
+      "target": "py:mini:src/mini/orders/ports.py#Repository.get",
+      "kind": "implements",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#MemoryRepository.get",
+      "target": "py:mini:src/mini/orders/model.py#Order",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#MemoryRepository.save",
+      "target": "py:mini:src/mini/orders/model.py#Order",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#MemoryRepository.save",
+      "target": "py:mini:src/mini/orders/model.py#Order.id",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#MemoryRepository.save",
+      "target": "py:mini:src/mini/orders/service.py#MemoryRepository._orders",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#MemoryRepository.save",
+      "target": "py:mini:src/mini/orders/ports.py#Repository.save",
+      "kind": "implements",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService",
+      "target": "py:mini:src/mini/orders/ports.py#Repository",
+      "kind": "injects",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.__init__",
+      "target": "py:mini:src/mini/orders/ports.py#Repository",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.__init__",
+      "target": "py:mini:src/mini/orders/service.py#OrderService.notify",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.__init__",
+      "target": "py:mini:src/mini/orders/service.py#OrderService.repository",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService._announce",
+      "target": "py:mini:src/mini/orders/model.py#Order",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService._announce",
+      "target": "py:mini:src/mini/orders/model.py#Order.id",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService._announce",
+      "target": "py:mini:src/mini/orders/model.py#Order.total",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService._announce",
+      "target": "py:mini:src/mini/orders/service.py#OrderService.notify",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService._forgotten",
+      "target": "py:mini:src/mini/orders/service.py#OrderService.notify",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.pay",
+      "target": "py:mini:src/mini/orders/model.py#Order.total",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.pay",
+      "target": "py:mini:src/mini/orders/service.py#OrderService.notify",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.pay",
+      "target": "py:mini:src/mini/orders/service.py#OrderService.repository",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.pay",
+      "target": "py:mini:src/mini/orders/model.py#Order.pay",
+      "kind": "calls",
+      "weight": 1,
+      "line": 36
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.pay",
+      "target": "py:mini:src/mini/orders/ports.py#Repository.get",
+      "kind": "calls",
+      "weight": 1,
+      "line": 32
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.pay",
+      "target": "py:mini:src/mini/orders/model.py#OrderError",
+      "kind": "catches",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.place",
+      "target": "py:mini:src/mini/orders/service.py#OrderService.repository",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.place",
+      "target": "py:mini:src/mini/orders/ports.py#Repository.save",
+      "kind": "calls",
+      "weight": 1,
+      "line": 27
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.place",
+      "target": "py:mini:src/mini/orders/service.py#OrderService._announce",
+      "kind": "calls",
+      "weight": 1,
+      "line": 28
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.place",
+      "target": "py:mini:src/mini/orders/model.py#Line",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 26
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.place",
+      "target": "py:mini:src/mini/orders/model.py#Order",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 26
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.place",
+      "target": "py:mini:src/mini/orders/model.py#Order",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#OrderService.repository",
+      "target": "py:mini:src/mini/orders/ports.py#Repository",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#make_service",
+      "target": "py:mini:src/mini/orders/service.py#MemoryRepository",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 49
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#make_service",
+      "target": "py:mini:src/mini/orders/service.py#OrderService",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 49
+    },
+    {
+      "source": "py:mini:src/mini/orders/service.py#make_service",
+      "target": "py:mini:src/mini/orders/service.py#OrderService",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:tests/test_service.py",
+      "target": "py:mini:src/mini/orders/service.py",
+      "kind": "imports",
+      "weight": 2
+    },
+    {
+      "source": "py:mini:tests/test_service.py#test_place_counts_the_lines",
+      "target": "py:mini:src/mini/orders/model.py#Order.total",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "py:mini:tests/test_service.py#test_place_counts_the_lines",
+      "target": "py:mini:src/mini/orders/service.py#OrderService.place",
+      "kind": "calls",
+      "weight": 1,
+      "line": 6
+    },
+    {
+      "source": "py:mini:tests/test_service.py#test_place_counts_the_lines",
+      "target": "py:mini:src/mini/orders/service.py#MemoryRepository",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 5
+    },
+    {
+      "source": "py:mini:tests/test_service.py#test_place_counts_the_lines",
+      "target": "py:mini:src/mini/orders/service.py#OrderService",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 5
+    },
+    {
+      "source": "py:project:mini",
+      "target": "py:pypi:pytest",
+      "kind": "packageReference",
+      "weight": 1
+    },
+    {
+      "source": "py:project:mini",
+      "target": "py:pypi:requests",
+      "kind": "packageReference",
+      "weight": 2
+    }
+  ],
+  "analysis": {
+    "cycles": [],
+    "hotspots": [],
+    "mostComplex": [
+      {
+        "id": "py:mini:src/mini/orders/service.py",
+        "score": 12
+      },
+      {
+        "id": "py:mini:src/mini/orders/model.py",
+        "score": 6
+      },
+      {
+        "id": "py:mini:src/mini/cli.py",
+        "score": 4
+      },
+      {
+        "id": "py:mini:src/mini/orders/ports.py",
+        "score": 2
+      },
+      {
+        "id": "py:mini:tests/test_service.py",
+        "score": 1
+      }
+    ],
+    "mostDepended": [
+      {
+        "id": "py:mini:src/mini/orders/model.py",
+        "score": 5
+      },
+      {
+        "id": "py:mini:src/mini/orders/service.py",
+        "score": 3
+      },
+      {
+        "id": "py:mini:src/mini/__init__.py",
+        "score": 1
+      },
+      {
+        "id": "py:mini:src/mini/orders/ports.py",
+        "score": 1
+      }
+    ],
+    "unusedCandidates": [
+      "py:mini:src/mini/orders/service.py#OrderService._forgotten"
+    ],
+    "layers": [
+      {
+        "level": "namespace",
+        "layers": [
+          [
+            "py:ns:mini/mini.orders"
+          ],
+          [
+            "py:ns:mini/mini",
+            "py:ns:mini/tests"
+          ]
+        ],
+        "upward": []
+      }
+    ],
+    "changeCoupling": [],
+    "warnings": []
+  }
+}

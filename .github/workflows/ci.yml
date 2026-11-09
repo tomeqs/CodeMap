@@ -27,9 +27,13 @@ jobs:
           cache-dependency-path: analyzers/typescript/package-lock.json
       - name: TypeScript plugin (the .NET tests run it)
         run: npm ci --prefix analyzers/typescript
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - run: dotnet test -c Release
         env:
           CODEMAP_REQUIRE_NODE: '1'
+          CODEMAP_REQUIRE_PYTHON: '1'
       - name: codemap mcp in its own process (stdout only for the protocol)
         timeout-minutes: 15
         run: |
@@ -54,6 +58,26 @@ jobs:
           cache-dependency-path: analyzers/typescript/package-lock.json
       - run: npm ci
       - run: npm test
+
+  # The Python language plugin on the oldest and newest Pythons it supports, and on Windows (paths, the py launcher).
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: '3.9' }
+          - { os: ubuntu-latest, python: '3.13' }
+          - { os: windows-latest, python: '3.12' }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: analyzers/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -B -m unittest discover -s test -v
 
   viewer:
     runs-on: ubuntu-latest

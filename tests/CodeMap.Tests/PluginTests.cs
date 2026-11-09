@@ -17,7 +17,19 @@ public sealed class NodeFactAttribute : FactAttribute
     }
 }
 
-/// <summary>Languages as separate programs: the stub plugin (tests/CodeMap.Tests/Plugins/stub) and the real TypeScript one.</summary>
+/// <summary>Runs only where a Python the Python plugin accepts (3.9+) is found; CI requires it.</summary>
+public sealed class PythonFactAttribute : FactAttribute
+{
+    public PythonFactAttribute()
+    {
+        if (Environment.GetEnvironmentVariable("CODEMAP_REQUIRE_PYTHON") == "1") return;
+        var manifest = PluginManifest.Load(Path.Combine(GoldenTests.RepoRoot(), "analyzers", "python", PluginManifest.FileName));
+        var (found, problem) = RuntimeLocator.Find(manifest.Runtime!);
+        if (found == null) Skip = problem;
+    }
+}
+
+/// <summary>Languages as separate programs: the stub plugin (tests/CodeMap.Tests/Plugins/stub) and the real TypeScript and Python ones.</summary>
 public class PluginTests
 {
     private static readonly AnalyzerOptions NoGit = new() { Git = false };
@@ -296,6 +308,53 @@ public class PluginTests
         var orders = CodeMapAnalyzer.Analyze(Path.Combine(fixture, "src", "orders"), registry, NoGit);
         Assert.Equal("orders.service.ts", orders.Node(service).Location!.File);
         Assert.Equal("ts:project:basic", Assert.Single(orders.Nodes, n => n.Kind == NodeKinds.Project).Id);
+    }
+
+    internal static string PythonFixture(string name) => Path.Combine(GoldenTests.RepoRoot(), "analyzers", "python", "test", "fixtures", name);
+
+    [PythonFact]
+    public void The_python_plugin_maps_a_project()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var fixture = PythonFixture("mini");
+        Assert.True(registry.Find("python")!.Detect(fixture, CancellationToken.None));
+
+        var graph = CodeMapAnalyzer.Analyze(fixture, registry, NoGit);
+
+        const string service = "py:mini:src/mini/orders/service.py";
+        Assert.Equal(NodeLevels.Type, NodeLevels.Of(graph.Node(service)));
+        Assert.Equal(NodeLevels.Member, NodeLevels.Of(graph.Node(service + "#OrderService.place")));
+        graph.AssertEdge(service + "#OrderService.place", EdgeKinds.Calls, "py:mini:src/mini/orders/ports.py#Repository.save");
+        graph.AssertEdge(service + "#MemoryRepository.save", EdgeKinds.Implements, "py:mini:src/mini/orders/ports.py#Repository.save");
+        graph.AssertEdge("py:mini:src/mini/cli.py", EdgeKinds.Imports, "py:mini:src/mini/__init__.py");
+        graph.AssertEdge("py:project:mini", EdgeKinds.PackageReference, "py:pypi:requests");
+        Assert.Equal(new[] { service + "#OrderService._forgotten" }, graph.Analysis.UnusedCandidates);
+        Assert.Contains("entrypoint", graph.Node("py:mini:src/mini/cli.py#main").Tags!);
+        Assert.Equal("python", graph.Node("py:project:mini").Language);
+        Assert.Equal(new[] { "Module", "Modules" }, graph.Source.Languages![0].Levels.Type);
+        Assert.Equal("src/mini/orders/service.py", graph.Node(service).Location!.File);
+        Assert.Equal("mini.orders.service.OrderService.place", graph.Node(service + "#OrderService.place").FullName);
+        Assert.Equal("interface", graph.Node("py:mini:src/mini/orders/ports.py#Repository").Kind);
+        Assert.True(graph.Node(service).Metric("ca") > 0);
+
+        // A package inside the project maps with the project's ids, and locations relative to the package.
+        var orders = CodeMapAnalyzer.Analyze(Path.Combine(fixture, "src", "mini", "orders"), registry, NoGit);
+        Assert.Equal("service.py", orders.Node(service).Location!.File);
+        Assert.Equal("py:project:mini", Assert.Single(orders.Nodes, n => n.Kind == NodeKinds.Project).Id);
+    }
+
+    [PythonFact]
+    public void A_python_script_in_a_csharp_repository_does_not_make_it_a_python_one()
+    {
+        using var ws = new TestWorkspace()
+            .File("App.sln", "")
+            .File("src/App/App.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\" />")
+            .File("scripts/bump_version.py", "print(1)\n")
+            .File("tools/report.py", "print(2)\n");
+        var python = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") }).Find("python")!;
+
+        Assert.False(python.Detect(ws.Root, CancellationToken.None));
+        Assert.True(python.Detect(Path.Combine(ws.Root, "scripts"), CancellationToken.None)); // a folder of scripts on its own
     }
 
     [NodeFact(typescript: true)]

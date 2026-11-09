@@ -1,6 +1,6 @@
 # CodeMap
 
-A 3D map of C# and TypeScript / JavaScript code: dependencies, architecture layers, dependency injection and call
+A 3D map of C#, TypeScript / JavaScript and Python code: dependencies, architecture layers, dependency injection and call
 flows, one click away from the code. It also runs as an MCP server, so AI agents can read the structure and improve it.
 
 | Galaxy: types as stars, projects as solar systems | City: height = complexity, colour = hotspot |
@@ -31,7 +31,8 @@ Pick one:
   * Add its folder to `PATH`, so `codemap` works in any terminal.
 * **.NET tool** (.NET SDK 8+): `dotnet tool install -g CodeMap.Tool`
 
-TypeScript and JavaScript also need Node.js 18+. The extension uses the one built into the editor.
+TypeScript and JavaScript also need Node.js 18+ (the extension uses the one built into the editor).
+Python needs Python 3.9+: the one on the `PATH`, or the one `CODEMAP_PYTHON` names.
 
 ## Open a map
 
@@ -71,7 +72,7 @@ Nothing needs to be built; after `dotnet restore`, NuGet types are recognised to
 |---|---|
 | `-o, --output <dir>` | the output folder (default `codemap-out`) |
 | `-f, --format <list>` | `json,html,md,dgml,graphml,cypher` or `all` (default `json,html,md`) |
-| `--lang <list>` | only these languages: `csharp`, `typescript` |
+| `--lang <list>` | only these languages: `csharp`, `typescript`, `python` |
 | `--checks` | also check the code inside functions |
 | `--no-tests` | skip test projects and test files |
 | `--external` | include the framework, NuGet and npm types the code uses (e.g. `DbContext`, `ILogger<T>`) |
@@ -137,7 +138,10 @@ Full reference: [docs/mcp.md](docs/mcp.md).
   * Express, NestJS and Angular;
   * file-based routes (Next.js, SvelteKit, Astro, Nuxt…);
   * `.vue`, `.svelte` and `.astro` files.
-* **Both in one repository:** one map with both.
+* **Python** (needs Python 3.9+, nothing to install): open a folder, `pyproject.toml`, `setup.py`,
+  `requirements.txt` or a `.py` file. Works without a virtual environment, with `src/` layouts, namespace packages
+  and several projects in one repository.
+* **Several in one repository:** one map with all of them.
 * **Other languages:** as [plugins](docs/plugins.md).
 
 Details: [docs/analysis.md](docs/analysis.md#languages).
@@ -191,6 +195,7 @@ Choose them with `-f json,html,md,dgml,graphml,cypher`, or `-f all`:
 dotnet run --project src/CodeMap.Cli -- path/to/MySolution.sln   # run without installing
 dotnet test                                          # analyzer and MCP server tests
 cd analyzers/typescript && npm install && npm test   # TypeScript plugin (npm install is also needed to build it into the CLI)
+cd analyzers/python && python3 -m unittest discover -s test   # Python plugin (standard library only)
 cd vscode && npm install && npm test                 # VS Code extension
 cd viewer && npm install && npm run dev              # viewer: http://localhost:5173/?data=sample.codemap.json
 npm run build                                        # builds the viewer into src/CodeMap.Cli/Assets/viewer.html
