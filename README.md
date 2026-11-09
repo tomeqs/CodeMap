@@ -178,7 +178,7 @@ Details, GPU and AR glasses: [docs/viewer.md](docs/viewer.md).
 * **Findings with a health score (A–E):** god classes, feature envy, hubs, large types… In the `.md` report and the MCP
   server.
 * **Mistakes inside functions** (`--checks`): swallowed exceptions, `async void`, `.Result`, floating promises,
-  unreachable code…
+  forgotten `await`s, mutable default arguments, unreachable code…
 
 Rules, metrics and thresholds: [docs/analysis.md](docs/analysis.md#findings-and-the-health-score).
 
