@@ -16,13 +16,10 @@ public static class DirectoryBrowser
     /// <summary>Folders no language keeps code in; each language adds its own (dist, node_modules…).</summary>
     private static readonly string[] AlwaysSkipped = { "bin", "obj", "node_modules", "TestResults" };
 
-    private static HashSet<string> Skipped(LanguageRegistry registry) =>
-        new(AlwaysSkipped.Concat(registry.Languages.SelectMany(l => l.IgnoredFolders)), StringComparer.OrdinalIgnoreCase);
-
     public static BrowseResult Browse(string? path, string startDirectory, LanguageRegistry? registry = null)
     {
         registry ??= LanguageRegistry.Default;
-        var skipped = Skipped(registry);
+        var skipped = FolderFilter.For(registry, AlwaysSkipped);
         var places = Places(startDirectory, registry);
         if (string.IsNullOrWhiteSpace(path)) path = startDirectory;
         var full = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ExpandHome(path.Trim())));
@@ -43,7 +40,7 @@ public static class DirectoryBrowser
             foreach (var dir in Directory.EnumerateDirectories(full))
             {
                 var name = Path.GetFileName(dir);
-                if (name.StartsWith('.') || skipped.Contains(name)) continue;
+                if (skipped.Skips(dir)) continue;
                 var languages = LanguagesIn(dir, registry);
                 entries.Add(new BrowseEntry(name, dir, "folder", languages.Count > 0, languages.Count > 0 ? languages : null));
             }

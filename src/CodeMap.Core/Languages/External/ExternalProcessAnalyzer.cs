@@ -16,10 +16,15 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
 {
     private const int LastLines = 20;
 
+    private readonly FolderFilter _folders;
+    private readonly System.Text.RegularExpressions.Regex[] _excluded;
+
     public ExternalProcessAnalyzer(PluginManifest manifest)
     {
         Manifest = manifest;
         Info = manifest.ToLanguageInfo();
+        _folders = new FolderFilter(manifest.Detect.IgnoreDirs, manifest.Detect.IgnoreMarkers);
+        _excluded = manifest.Detect.ExcludeFiles.Select(FolderFilter.Wildcard).ToArray();
         var seconds = Environment.GetEnvironmentVariable("CODEMAP_PLUGIN_TIMEOUT");
         if (int.TryParse(seconds, out var s) && s > 0) Timeout = TimeSpan.FromSeconds(s);
     }
@@ -36,12 +41,16 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
         return Manifest.Detect.Inputs.Any(pattern => Matches(pattern, name));
     }
 
-    /// <summary>A folder holds the language when one of its project files has source files at or below it.</summary>
+    /// <summary>
+    /// A folder holds the language when one of its project files has source files at or below it. For a language
+    /// whose code needs no project file, source files right in the folder count too (a folder of scripts); deeper
+    /// down they need a project file, so a stray script in another language's repository does not make it one.
+    /// </summary>
     public bool Detect(string directory, CancellationToken ct)
     {
         var markers = new HashSet<string>(Manifest.Detect.Markers, StringComparer.OrdinalIgnoreCase);
         var sources = new HashSet<string>(Manifest.Detect.Sources, StringComparer.OrdinalIgnoreCase);
-        var ignored = new HashSet<string>(Manifest.Detect.IgnoreDirs, StringComparer.OrdinalIgnoreCase);
+        if (Manifest.Detect.WithoutMarker && SourcesIn(directory, sources)) return true;
         var pending = new Stack<(string Dir, bool InProject)>();
         pending.Push((directory, MarkerAbove(directory, markers)));
         while (pending.Count > 0)
@@ -63,8 +72,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
             if (inProject && files.Any(f => IsSource(f, sources))) return true;
             foreach (var sub in dirs)
             {
-                var name = Path.GetFileName(sub);
-                if (!ignored.Contains(name) && !name.StartsWith('.')) pending.Push((sub, inProject));
+                if (!_folders.Skips(sub)) pending.Push((sub, inProject));
             }
         }
 
@@ -104,11 +112,13 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
     {
         var name = Path.GetFileName(path);
         var sources = new HashSet<string>(Manifest.Detect.Sources, StringComparer.OrdinalIgnoreCase);
-        if (sources.Contains(Path.GetExtension(name))) return IsSource(path, sources); // not .d.ts, not .min.js
+        if (sources.Contains(Path.GetExtension(name))) return IsSource(path, sources); // not what excludeFiles names (.d.ts, .min.js…)
         return Manifest.Detect.Markers.Contains(name, StringComparer.OrdinalIgnoreCase) || Manifest.Detect.Inputs.Any(p => Matches(p, name)); // tsconfig.app.json…
     }
 
     public IReadOnlyCollection<string> IgnoredFolders => Manifest.Detect.IgnoreDirs;
+
+    public IReadOnlyCollection<string> IgnoredFolderMarkers => Manifest.Detect.IgnoreMarkers;
 
     public string? Unavailable => Manifest.Runtime is { } runtime && Manifest.Command[0] == runtime.Name ? RuntimeLocator.Find(runtime).Problem : null;
 
@@ -168,18 +178,15 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
     private (string Executable, List<string> Arguments) ResolveCommand()
     {
         var first = Manifest.Command[0];
-        string executable;
+        var arguments = Manifest.Command.Skip(1).Select(PluginFile).ToList();
         if (Manifest.Runtime is { } runtime && string.Equals(first, runtime.Name, StringComparison.Ordinal))
         {
             var (found, problem) = RuntimeLocator.Find(runtime);
-            executable = found?.Path ?? throw new InvalidOperationException(problem);
-        }
-        else
-        {
-            executable = PluginFile(first);
+            if (found == null) throw new InvalidOperationException(problem);
+            return (found.Path, found.Arguments.Concat(arguments).ToList()); // py -3 ./src/cli.py
         }
 
-        return (executable, Manifest.Command.Skip(1).Select(PluginFile).ToList());
+        return (PluginFile(first), arguments);
     }
 
     private string PluginFile(string argument) =>
@@ -241,17 +248,25 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
         }
     }
 
-    private static bool IsSource(string file, HashSet<string> sources)
+    private bool SourcesIn(string directory, HashSet<string> sources)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(directory).Any(f => IsSource(f, sources));
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>A source file: one of the source extensions, and not what the manifest excludes (*.d.ts, *.min.js).</summary>
+    private bool IsSource(string file, HashSet<string> sources)
     {
         var name = Path.GetFileName(file);
-        if (!sources.Contains(Path.GetExtension(name))) return false;
-        return !System.Text.RegularExpressions.Regex.IsMatch(name, @"\.d\.[cm]?ts$|\.min\.[cm]?js$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return sources.Contains(Path.GetExtension(name)) && !_excluded.Any(p => p.IsMatch(name));
     }
 
     /// <summary>File name against a pattern with * wildcards ("*.ts", "tsconfig.*.json").</summary>
-    internal static bool Matches(string pattern, string name)
-    {
-        var regex = "^" + System.Text.RegularExpressions.Regex.Escape(pattern).Replace("\\*", ".*") + "$";
-        return System.Text.RegularExpressions.Regex.IsMatch(name, regex, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-    }
+    internal static bool Matches(string pattern, string name) => FolderFilter.Wildcard(pattern).IsMatch(name);
 }
