@@ -42,15 +42,17 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
     }
 
     /// <summary>
-    /// A folder holds the language when one of its project files has source files at or below it (or, for a
-    /// language whose code needs no project file, when it has source files at all).
+    /// A folder holds the language when one of its project files has source files at or below it. For a language
+    /// whose code needs no project file, source files right in the folder count too (a folder of scripts); deeper
+    /// down they need a project file, so a stray script in another language's repository does not make it one.
     /// </summary>
     public bool Detect(string directory, CancellationToken ct)
     {
         var markers = new HashSet<string>(Manifest.Detect.Markers, StringComparer.OrdinalIgnoreCase);
         var sources = new HashSet<string>(Manifest.Detect.Sources, StringComparer.OrdinalIgnoreCase);
+        if (Manifest.Detect.WithoutMarker && SourcesIn(directory, sources)) return true;
         var pending = new Stack<(string Dir, bool InProject)>();
-        pending.Push((directory, Manifest.Detect.WithoutMarker || MarkerAbove(directory, markers)));
+        pending.Push((directory, MarkerAbove(directory, markers)));
         while (pending.Count > 0)
         {
             ct.ThrowIfCancellationRequested();
@@ -243,6 +245,18 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
         catch (Exception)
         {
             // already gone
+        }
+    }
+
+    private bool SourcesIn(string directory, HashSet<string> sources)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(directory).Any(f => IsSource(f, sources));
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return false;
         }
     }
 

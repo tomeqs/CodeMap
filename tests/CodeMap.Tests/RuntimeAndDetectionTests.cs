@@ -152,10 +152,12 @@ public class RuntimeAndDetectionTests
     {
         using var ws = new TestWorkspace().File("scripts/tool.py", "print(1)").File("other/notes.txt", "");
 
-        Assert.True(Python(ws, withoutMarker: true).Detect(ws.Root, CancellationToken.None));
+        // A folder of scripts is a project of its own…
         Assert.True(Python(ws, withoutMarker: true).Detect(Path.Combine(ws.Root, "scripts"), CancellationToken.None));
+        Assert.False(Python(ws, withoutMarker: false).Detect(Path.Combine(ws.Root, "scripts"), CancellationToken.None));
         Assert.False(Python(ws, withoutMarker: true).Detect(Path.Combine(ws.Root, "other"), CancellationToken.None));
-        Assert.False(Python(ws, withoutMarker: false).Detect(ws.Root, CancellationToken.None));
+        // …but a script deep in another language's repository does not make the repository a Python one.
+        Assert.False(Python(ws, withoutMarker: true).Detect(ws.Root, CancellationToken.None));
     }
 
     [Fact]

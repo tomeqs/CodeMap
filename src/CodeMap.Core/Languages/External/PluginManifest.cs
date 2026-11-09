@@ -92,7 +92,7 @@ public sealed class PluginManifest
         /// <summary>Files with a source extension that are not source code, with * wildcards (*.d.ts, *.min.js).</summary>
         public List<string> ExcludeFiles { get; set; } = new();
 
-        /// <summary>Source files count without a project file (a folder of scripts is a project too).</summary>
+        /// <summary>Source files right in the analyzed folder count without a project file (a folder of scripts is a project too); deeper ones still need one.</summary>
         public bool WithoutMarker { get; set; }
     }
 

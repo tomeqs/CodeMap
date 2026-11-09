@@ -71,7 +71,7 @@ chyba że wskazano inny w ustawieniu `codemap.nodePath` albo w zmiennej `CODEMAP
 | `detect.markers` | pliki projektu: folder zawiera kod języka, gdy pod takim plikiem są pliki źródłowe |
 | `detect.sources` | rozszerzenia plików źródłowych |
 | `detect.excludeFiles` | pliki z rozszerzeniem źródłowym, które nie są kodem, z `*` (`*.d.ts`, `*.min.js`, `*_pb2.py`) |
-| `detect.withoutMarker` | `true`: pliki źródłowe liczą się też bez pliku projektu (folder skryptów) |
+| `detect.withoutMarker` | `true`: pliki źródłowe leżące wprost w analizowanym folderze liczą się też bez pliku projektu (folder skryptów); głębsze nadal go potrzebują, więc pojedynczy skrypt w repozytorium innego języka go nie przejmuje |
 | `detect.inputs` | wzorce nazw plików, które można podać wprost (`*.ts`, `package.json`) |
 | `detect.ignoreDirs` | foldery, do których wykrywanie, przeglądarka folderów i odświeżanie na żywo nie zaglądają, z `*` (`*.egg-info`); foldery z kropką są pomijane zawsze. Dotyczą wszystkich języków, więc nie wpisuj nazw, pod którymi inny język trzyma kod |
 | `detect.ignoreMarkers` | pliki, które wykluczają swój folder, jakkolwiek się nazywa (`pyvenv.cfg`: środowisko wirtualne Pythona) |
