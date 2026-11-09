@@ -135,6 +135,8 @@ class CorrectnessTest(unittest.TestCase):
             class Config:
                 NAME = NAME
 
+            str = str
+
             def a(x):
                 assert (x, "x must be set")
                 assert x, "fine"
@@ -144,7 +146,8 @@ class CorrectnessTest(unittest.TestCase):
                 x.y = x.y
                 return d
         ''')
-        self.assertEqual(found, [("assert-tuple", 8), ("duplicate-dict-key", 10), ("fstring-without-placeholders", 11), ("self-assignment", 12), ("self-assignment", 13)])
+        # NAME = NAME in the class and str = str in the module copy a name in; x = x in a function does nothing
+        self.assertEqual(found, [("assert-tuple", 10), ("duplicate-dict-key", 12), ("fstring-without-placeholders", 13), ("self-assignment", 14), ("self-assignment", 15)])
 
     def test_redefined_functions_and_constant_conditions(self):
         found = check('''

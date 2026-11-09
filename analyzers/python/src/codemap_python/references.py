@@ -208,7 +208,10 @@ class Walker:
         if kind is ast.Call:
             self.call(node, scope)
         elif kind is ast.Attribute:
-            self.reference(self.resolver.infer(node, scope), node)
+            value = self.resolver.infer(node, scope)
+            if value is None:
+                self.ctx.unknown_names.add(node.attr)  # x.name on something the analysis cannot type
+            self.reference(value, node)
             self.visit(node.value, scope)
         elif kind is ast.Name:
             if isinstance(node.ctx, ast.Load) or self._is_global(node, scope):
@@ -252,13 +255,32 @@ class Walker:
         func = node.func
         value = self.resolver.infer(func, scope)
         self.stats["calls"] += 1
-        if isinstance(value, ExtVal) and self.ctx.frameworks is not None:
-            self.ctx.frameworks.on_call(self, node, value.name, scope)
+        names = self.ctx.project_names
+        callee = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
+        candidate = names is not None and callee in names
+        if self.ctx.frameworks is not None:
+            if isinstance(value, ExtVal):
+                self.ctx.frameworks.on_call(self, node, value.name, scope)
+            elif isinstance(value, (ClassVal, FuncVal)):  # a framework's own code, in its repository (celery.app.base.Celery)
+                decl = value.cls if isinstance(value, ClassVal) else value.func
+                if decl.module.name:
+                    self.ctx.frameworks.on_call(self, node, f"{decl.module.name}.{decl.qualname}", scope)
+        if value is None and isinstance(func, ast.Attribute):
+            self.ctx.unknown_names.add(func.attr)
+        elif isinstance(value, ExtVal) and value.name in ("builtins.getattr", "builtins.hasattr", "builtins.setattr", "builtins.delattr") and len(node.args) > 1:
+            if isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str):
+                self.ctx.unknown_names.add(node.args[1].value)
         if isinstance(value, InstanceVal):
             member = self.resolver.member(value.cls, "__call__")
             value = FuncVal(member) if isinstance(member, FuncDecl) else None
         if isinstance(value, (FuncVal, ClassVal)):
             self.stats["resolved"] += 1
+        if candidate:
+            self.stats["candidates"] += 1
+            if isinstance(value, (FuncVal, ClassVal)) or (isinstance(value, VarVal)):
+                self.stats["resolved_candidates"] += 1
+            elif self.ctx.unresolved_calls is not None:
+                self.ctx.unresolved_calls.append((scope.module.rel, node.lineno, ast.unparse(func)[:80], type(value).__name__))
         self.reference(value, node, call=True)
         if isinstance(func, ast.Attribute):
             # task.delay(…) is one call of the task, not a call and a reference to it.

@@ -24,8 +24,10 @@ _MODULE_RUNNERS = re.compile(r"(^|/)__main__\.py$")
 
 
 def is_config_file(path: str) -> bool:
-    """A tool's configuration, which the tool loads itself: setup.py, noxfile.py, docs/conf.py, gunicorn.conf.py."""
-    return bool(_CONFIG_FILES.search(path))
+    """A tool's configuration, which the tool loads itself (setup.py, noxfile.py, docs/conf.py, gunicorn.conf.py), or
+    settings loaded by name (settings.py, celeryconfig.py, config.py)."""
+    stem = os.path.splitext(os.path.basename(path))[0].lower()
+    return bool(_CONFIG_FILES.search(path)) or stem in ("config", "conf", "settings", "configuration") or stem.endswith(("config", "settings", "_conf"))
 
 
 def declare_module(ctx, module) -> list:
@@ -133,7 +135,7 @@ def _decl_node(ctx, module, decl, project_id: str, package: str, lines: list[str
 
         if is_abstract(decl):
             modifiers.append("abstract")
-        if _is_generator(definition):
+        if _is_generator(definition, lines):
             modifiers.append("generator")
         node["modifiers"] = modifiers
         node["signature"] = _function_signature(definition)
@@ -232,9 +234,11 @@ def _parameter_count(node, method: bool) -> int:
     return count
 
 
-def _is_generator(node) -> bool:
+def _is_generator(node, lines: list[str] | None = None) -> bool:
     from .resolve import _local_nodes
 
+    if lines is not None and not any("yield" in line for line in lines[node.lineno - 1 : node.end_lineno or node.lineno]):
+        return False  # no yield written in it: no need to look at every node
     return any(isinstance(n, (ast.Yield, ast.YieldFrom)) for n in _local_nodes(node))
 
 

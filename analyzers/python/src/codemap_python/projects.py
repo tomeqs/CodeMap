@@ -41,6 +41,7 @@ class Project:
         self.roots: list[str] = []  # folders imports start from, most specific first
         self.problems: list[str] = []
         self.pyproject: dict = {}
+        self.test_paths: list[str] = []  # pytest's testpaths, relative to the project, with /
         self.modules: list = []
 
     def add_dependency(self, name: str, spec: str = "", path: str | None = None) -> None:
@@ -73,7 +74,27 @@ def read_project(directory: str) -> Project:
                 break
     project.declared_name = names[0] if names else ""
     _source_roots(project)
+    _test_paths(project)
     return project
+
+
+def _test_paths(project: Project) -> None:
+    """Where pytest looks for tests ([tool.pytest.ini_options], pytest.ini, setup.cfg, tox.ini): code there is test code."""
+    options = ((project.pyproject.get("tool") or {}).get("pytest") or {}).get("ini_options") or {}
+    paths = options.get("testpaths")
+    found = paths.split() if isinstance(paths, str) else [p for p in paths if isinstance(p, str)] if isinstance(paths, list) else []
+    for name, section in (("pytest.ini", "pytest"), ("setup.cfg", "tool:pytest"), ("tox.ini", "pytest")):
+        path = os.path.join(project.dir, name)
+        if found or not os.path.isfile(path):
+            continue
+        config = configparser.ConfigParser(interpolation=None, strict=False)
+        try:
+            with open(path, encoding="utf-8") as f:
+                config.read_file(f)
+            found = config.get(section, "testpaths", fallback="").split()
+        except (OSError, configparser.Error, UnicodeDecodeError):
+            continue
+    project.test_paths = [p.strip("./").replace("\\", "/").rstrip("/") for p in found if p.strip("./")]
 
 
 def _manifest_of(reader) -> str:
@@ -260,13 +281,18 @@ def _pipfile(project: Project) -> str:
 
 def _requirements(project: Project) -> None:
     files = []
-    for folder in (project.dir, os.path.join(project.dir, "requirements")):
+    folders = [project.dir, os.path.join(project.dir, "requirements")]
+    for folder in folders:
         try:
-            names = sorted(os.listdir(folder))
+            entries = sorted(os.scandir(folder), key=lambda e: e.name)
         except OSError:
             continue
         in_folder = folder != project.dir
-        files.extend(os.path.join(folder, n) for n in names if (in_folder and n.endswith((".txt", ".in"))) or _REQUIREMENT_FILE.match(n))
+        for entry in entries:
+            if entry.is_dir() and in_folder and len(folders) < 20:
+                folders.append(entry.path)  # requirements/extras/redis.txt
+            elif entry.is_file() and ((in_folder and entry.name.endswith((".txt", ".in"))) or _REQUIREMENT_FILE.match(entry.name)):
+                files.append(entry.path)
     seen: set[str] = set()
     for path in files:
         _requirements_file(project, path, seen)

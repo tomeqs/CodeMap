@@ -44,13 +44,13 @@
     "members": 169,
     "packages": 11,
     "externalTypes": 0,
-    "edges": 295,
+    "edges": 298,
     "files": 35,
     "lines": 631,
     "cycles": 2,
     "edges.uses": 25,
     "edges.imports": 42,
-    "edges.calls": 32,
+    "edges.calls": 35,
     "edges.accesses": 77,
     "edges.holds": 15,
     "edges.subscribes": 1,
@@ -1051,12 +1051,12 @@
         "in-cycle"
       ],
       "metrics": {
-        "ca": 3,
+        "ca": 4,
         "ce": 7,
         "complexity": 8,
         "constructors": 1,
         "fields": 2,
-        "instability": 0.7,
+        "instability": 0.636,
         "loc": 36,
         "maxComplexity": 2,
         "members": 7,
@@ -1109,6 +1109,9 @@
         "line": 1,
         "endLine": 6
       },
+      "tags": [
+        "config"
+      ],
       "metrics": {
         "ca": 2,
         "ce": 0,
@@ -1170,7 +1173,7 @@
       ],
       "metrics": {
         "ca": 0,
-        "ce": 4,
+        "ce": 6,
         "complexity": 1,
         "instability": 1,
         "loc": 7,
@@ -1303,11 +1306,11 @@
         "endLine": 54
       },
       "metrics": {
-        "ca": 6,
+        "ca": 7,
         "ce": 2,
         "complexity": 7,
         "fields": 5,
-        "instability": 0.25,
+        "instability": 0.222,
         "loc": 54,
         "maxComplexity": 2,
         "members": 11,
@@ -1575,6 +1578,9 @@
         "line": 5,
         "endLine": 5
       },
+      "tags": [
+        "entrypoint"
+      ],
       "metrics": {
         "complexity": 1,
         "loc": 1
@@ -1638,6 +1644,9 @@
         "line": 11,
         "endLine": 11
       },
+      "tags": [
+        "entrypoint"
+      ],
       "metrics": {
         "complexity": 1,
         "loc": 1
@@ -2295,6 +2304,9 @@
         "line": 7,
         "endLine": 7
       },
+      "tags": [
+        "entrypoint"
+      ],
       "metrics": {
         "complexity": 1,
         "loc": 1
@@ -3170,6 +3182,9 @@
         "line": 8,
         "endLine": 9
       },
+      "tags": [
+        "entrypoint"
+      ],
       "metrics": {
         "complexity": 1,
         "fanOut": 1,
@@ -3872,7 +3887,7 @@
       },
       "metrics": {
         "complexity": 2,
-        "fanIn": 2,
+        "fanIn": 3,
         "fanOut": 1,
         "loc": 5,
         "parameters": 1
@@ -3916,7 +3931,7 @@
       },
       "metrics": {
         "complexity": 2,
-        "fanIn": 1,
+        "fanIn": 2,
         "fanOut": 2,
         "loc": 6,
         "parameters": 2
@@ -4419,7 +4434,7 @@
       ],
       "metrics": {
         "complexity": 1,
-        "fanOut": 1,
+        "fanOut": 4,
         "loc": 4,
         "parameters": 1
       }
@@ -5045,7 +5060,7 @@
       },
       "metrics": {
         "complexity": 2,
-        "fanIn": 4,
+        "fanIn": 5,
         "loc": 5
       }
     },
@@ -6746,10 +6761,31 @@
     },
     {
       "source": "py:shop-api:tests/test_orders.py#test_place_keeps_the_lines",
+      "target": "py:shop-api:src/shop_api/services/orders.py#OrdersService.find",
+      "kind": "calls",
+      "weight": 1,
+      "line": 6
+    },
+    {
+      "source": "py:shop-api:tests/test_orders.py#test_place_keeps_the_lines",
+      "target": "py:shop-api:src/shop_api/services/orders.py#OrdersService.place",
+      "kind": "calls",
+      "weight": 1,
+      "line": 5
+    },
+    {
+      "source": "py:shop-api:tests/test_orders.py#test_place_keeps_the_lines",
       "target": "py:shop-api:tests/conftest.py#service",
       "kind": "calls",
       "weight": 1,
       "line": 4
+    },
+    {
+      "source": "py:shop-api:tests/test_orders.py#test_place_keeps_the_lines",
+      "target": "py:shop-domain:src/shop_domain/orders.py#Order.total",
+      "kind": "calls",
+      "weight": 1,
+      "line": 7
     },
     {
       "source": "py:shop-api:tests/test_orders.py#test_place_keeps_the_lines",
@@ -7440,11 +7476,11 @@
         "score": 9
       },
       {
-        "id": "py:shop-domain:src/shop_domain/__init__.py",
-        "score": 6
+        "id": "py:shop-domain:src/shop_domain/orders.py",
+        "score": 7
       },
       {
-        "id": "py:shop-domain:src/shop_domain/orders.py",
+        "id": "py:shop-domain:src/shop_domain/__init__.py",
         "score": 6
       },
       {
@@ -7457,7 +7493,7 @@
       },
       {
         "id": "py:shop-api:src/shop_api/services/orders.py",
-        "score": 3
+        "score": 4
       },
       {
         "id": "py:shop-api:src/shop_api/db.py",

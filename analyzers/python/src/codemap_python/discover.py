@@ -36,7 +36,7 @@ class ModuleInfo:
         self.rel = ""  # relative to the analysis root, with /
         self.analyzed = analyzed
         self.is_package = os.path.basename(file) == "__init__.py"
-        self.is_test = is_test_file(path)
+        self.is_test = is_test_file(path) or any(path.startswith(t + "/") for t in project.test_paths)
         self.names: list[str] = []  # every dotted name it can be imported as, the main one first
         self.name = ""
         self.package = ""
@@ -46,10 +46,12 @@ class ModuleInfo:
         self.generated = False
         self.text: str | None = None
         self.tree = None
+        self.parsed = False
         self.parse_error = ""
         self.lines = 0
         self.symbols = None  # its symbol table, built when needed
         self.in_package = False  # its folder has __init__.py (relative imports work, the folder is not on sys.path)
+        self.weak: dict[str, str] = {}  # names only the __init__.py chain gives (not a source root) → the chain's top folder
 
     def __repr__(self) -> str:
         return f"<module {self.name} {self.path}>"
@@ -147,6 +149,7 @@ def _name_modules(discovery: Discovery) -> None:
         stem = os.path.splitext(os.path.basename(module.file))[0]
         module.in_package = has_init(directory)
         candidates: list[str] = []
+        chain = None
         if module.in_package:
             # Up through the packages, as Python does, also past the project's or the analyzed folder's top.
             top = directory
@@ -155,11 +158,16 @@ def _name_modules(discovery: Discovery) -> None:
                 if parent == top or not has_init(parent):
                     break
                 top = parent
-            candidates.append(_dotted(os.path.dirname(top), module.file))
+            chain = _dotted(os.path.dirname(top), module.file)
+            candidates.append(chain)
+            if os.path.normpath(os.path.dirname(top)) not in module.project.roots:
+                weak_top = top  # examples/pydantic/: "pydantic" only when examples/ is on sys.path
         for source_root in module.project.roots:
             if _inside(module.file, source_root):
                 candidates.append(_dotted(source_root, module.file))
         names = [n for n in dict.fromkeys(candidates) if n and _valid(n)] or [stem]
+        if chain and chain in names and candidates.count(chain) == 1 and os.path.normpath(os.path.dirname(top)) not in module.project.roots:
+            module.weak[chain] = weak_top
         module.names = names
         module.name = names[0]
         if module.is_package:

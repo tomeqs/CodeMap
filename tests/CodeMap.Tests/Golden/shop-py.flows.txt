@@ -139,6 +139,20 @@ sequenceDiagram
     Note over P0: post
     P0->>P1: close()
 
+## py:shop-api:src/shop_api/main.py (controller, reach 3): py:shop-api:src/shop_api/main.py#(top-level)
+methods 3, types 2, depth 1, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as main.py
+    participant P1 as deps.py
+    Note over P0: (top-level)()
+    P0->>P1: verify_api_key()
+
+sequenceDiagram
+    autonumber
+    participant P0 as main.py
+    Note over P0: health
+
 ## py:worker:worker/tasks.py (handler, reach 2): py:worker:worker/tasks.py#send_receipt
 methods 2, types 1, depth 0, truncated false
 sequenceDiagram

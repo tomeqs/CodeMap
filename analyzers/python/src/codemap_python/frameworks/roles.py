@@ -12,8 +12,8 @@ from __future__ import annotations
 import ast
 import re
 
-from ..resolve import ClassVal
-from ..symbols import ClassDecl, VarDecl
+from ..resolve import ClassVal, FuncVal, ModuleVal, PackageStub
+from ..symbols import ClassDecl, VarDecl, symbols_of
 from . import Part
 from .common import argument, external_name, keyword, short, string_of, tag
 
@@ -21,6 +21,7 @@ DECLARATIVE = ("sqlalchemy.orm.DeclarativeBase", "sqlalchemy.orm.decl_api.Declar
                "sqlalchemy.orm.declarative_base", "sqlalchemy.ext.declarative.declarative_base", "sqlalchemy.orm.decl_api.declarative_base")
 PYDANTIC = ("pydantic.BaseModel", "pydantic.main.BaseModel", "pydantic.v1.BaseModel", "pydantic.RootModel")
 SETTINGS = ("pydantic_settings.BaseSettings", "pydantic_settings.main.BaseSettings", "pydantic.BaseSettings", "pydantic.v1.BaseSettings")
+_DOTTED = re.compile(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)+$")
 ROLE_TAGS = {"entity", "dto", "options", "controller", "test", "exception", "config", "handler", "middleware"}
 NAMING = [
     ("Repository", "repository"), ("Repo", "repository"), ("Service", "service"), ("Factory", "factory"),
@@ -33,11 +34,14 @@ NAMING = [
 class Roles(Part):
     def __init__(self, frameworks) -> None:
         super().__init__(frameworks)
+        self.configs: list = []
         self.entities: list[ClassDecl] = []
         self.links: list[tuple[VarDecl, str, object]] = []  # (field, "relationship" / "table", target)
         self.classes: list[ClassDecl] = []
 
     def declare(self, module, owners: list) -> None:
+        if "config" in (self.node(module.id) or {}).get("tags", []):
+            self.configs.append(module)
         for decl in owners:
             if not isinstance(decl, ClassDecl):
                 continue
@@ -93,6 +97,7 @@ class Roles(Part):
                     self.links.append((member, "table", string_of(keyword(call, "foreign_key")).split(".")[0]))
 
     def finish(self) -> None:
+        self._config_strings()
         tables: dict[str, ClassDecl] = {}
         by_name: dict[str, ClassDecl] = {}
         for entity in self.entities:
@@ -123,6 +128,40 @@ class Roles(Part):
                     tag(node, role)
                     break
 
+    def _config_strings(self) -> None:
+        """Dotted paths in configuration name code the tool loads (Django's MIDDLEWARE and ROOT_URLCONF, Sphinx's
+        extensions, Celery's include): the setting uses it, and it is an entry point (middleware: middleware)."""
+        for module in self.configs:
+            for decl in symbols_of(module).decls:
+                if not isinstance(decl, VarDecl) or decl.owner is not None:
+                    continue
+                for value, _ in decl.values:
+                    for text in _strings_in(value):
+                        target = self._dotted(text, module)
+                        if target is None or target == module.id:
+                            continue
+                        self.graph.add_edge(decl.id, target, "uses")
+                        tag(self.node(target), "middleware" if decl.name == "MIDDLEWARE" and "#" in target else "entrypoint")
+
+    def _dotted(self, text: str, module) -> str | None:
+        if not _DOTTED.match(text) and not text.isidentifier():
+            return None
+        found = self.resolver.find_module(text, module)
+        if found is not None and not isinstance(found, PackageStub):
+            return found.id
+        owner, _, attribute = text.rpartition(".")
+        found = self.resolver.find_module(owner, module) if owner else None
+        if found is None or isinstance(found, PackageStub):
+            return None
+        value = self.resolver.module_attr(found, attribute)
+        if isinstance(value, ClassVal):
+            return value.cls.id
+        if isinstance(value, FuncVal):
+            return value.func.id
+        if isinstance(value, ModuleVal) and not isinstance(value.module, PackageStub):
+            return value.module.id
+        return None
+
     def _table_name(self, entity: ClassDecl) -> str:
         for cls in self.resolver.mro(entity):
             member = cls.members.get("__tablename__")
@@ -135,3 +174,7 @@ class Roles(Part):
         if self.resolver.is_flask_model(entity):
             return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", entity.name).lower()  # Flask-SQLAlchemy's: OrderItem → order_item
         return ""
+
+
+def _strings_in(node) -> list[str]:
+    return [n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value]

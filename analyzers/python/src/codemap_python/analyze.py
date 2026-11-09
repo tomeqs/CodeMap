@@ -2,6 +2,7 @@
 modules, declarations and the edges between them."""
 from __future__ import annotations
 
+import ast
 import os
 import sys
 
@@ -16,7 +17,7 @@ from .projects import MARKERS
 from .references import collect_references
 from .resolve import ModuleIndex, PackageStub, Resolver
 from .stdlib import is_stdlib
-from .symbols import Decl, read_source, symbols_of
+from .symbols import Decl, FuncDecl, VarDecl, read_source, read_text, symbols_of
 
 _LEVEL_RANK = {"project": 0, "namespace": 1, "type": 2, "member": 3}
 
@@ -27,9 +28,13 @@ class Context:
         self.resolver: Resolver | None = None
         self.index: ModuleIndex | None = None
         self.project_ids: dict[int, str] = {}
-        self.stats = {"calls": 0, "resolved": 0}
+        self.stats = {"calls": 0, "resolved": 0, "candidates": 0, "resolved_candidates": 0}
+        self.project_names: set[str] | None = None  # with CODEMAP_PY_STATS: names the analyzed code declares
+        self.unresolved_calls: list | None = [] if os.environ.get("CODEMAP_PY_UNRESOLVED") else None
         self.unresolved: list[str] = []
         self.frameworks: Frameworks | None = None
+        self.unknown_names: set[str] = set()  # attributes used on values whose type the analysis cannot tell
+        self.imported_names: dict[str, set[str]] = {}  # module id → the names other modules import from it
 
 
 def analyze(request: dict, log=lambda message: None) -> dict:
@@ -61,7 +66,7 @@ def analyze(request: dict, log=lambda message: None) -> dict:
     for module in discovery.modules:
         if not module.analyzed:
             continue
-        read_source(module)
+        read_text(module)
         if module.is_test and not include_tests:
             module.skipped = "test"
             skipped["test"] += 1
@@ -72,6 +77,7 @@ def analyze(request: dict, log=lambda message: None) -> dict:
                 skipped["generated"] += 1
                 continue
             module.generated = True
+        read_source(module)
         if module.parse_error:
             parse_errors.append(f"{module.rel} ({module.parse_error})")
         elif module.is_package and symbols_of(module).empty:
@@ -93,6 +99,8 @@ def analyze(request: dict, log=lambda message: None) -> dict:
             parse_errors.append(f"{module.rel} (too deeply nested to analyze)")
             owners[id(module)] = []
 
+    if os.environ.get("CODEMAP_PY_STATS"):
+        ctx.project_names = {d.name for m in mapped if m.tree is not None for d in symbols_of(m).decls if not isinstance(d, VarDecl) or d.owner is None}
     ctx.frameworks = Frameworks(ctx)
     for module in mapped:
         try:
@@ -107,9 +115,11 @@ def analyze(request: dict, log=lambda message: None) -> dict:
             warnings.append(f"{module.rel}: too deeply nested to follow all its references.")
         _imports(ctx, module)
 
+    _name_references(ctx, mapped)
     di = ctx.frameworks.finish()
     diagnostics: list[dict] = []
     if options.get("checks"):
+        ctx.imported_names = _imported_names(ctx, discovery)
         for module in mapped:
             try:
                 diagnostics.extend(collect_diagnostics(ctx, module))
@@ -132,6 +142,13 @@ def analyze(request: dict, log=lambda message: None) -> dict:
     if os.environ.get("CODEMAP_PY_STATS"):
         calls, resolved = ctx.stats["calls"], ctx.stats["resolved"]
         log(f"calls: {resolved} of {calls} call sites resolved to the analyzed code ({100 * resolved / max(calls, 1):.0f}%)")
+        named, found = ctx.stats["candidates"], ctx.stats["resolved_candidates"]
+        log(f"calls of names the analyzed code declares: {found} of {named} resolved ({100 * found / max(named, 1):.0f}%)")
+    if ctx.unresolved_calls is not None:
+        import json
+
+        with open(os.environ["CODEMAP_PY_UNRESOLVED"], "w", encoding="utf-8") as f:
+            json.dump(ctx.unresolved_calls, f)
 
     nodes = sorted(graph.nodes.values(), key=lambda n: (_rank(n), n["id"]))
     edges = sorted(graph.connected_edges(), key=lambda e: (e["source"], e["kind"], e["target"]))
@@ -287,7 +304,7 @@ def _external(ctx: Context, module, pid: str, name: str) -> None:
     top = name.split(".")[0]
     if not top or top == "__future__" or is_stdlib(top):
         return
-    if ctx.index.is_project_top(top):
+    if ctx.index.is_project_top(name, module):
         ctx.unresolved.append(f"{module.rel} → {name}")
         return
     distribution = distribution_of(name, _declared_imports(module.project))
@@ -296,6 +313,45 @@ def _external(ctx: Context, module, pid: str, name: str) -> None:
         return  # another project of the repository, outside the analysis
     _ensure_package(ctx, distribution, declared.spec if declared else "")
     ctx.graph.add_edge(pid, package_id(distribution), "packageReference")
+
+
+def _imported_names(ctx: Context, discovery) -> dict[str, set[str]]:
+    """What other modules import from each module (`from .compat import quote`): an import there is a re-export."""
+    out: dict[str, set[str]] = {}
+    for module in discovery.modules:
+        if not module.analyzed or module.tree is None:
+            continue
+        for binding in symbols_of(module).imports:
+            if binding.name is None or binding.name == "*" or not binding.module:
+                continue
+            base = ctx.resolver.find_module(binding.module, module)
+            if base is not None and not isinstance(base, PackageStub):
+                out.setdefault(base.id, set()).add(binding.name)
+    return out
+
+
+# Bases that call no hooks of their subclasses: a private method of a class derived from anything else may be one.
+_PLAIN_BASES = ("builtins.", "typing.", "typing_extensions.", "abc.", "enum.", "collections.abc.", "dataclasses.")
+
+
+def _name_references(ctx: Context, mapped: list) -> None:
+    """A private member that code the analysis cannot follow may use is tagged maybe-used, so that it is not reported as
+    unused on no evidence: its name is used on something the analysis cannot type (or in getattr), or it is a method of a
+    class derived from a class outside the analysis, which may call it as a hook (billiard's Pool calls _setup_queues)."""
+    resolver = ctx.resolver
+    for module in mapped:
+        if module.tree is None:
+            continue
+        for decl in symbols_of(module).decls:
+            if decl.owner is None or not decl.private:
+                continue
+            hook = isinstance(decl, FuncDecl) and any(not n.startswith(_PLAIN_BASES) for n in resolver.external_bases(decl.owner))
+            if decl.name in ctx.unknown_names or hook:
+                node = ctx.graph.nodes.get(decl.id)
+                if node is not None:
+                    tags = node.setdefault("tags", [])
+                    if "maybe-used" not in tags:
+                        tags.append("maybe-used")
 
 
 # ---------------------------------------------------------------------------------------------- entry points
@@ -313,12 +369,15 @@ def _entry_points(ctx: Context, discovery, mapped: list) -> None:
             if "entrypoint" not in tags:
                 tags.append("entrypoint")
 
+    imported = {e["target"] for e in graph.edges.values() if e["kind"] in ("imports", "uses")}
     for module in mapped:
         if module.parse_error:
             continue
         table = symbols_of(module)
         script = (module.text or "").startswith("#!")
-        if table.main_guard or os.path.basename(module.file) == "__main__.py" or script:
+        # A module nothing imports whose top-level code calls something is run as a script (an example, a tool).
+        runs = module.id not in imported and not module.is_test and not module.is_package and any(isinstance(n, ast.Call) for c in table.top_code for n in ast.walk(c))
+        if table.main_guard or os.path.basename(module.file) == "__main__.py" or script or runs:
             tag(module.id)
             tag(member_id(module.id, TOP_LEVEL))
 

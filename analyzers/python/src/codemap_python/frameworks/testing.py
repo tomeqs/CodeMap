@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import os
 
+from ..resolve import ContainerVal
 from ..symbols import ClassDecl, FuncDecl, decorator_name
 from . import Part
 from .common import argument, external_name, keyword, short, string_of, strings_of, tag
@@ -22,6 +23,7 @@ class Testing(Part):
         self.fixtures: dict[str, dict[str, FuncDecl]] = {}  # folder → fixture name → its function (module and conftest.py)
         self.module_fixtures: dict[str, dict[str, FuncDecl]] = {}  # module id → its own fixtures
         self.requests: list[tuple[FuncDecl, object]] = []  # tests and fixtures, with their module
+        self.resolver.parameter_hook = self.fixture_value
 
     def declare(self, module, owners: list) -> None:
         for decl in owners:
@@ -38,6 +40,33 @@ class Testing(Part):
                     self.requests.append((decl, module))
                 elif module.is_test and (decl.name.startswith("test") or (decl.owner is not None and "test" in (self.node(decl.owner.id) or {}).get("tags", []))):
                     self.requests.append((decl, module))
+
+    def fixture_value(self, module, node, name: str):
+        """What a test's parameter is: what the fixture it names returns (or yields)."""
+        if not module.is_test:
+            return None
+        fixture = self.module_fixtures.get(module.id, {}).get(name) or self._conftest_fixture(name, module)
+        if fixture is None or fixture.node is node:
+            return None
+        if any(isinstance(n, (ast.Yield, ast.YieldFrom)) for n in ast.walk(fixture.node)):
+            value = self.resolver.yield_type(fixture)
+            if value is None:
+                declared = self.resolver.return_type(fixture)
+                value = declared.element if isinstance(declared, ContainerVal) else None
+            return value
+        return self.resolver.return_type(fixture)
+
+    def _conftest_fixture(self, name: str, module) -> FuncDecl | None:
+        folder = os.path.dirname(module.file)
+        top = module.project.dir
+        while True:
+            found = self.fixtures.get(folder, {}).get(name)
+            if found is not None:
+                return found
+            parent = os.path.dirname(folder)
+            if parent == folder or folder == top or not (folder + os.sep).startswith(top.rstrip(os.sep) + os.sep):
+                return None
+            folder = parent
 
     def _test_class(self, decl: ClassDecl) -> None:
         tag(self.node(decl.id), "test")
@@ -77,16 +106,4 @@ class Testing(Part):
             own = decl.owner.members.get(name)
             if isinstance(own, FuncDecl) and own is not decl:
                 return own
-        found = self.module_fixtures.get(module.id, {}).get(name)
-        if found is not None:
-            return found
-        folder = os.path.dirname(module.file)
-        top = module.project.dir
-        while True:
-            found = self.fixtures.get(folder, {}).get(name)
-            if found is not None:
-                return found
-            parent = os.path.dirname(folder)
-            if parent == folder or not (folder + os.sep).startswith(top.rstrip(os.sep) + os.sep) or folder == top:
-                return None
-            folder = parent
+        return self.module_fixtures.get(module.id, {}).get(name) or self._conftest_fixture(name, module)

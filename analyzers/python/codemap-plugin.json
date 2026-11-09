@@ -87,12 +87,6 @@
       "private"
     ],
     "skipAttributed": true,
-    "skipTags": [
-      "entrypoint",
-      "test",
-      "route",
-      "handler"
-    ],
     "skipMemberKinds": [
       "constructor"
     ],
@@ -110,7 +104,15 @@
       "config",
       "barrel",
       "init",
+      "handler",
       "test"
+    ],
+    "skipTags": [
+      "entrypoint",
+      "test",
+      "route",
+      "handler",
+      "maybe-used"
     ],
     "skipNames": [
       "(top-level)"
