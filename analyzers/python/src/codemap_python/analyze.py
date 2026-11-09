@@ -7,6 +7,7 @@ import sys
 
 from .declarations import declare_module
 from .discover import discover, is_generated
+from .frameworks import Frameworks
 from .distributions import distribution_of, import_names
 from .graph import Graph
 from .ids import TOP_LEVEL, member_id, normalize, package_id, project_id
@@ -27,6 +28,7 @@ class Context:
         self.project_ids: dict[int, str] = {}
         self.stats = {"calls": 0, "resolved": 0}
         self.unresolved: list[str] = []
+        self.frameworks: Frameworks | None = None
 
 
 def analyze(request: dict, log=lambda message: None) -> dict:
@@ -90,6 +92,13 @@ def analyze(request: dict, log=lambda message: None) -> dict:
             parse_errors.append(f"{module.rel} (too deeply nested to analyze)")
             owners[id(module)] = []
 
+    ctx.frameworks = Frameworks(ctx)
+    for module in mapped:
+        try:
+            ctx.frameworks.declare(module, owners[id(module)])
+        except RecursionError:
+            warnings.append(f"{module.rel}: too deeply nested to recognise its frameworks.")
+
     for module in mapped:
         try:
             collect_references(ctx, module, owners[id(module)])
@@ -97,6 +106,7 @@ def analyze(request: dict, log=lambda message: None) -> dict:
             warnings.append(f"{module.rel}: too deeply nested to follow all its references.")
         _imports(ctx, module)
 
+    di = ctx.frameworks.finish()
     _entry_points(ctx, discovery, mapped)
     _packages(ctx, discovery)
 
@@ -118,6 +128,8 @@ def analyze(request: dict, log=lambda message: None) -> dict:
     nodes = sorted(graph.nodes.values(), key=lambda n: (_rank(n), n["id"]))
     edges = sorted(graph.connected_edges(), key=lambda e: (e["source"], e["kind"], e["target"]))
     analysis: dict = {"warnings": warnings}
+    if di:
+        analysis["di"] = di
     if options.get("checks"):
         analysis["diagnostics"] = []
 

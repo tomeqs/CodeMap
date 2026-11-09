@@ -12,9 +12,11 @@ from .resolve import (
     ClassVal,
     ComprehensionScope,
     ContainerVal,
+    ExtVal,
     FuncVal,
     FunctionScope,
     InstanceVal,
+    TASK_CALLS,
     PropVal,
     VarVal,
     is_abstract,
@@ -250,6 +252,8 @@ class Walker:
         func = node.func
         value = self.resolver.infer(func, scope)
         self.stats["calls"] += 1
+        if isinstance(value, ExtVal) and self.ctx.frameworks is not None:
+            self.ctx.frameworks.on_call(self, node, value.name, scope)
         if isinstance(value, InstanceVal):
             member = self.resolver.member(value.cls, "__call__")
             value = FuncVal(member) if isinstance(member, FuncDecl) else None
@@ -257,7 +261,11 @@ class Walker:
             self.stats["resolved"] += 1
         self.reference(value, node, call=True)
         if isinstance(func, ast.Attribute):
-            self.visit(func.value, scope)
+            # task.delay(…) is one call of the task, not a call and a reference to it.
+            task_call = isinstance(value, FuncVal) and func.attr in TASK_CALLS and isinstance(func.value, (ast.Name, ast.Attribute)) \
+                and self.resolver.infer(func.value, scope) == value
+            if not task_call:
+                self.visit(func.value, scope)
         elif not isinstance(func, ast.Name):
             self.visit(func, scope)
         for arg in node.args:

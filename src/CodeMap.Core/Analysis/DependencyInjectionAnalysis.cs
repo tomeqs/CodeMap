@@ -89,8 +89,8 @@ internal static class DependencyInjectionAnalysis
         var consumers = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var registration in registrations)
         {
-            // Instances and factories are built by user code; forwards resolve through another registration.
-            if (registration.Public.Kind is "instance" or "factory" or "forward") continue;
+            // Instances and factories are built by user code (unless the container calls them); forwards resolve through another registration.
+            if (!rules.Constructs(registration.Public)) continue;
             var implementation = registration.Public.Implementation ?? (registration.Public.External ? null : registration.Public.Service);
             if (implementation != null) consumers.TryAdd(implementation, registration.Public.Lifetime);
         }

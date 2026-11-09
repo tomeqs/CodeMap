@@ -344,6 +344,34 @@ public class PluginTests
     }
 
     [PythonFact]
+    public void Fastapi_routes_start_call_flows_and_depends_is_the_di_view()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(PythonFixture("fastapi"), registry, NoGit);
+        const string orders = "py:shop-api:app/api/orders.py#", deps = "py:shop-api:app/deps.py#";
+
+        // The container: FastAPI's rules on what the plugin found.
+        var di = graph.Analysis.Di!;
+        var issue = Assert.Single(di.Issues);
+        Assert.Equal(("captive", "error", deps + "get_report_cache", deps + "get_db"), (issue.Kind, issue.Severity, issue.Consumer, issue.Service));
+        Assert.Contains("get_report_cache is cached for the whole application but depends on the per-request get_db", issue.Message);
+        var service = di.Dependencies.Single(d => d.Consumer == orders + "OrderService" && d.Service == deps + "get_db");
+        Assert.Equal(("scoped", "scoped", "fastapi"), (service.ConsumerLifetime, service.Lifetime, service.Framework));
+        Assert.Contains("di-issue", graph.Node(deps + "get_report_cache").Tags!);
+        Assert.Contains("singleton", graph.Node(deps + "get_settings").Tags!);
+
+        // Routes are where flows start, with their full paths.
+        Assert.Equal("POST /api/orders/{order_id}/pay", graph.Node(orders + "pay_order").Doc);
+        var flows = new CodeMap.Insights.CallFlow(new CodeMap.Insights.GraphIndex(graph));
+        var entry = Assert.Single(flows.FindEntryPoints(), e => e.Node.Id == "py:shop-api:app/api/orders.py");
+        Assert.Equal("controller", entry.Role);
+        var flow = flows.Build(new[] { orders + "pay_order" });
+        Assert.Contains(flow.Methods, m => m.Id == "py:shop-api:app/models.py#Order.pay");
+        Assert.Contains("entity", graph.Node("py:shop-api:app/models.py#Order").Tags!);
+        graph.AssertEdge("py:shop-api:app/models.py#Customer.orders", EdgeKinds.Holds, "py:shop-api:app/models.py#Order");
+    }
+
+    [PythonFact]
     public void A_python_script_in_a_csharp_repository_does_not_make_it_a_python_one()
     {
         using var ws = new TestWorkspace()

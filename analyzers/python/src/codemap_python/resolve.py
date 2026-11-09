@@ -30,7 +30,10 @@ PROTOCOLS = {"typing.Protocol", "typing_extensions.Protocol"}
 ENUMS = {"enum.Enum", "enum.IntEnum", "enum.StrEnum", "enum.Flag", "enum.IntFlag", "enum.ReprEnum"}
 ABC_BASES = {"abc.ABC"}
 ABC_METAS = {"abc.ABCMeta"}
-_UNWRAP = {"Optional", "Annotated", "ClassVar", "Final", "Required", "NotRequired", "ReadOnly", "InitVar", "TypeGuard", "TypeIs", "Awaitable", "Unpack"}
+_UNWRAP = {
+    "Optional", "Annotated", "ClassVar", "Final", "Required", "NotRequired", "ReadOnly", "InitVar", "TypeGuard", "TypeIs", "Awaitable", "Unpack",
+    "Mapped", "WriteOnlyMapped", "DynamicMapped",  # SQLAlchemy
+}
 _LAST = {"Coroutine"}
 _CONTAINERS = {
     "list", "List", "Sequence", "MutableSequence", "Iterable", "Iterator", "Collection", "Set", "set", "frozenset",
@@ -149,6 +152,42 @@ class ExtVal(Value):
 
     def key(self):
         return ("external", self.name, self.instance)
+
+
+class QueryVal(ContainerVal):
+    """A query of an ORM's model (Django's Order.objects, SQLAlchemy's session.query(Order)): its rows are instances."""
+
+    __slots__ = ("cls",)
+
+    def __init__(self, cls: ClassDecl) -> None:
+        super().__init__(InstanceVal(cls))
+        self.cls = cls
+
+    def key(self):
+        return ("query", id(self.cls))
+
+
+class QueryMethodVal(Value):
+    """A method of a query: calling it gives another query (filter) or one row (get)."""
+
+    __slots__ = ("cls", "one")
+
+    def __init__(self, cls: ClassDecl, one: bool) -> None:
+        self.cls = cls
+        self.one = one
+
+    def key(self):
+        return ("query-method", id(self.cls), self.one)
+
+
+# Methods of Django querysets and managers, and of SQLAlchemy queries: those giving a query, and those giving a row.
+QUERY_CHAIN = frozenset("""all filter exclude order_by select_related prefetch_related annotate alias distinct only defer using
+select_for_update reverse none filter_by join outerjoin options limit offset where""".split())
+QUERY_ONE = frozenset("""get first last latest earliest create one one_or_none scalar get_or_404 first_or_404 one_or_404
+aget afirst alast alatest aearliest acreate""".split())
+# Calls of a task that run it (Celery, Dramatiq, RQ): task.delay(…) calls the task.
+TASK_CALLS = frozenset("delay apply_async s si signature send send_with_options map starmap chunks".split())
+TASK_DECORATORS = frozenset("task shared_task periodic_task actor job".split())
 
 
 class SuperVal(Value):
@@ -622,10 +661,20 @@ class Resolver:
             return self.module_attr(base.module, name)
         if isinstance(base, ClassVal):
             member = self.member(base.cls, name)
-            return self.member_value(member, on_class=True) if member is not None else None
+            if member is not None:
+                return self.member_value(member, on_class=True)
+            if (name == "objects" and self.is_django_model(base.cls)) or (name == "query" and self.is_flask_model(base.cls)):
+                return QueryVal(base.cls)
+            return None
         if isinstance(base, InstanceVal):
             member = self.member(base.cls, name)
             return self.member_value(member, on_class=False) if member is not None else None
+        if isinstance(base, QueryVal):
+            if name in QUERY_CHAIN or name in QUERY_ONE:
+                return QueryMethodVal(base.cls, name in QUERY_ONE)
+            return None
+        if isinstance(base, FuncVal):
+            return base if name in TASK_CALLS and self.is_task(base.func) else None
         if isinstance(base, SuperVal):
             for cls in self.mro(base.cls)[1:]:
                 member = cls.members.get(name)
@@ -665,6 +714,8 @@ class Resolver:
             return self.return_type(member) if isinstance(member, FuncDecl) else None
         if isinstance(target, ExtVal):
             return self._external_call(target, node, scope)
+        if isinstance(target, QueryMethodVal):
+            return InstanceVal(target.cls) if target.one else QueryVal(target.cls)
         return None
 
     def _external_call(self, target: ExtVal, node: ast.Call, scope: Scope) -> Value | None:
@@ -682,6 +733,11 @@ class Resolver:
             return ClassVal(value.cls) if isinstance(value, InstanceVal) else None
         if name.startswith("builtins."):
             return None
+        last = name.rsplit(".", 1)[-1]
+        if args and (last == "query" or (last in QUERY_ONE and len(args) >= 2)) and _is_orm(name):
+            model = self.deref(self.infer(args[0], scope))  # session.query(Order), session.get(Order, 1), db.get_or_404(Order, 1)
+            if isinstance(model, ClassVal):
+                return QueryVal(model.cls) if last == "query" else InstanceVal(model.cls)
         return ExtVal(name, instance=True)
 
     def subscript(self, base: Value | None, index) -> Value | None:
@@ -972,6 +1028,15 @@ class Resolver:
                     return value.name
         return ""
 
+    def is_django_model(self, cls: ClassDecl) -> bool:
+        return any(n.startswith("django.") and (n.endswith(".Model") or n.rsplit(".", 1)[-1].startswith("Abstract")) for n in self.external_bases(cls))
+
+    def is_flask_model(self, cls: ClassDecl) -> bool:
+        return any(n.startswith("flask_sqlalchemy.") and n.endswith(".Model") for n in self.external_bases(cls))
+
+    def is_task(self, func: FuncDecl) -> bool:
+        return any(decorator_name(d).rsplit(".", 1)[-1] in TASK_DECORATORS for d in func.decorators)
+
     def is_enum(self, cls: ClassDecl) -> bool:
         return bool(self.external_bases(cls) & ENUMS)
 
@@ -1005,6 +1070,11 @@ class Resolver:
 
 
 # ---------------------------------------------------------------------------------------------- helpers
+
+
+def _is_orm(name: str) -> bool:
+    """A call of SQLAlchemy's session or Flask-SQLAlchemy's (session.get, db.session.query, db.get_or_404)."""
+    return name.startswith(("sqlalchemy.", "sqlmodel.", "flask_sqlalchemy.")) or ".session." in name.lower() or ".Session." in name
 
 
 def agree(values) -> Value | None:
