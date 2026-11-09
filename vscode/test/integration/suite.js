@@ -109,6 +109,15 @@ async function scenario(controller) {
   assert.ok(ts.nodes.some((n) => n.kind === 'module' && n.location?.file?.endsWith('.ts')), 'files are on the map');
   assert.ok(ts.analysis?.di?.registrations?.some((r) => r.framework === 'nest'), 'the Nest container is read');
 
+  // Python runs on the machine's Python (or the Python extension's interpreter, not installed in this test): the
+  // bundled analyzer has the plugin, and FastAPI's container is read.
+  mark('Python on the Python of the machine');
+  const fastapi = path.resolve(__dirname, '..', '..', '..', 'analyzers', 'python', 'test', 'fixtures', 'fastapi');
+  const py = await runAnalyzer(analyzer, fastapi, { gitHistory: false }, { onLine: (l) => log.push(l) });
+  assert.ok(py.source.languages.some((l) => l.id === 'python'), 'mapped as Python');
+  assert.ok(py.nodes.some((n) => n.kind === 'module' && n.location?.file?.endsWith('.py')), 'modules are on the map');
+  assert.ok(py.analysis?.di?.issues?.some((i) => i.kind === 'captive'), 'FastAPI\'s container is read');
+
   // The MCP server for agent mode: offered through VS Code's provider API, started as VS Code would start it.
   mark('MCP server');
   const api = vscode.extensions.getExtension('tomeqs.codemap-3d').exports;

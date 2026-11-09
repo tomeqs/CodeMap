@@ -1,0 +1,2 @@
+celery[redis]>=5.3
+typer>=0.12

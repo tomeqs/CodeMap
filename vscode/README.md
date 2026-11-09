@@ -1,12 +1,12 @@
 # CodeMap 3D for VS Code
 
-An interactive 3D map of your C# solution or TypeScript / JavaScript code (or both in one map), inside VS Code and one click away from the code.
+An interactive 3D map of your C# solution, TypeScript / JavaScript or Python code (or all of them in one map), inside VS Code and one click away from the code.
 
 ![Call flow with its sequence diagram](https://raw.githubusercontent.com/tomeqs/CodeMap/main/docs/img/flow.png)
 
 ## What you get
 
-- **Galaxy and City**: projects, namespaces and types (TypeScript: packages, folders and files) laid out as a force graph or a code city. Size, height and colour show any metric (lines, complexity, coupling, git churn, hotspots).
+- **Galaxy and City**: projects, namespaces and types (TypeScript: packages, folders and files; Python: projects, packages and modules) laid out as a force graph or a code city. Size, height and colour show any metric (lines, complexity, coupling, git churn, hotspots).
 - **Layers**: architecture layers computed from the code, with dependencies that point upwards in red.
 - **DI**: services on singleton / scoped / transient planes, for Microsoft DI, NestJS and Angular. Captive dependencies, request scope spreading to its consumers and missing registrations are flagged.
 - **Flow**: what a controller action, an Express or Nest route, a handler or a background service calls, in source order and through interfaces to the implementation the container injects. Includes a **sequence diagram** you can copy as Mermaid.
@@ -24,7 +24,7 @@ An interactive 3D map of your C# solution or TypeScript / JavaScript code (or bo
 | **CodeMap: Show Call Flow** | The call flow and sequence diagram of the method or function under the cursor (editor context menu) |
 | **CodeMap: Choose What to Analyze…** | Switch to another solution, project or folder of the workspace |
 
-With only C#, CodeMap opens the solution; with only TypeScript / JavaScript, the workspace folder. When the workspace has both, it asks, and the folder gives one map with the C# projects and the npm packages side by side.
+With only C#, CodeMap opens the solution; with only TypeScript / JavaScript or Python, the workspace folder. When the workspace has C# and another language, it asks, and the folder gives one map with the C# projects, the npm packages and the Python projects side by side.
 
 The map updates itself when you save source or project files (`.cs`, `.csproj`, `.ts`, `.js`, `package.json`, `tsconfig.json`…); the camera and the selection stay where they were.
 
@@ -52,6 +52,7 @@ The tools, prompts and options are described in the [main README](https://github
 - **.NET SDK 8 or newer** (`dotnet` on PATH): the extension runs the CodeMap analyzer on it. You don't need to build or restore the solution, although restored projects give more complete results.
 - Without .NET, set `codemap.analyzerPath` to the standalone `codemap` executable from the [releases](https://github.com/tomeqs/CodeMap/releases).
 - TypeScript and JavaScript are read with the TypeScript compiler bundled with the extension, on the Node.js built into VS Code: no `npm install` of your code and no Node.js installation needed. Frameworks (Express, NestJS, Angular) are recognised from the imports.
+- Python is read by the analyzer's Python plugin, on Python 3.9+ and its standard library alone: the interpreter the Python extension chose for the workspace when it is installed, else Python on the `PATH`. Nothing has to be installed into your environment. FastAPI (with `Depends` in the DI view), Flask, Django, Celery, click / typer, pytest and SQLAlchemy are recognised from the imports.
 
 ## Settings
 
@@ -66,5 +67,6 @@ The tools, prompts and options are described in the [main README](https://github
 | `codemap.analyzerPath` | | Use another analyzer (a `codemap` executable or `codemap.dll`) |
 | `codemap.dotnetPath` | `dotnet` | The dotnet that runs the bundled analyzer |
 | `codemap.nodePath` | | Node.js 18+ for TypeScript / JavaScript instead of the one inside VS Code (for very large code bases: VS Code's Node.js has a lower memory limit) |
+| `codemap.pythonPath` | | Python 3.9+ for Python code, instead of the Python extension's interpreter or the one on the `PATH` |
 
 The analyzer only reads the code: it does not build it, run MSBuild or run your scripts. Nothing leaves your machine, and the map has no network access.

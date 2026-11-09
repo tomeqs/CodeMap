@@ -7,23 +7,28 @@ const { resolveAnalyzer, runAnalyzer } = require('./analyzer');
 const { standaloneHtml, webviewHtml } = require('./html');
 const { flowRootsFor, nodeAt, relativeToRoot, resolveInRoot } = require('./locate');
 const { McpCommands, registerMcpServer } = require('./mcp');
+const { PythonInterpreter } = require('./python');
 
 const VIEW_TYPE = 'codemap.map';
 const TARGET_KEY = 'codemap.target';
 const CACHE_FILE = 'map.codemap.json';
-// Files whose change makes the map out of date: C# and its projects, TypeScript / JavaScript and their packages.
-const SOURCE_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf|[cm]?tsx?|[cm]?jsx?)$|(^|[\\/])(package|jsconfig|tsconfig(\.[\w-]+)?)\.json$/i;
-const NOT_SOURCE = /\.d\.[cm]?ts$|\.min\.js$|(^|[\\/])(node_modules|dist|bin|obj)[\\/]/i;
+// Files whose change makes the map out of date: C# and its projects, TypeScript / JavaScript and their packages,
+// Python and its project files.
+const SOURCE_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf|[cm]?tsx?|[cm]?jsx?|py)$|(^|[\\/])((package|jsconfig|tsconfig(\.[\w-]+)?)\.json|pyproject\.toml|setup\.cfg|Pipfile|requirements[\w.-]*\.txt)$/i;
+const NOT_SOURCE = /\.d\.[cm]?ts$|\.min\.js$|(^|[\\/])(node_modules|dist|bin|obj|__pycache__|site-packages|\.venv|venv|\.tox|[^\\/]+\.egg-info)[\\/]/i;
 const EXCLUDE = '**/{node_modules,bin,obj,.git,.vs}/**';
 const SCRIPT_EXCLUDE = '**/{node_modules,bin,obj,dist,build,out,coverage,.git,.vs,.next,.angular}/**';
 const SCRIPT_MARKERS = '**/{package.json,tsconfig.json,jsconfig.json}';
 const SCRIPT_SOURCES = '**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}';
+const PYTHON_EXCLUDE = '**/{node_modules,bin,obj,dist,build,__pycache__,site-packages,.venv,venv,.tox,.git,.vs}/**';
+const PYTHON_SOURCES = '**/*.py';
 const READY_TIMEOUT_MS = 30000;
 
 /** One code map per window: the webview with the 3D map, the analysis behind it and the live updates. */
 class CodeMapController {
-  constructor(context) {
+  constructor(context, { python = new PythonInterpreter(vscode) } = {}) {
     this.context = context;
+    this.python = python;
     this.panel = null;
     this.ready = false;
     this.queue = [];
@@ -287,6 +292,8 @@ class CodeMapController {
       includeExternal: settings.get('includeExternal', false),
       gitHistory: settings.get('gitHistory', true),
       nodePath: settings.get('nodePath'),
+      pythonPath: settings.get('pythonPath'),
+      pythonInterpreter: settings.get('pythonPath') ? undefined : await this.python.current(vscode.workspace.workspaceFolders?.[0]?.uri),
     };
 
     const controller = new AbortController();
@@ -395,33 +402,42 @@ class CodeMapController {
 
   /**
    * What to analyze. C#: solutions first (shallowest first), then projects; asks when there is more than one.
-   * TypeScript / JavaScript only: the workspace folder. Both: asks, with the folder (one map of everything) first.
+   * TypeScript / JavaScript or Python only: the workspace folder. C# with another language: asks, with the folder (one
+   * map of everything) first.
    */
   async pickTarget({ always = false } = {}) {
     const folders = vscode.workspace.workspaceFolders ?? [];
     if (!folders.length) {
-      vscode.window.showWarningMessage('CodeMap: open a folder with code first (a C# solution or project, or a TypeScript / JavaScript package).');
+      vscode.window.showWarningMessage('CodeMap: open a folder with code first (a C# solution or project, a TypeScript / JavaScript package or a Python project).');
       return null;
     }
 
     let candidates = await vscode.workspace.findFiles('**/*.{sln,slnx,slnf}', EXCLUDE, 50);
     if (!candidates.length) candidates = await vscode.workspace.findFiles('**/*.csproj', EXCLUDE, 200);
     const paths = candidates.map((uri) => uri.fsPath).sort((a, b) => depth(a) - depth(b) || a.localeCompare(b));
-    const scripts = paths.length ? await this.hasScripts() : false;
+    const others = paths.length ? [(await this.hasScripts()) && 'TypeScript / JavaScript', (await this.hasPython()) && 'Python'].filter(Boolean) : [];
+    const scripts = others.length > 0;
+    const languages = others.length === 2 ? `C#, ${others[0]} and ${others[1]}` : `C# and ${others[0]}`;
     if (!paths.length && (!always || folders.length === 1)) return folders[0].uri.fsPath;
     if (paths.length === 1 && !always && !scripts) return paths[0];
 
     const description = scripts
-      ? 'C# and TypeScript / JavaScript: one map of everything in the folder'
+      ? `${languages}: one map of everything in the folder`
       : paths.length ? 'every C# project in the folder' : 'everything in the folder';
     const folderItems = folders.map((f) => ({ label: `$(folder) ${f.name}`, description, target: f.uri.fsPath }));
     const solutionItems = paths.map((p) => ({ label: path.basename(p), description: vscode.workspace.asRelativePath(path.dirname(p)), target: p }));
     const items = scripts ? [...folderItems, ...solutionItems] : [...solutionItems, ...folderItems];
     const placeHolder = scripts
-      ? 'What should CodeMap analyze? The folder maps C# and TypeScript / JavaScript together.'
+      ? `What should CodeMap analyze? The folder maps ${languages} together.`
       : paths.length ? 'Which solution or project should CodeMap analyze?' : 'Which folder should CodeMap analyze?';
     const choice = await vscode.window.showQuickPick(items, { placeHolder });
     return choice?.target ?? null;
+  }
+
+  /** Whether the workspace has Python code beside C#: .py files outside environments and build output. */
+  async hasPython() {
+    const sources = await vscode.workspace.findFiles(PYTHON_SOURCES, PYTHON_EXCLUDE, 50);
+    return sources.some((uri) => isSourceFile(vscode.workspace.asRelativePath(uri.fsPath, false)));
   }
 
   /** Whether the workspace has TypeScript / JavaScript code: source files in a folder with (or under) a package.json or tsconfig. */
@@ -444,10 +460,12 @@ function isSourceFile(file) {
 }
 
 function activate(context) {
-  const controller = new CodeMapController(context);
+  const python = new PythonInterpreter(vscode);
+  const controller = new CodeMapController(context, { python });
   const editorCommand = (fn) => () => fn(vscode.window.activeTextEditor);
-  // `codemap mcp` for the editor's AI agents (VS Code's agent mode, Cursor).
-  const mcp = registerMcpServer(context, vscode, { version: extensionVersion(context) });
+  // `codemap mcp` for the editor's AI agents (VS Code's agent mode, Cursor), on the workspace's Python once it is known.
+  const mcp = registerMcpServer(context, vscode, { version: extensionVersion(context), python });
+  python.current(vscode.workspace.workspaceFolders?.[0]?.uri);
   const mcpCommands = new McpCommands(context, vscode, { registered: mcp });
 
   context.subscriptions.push(

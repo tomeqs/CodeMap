@@ -87,15 +87,69 @@ codemap path/to/repo --lang csharp  # one language only
 codemap --version                   # which languages are available (and whether Node.js is there)
 ```
 
-### Both languages, and the samples
+### Python
 
-* A repository with C# and TypeScript gives one map with both side by side. The levels are then called
-  "Projects / Packages", "Types / Files"… Maps of different languages have no edges between them yet (e.g. HTTP calls
-  from TypeScript to C# controllers).
+A plugin (`analyzers/python`, included in the releases) that runs on **Python 3.9+** and its standard library alone:
+nothing to install, no virtual environment needed. It finds `python3`, `python` or `py -3` on the `PATH`, or the one
+`CODEMAP_PYTHON` names; the VS Code extension uses the interpreter the Python extension chose for the workspace.
+
+* **What you can open:** a folder, a `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements.txt`, or a `.py` file.
+* **Projects:** `pyproject.toml` (PEP 621, Poetry, PDM, Hatch, setuptools, uv workspaces), `setup.cfg`, `setup.py`
+  (read, not run), `Pipfile` and requirements files. A folder of scripts without any of them is a project too.
+* **Layouts:** `src/` layouts, `package-dir`, namespace packages, several projects in one repository (a project's
+  imports of another are `projectReference`s), a folder inside a project (with the project's ids).
+* **Left out:** virtual environments (recognised by `pyvenv.cfg`, whatever they are called), `__pycache__`, build
+  output, `*.egg-info`; generated code (`*_pb2.py`, Django and Alembic migrations) unless asked for.
+* **Newer syntax** than the Python running the analysis is a module with a warning, except Python 3.14's
+  `except A, B:`, which older Pythons read once it is spelled `except (A, B):`.
+
+The unit of the map is the **module** (a `.py` file): projects → packages → modules → declarations (classes,
+Protocols as interfaces, enums, functions, module variables) and class members (methods, `__init__` as the
+constructor, properties, fields from the class body and from `self.x = …`).
+
+* **Resolution:** Python has no compiler to ask, so the plugin follows the language's own rules: imports (relative,
+  `*` with `__all__`, `TYPE_CHECKING`), re-exports through `__init__.py` to the real declaration, the method resolution
+  order and `super()`, and the type of a receiver from what the code says: annotations (`Optional`, `X | None`,
+  `list[X]`, strings, `Self`), constructor calls, return values, `self` and `cls`, fields set in `__init__`, loops and
+  `with`. A call whose receiver cannot be typed makes no edge rather than a guessed one.
+* **Edges:** `imports` between modules, calls (in order), class calls (`instantiates`), inheritance, implemented
+  Protocols and abstract methods, overrides, constructor parameters (`injects`), annotations (`accepts`, `returns`,
+  `holds`), fields and properties (`accesses`), `raise` and `except`, decorators, PyPI packages.
+* **Entry points:** `if __name__ == "__main__":`, `__main__.py`, `#!` scripts, `[project.scripts]` / console scripts.
+
+Frameworks recognised from what the code imports and calls:
+
+* **FastAPI:** routes with their full paths (`APIRouter(prefix=…)`, `include_router(…, prefix=…)`), and `Depends` in
+  the DI view: per request, `use_cache=False` per call, `@lru_cache` providers for the whole application, aliases of
+  `Annotated[T, Depends(…)]`, `dependencies=[…]`. A cached provider that takes a per-request one is an error.
+* **Flask:** routes on apps and blueprints with their prefixes, `add_url_rule` and `MethodView`, request hooks and
+  error handlers, the `create_app` factory.
+* **Django and Django REST framework:** URLconfs with `include()` and routers (full paths), function and class-based
+  views, viewsets and their actions, models and their relations, what Django loads itself (admin, apps, commands,
+  template tags, signal receivers, middleware named in the settings).
+* **Background work and command lines:** Celery, Dramatiq and RQ tasks (`task.delay(…)` is a call of the task), click
+  and typer commands.
+* **Data:** SQLAlchemy (also Flask-SQLAlchemy, SQLModel) and Django models as entities with their relations; `Order.objects`
+  and `session.query(Order)` results typed as their model; Pydantic models as DTOs and settings as options.
+* **Tests:** pytest fixtures by parameter name through `conftest.py`, `TestCase` classes anywhere.
+
+```bash
+codemap path/to/project             # a folder with pyproject.toml / requirements.txt, or of scripts
+codemap path/to/repo --lang python  # only the Python of a repository
+CODEMAP_PYTHON=/path/to/python codemap path/to/project
+```
+
+### Several languages, and the samples
+
+* A repository with C#, TypeScript and Python gives one map with all of them side by side. The levels are then called
+  "Projects / Packages", "Types / Files / Modules"… Maps of different languages have no edges between them yet (e.g.
+  HTTP calls from TypeScript to C# controllers).
 * [`samples/Shop`](../samples/Shop): a C# solution (DDD, DI, events, a deliberate cycle and dead code).
 * [`samples/shop-ts`](../samples/shop-ts): the same shop in TypeScript (a NestJS API, an Express gateway, an Angular
   front end on a shared domain library), with a deliberate cycle, dead code and DI container problems.
   `codemap samples` gives one map of it and the C# solution.
+* [`samples/shop-py`](../samples/shop-py): the same shop in Python (a FastAPI API, a Django back office, a Flask app and
+  a Celery worker on a shared domain library), with a deliberate cycle, dead code and a captive dependency.
 * [`samples/Booking`](../samples/Booking): an ASP.NET Core API and a TypeScript client in one folder. It is a test bed
   that contains the edge cases of C# and TypeScript mapping, each listed with what its map must show.
 
@@ -296,12 +350,13 @@ src/CodeMap.Server    the local app: API (ASP.NET Core), folder browser, cloning
 src/CodeMap.Mcp       the MCP server for AI agents (`codemap mcp`): session, tools, prompts, resources, rendering
 src/CodeMap.Cli       the `codemap` tool (dotnet tool or standalone executable), embeds the built viewer
 analyzers/typescript  TypeScript / JavaScript plugin (Node.js + TypeScript compiler API), copied to plugins/typescript
+analyzers/python      Python plugin (Python's own ast, standard library only), copied to plugins/python
 vscode/               VS Code extension: the map in a webview, code ↔ map navigation, live refresh, MCP for the editor's agent
 viewer/               3D map: Vite + three.js + d3-force-3d + d3-hierarchy, built into a single HTML file
 tests/CodeMap.Tests   xUnit tests of the analyzer, exporters and MCP server; Golden/ holds saved maps of the samples,
                       the Shop findings and diagrams, and the viewer's call flows the C# port must match
 tests/mcp-smoke.mjs   `codemap mcp` as an agent uses it (CI and every release)
-samples/              Shop (C#), shop-ts (TypeScript), Booking (both: the mapping edge cases)
+samples/              Shop (C#), shop-ts (TypeScript), shop-py (Python), Booking (C# and TypeScript: the mapping edge cases)
 docs/                 format specification, JSON Schema, the plugin protocol, these pages
 ```
 
