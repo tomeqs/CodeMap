@@ -1,5 +1,6 @@
 using CodeMap.Analysis;
 using CodeMap.Insights;
+using CodeMap.Languages;
 using CodeMap.Model;
 
 namespace CodeMap.Tests;
@@ -206,5 +207,39 @@ public class CodeChecksTests
         Assert.All(diagnostics, d => Assert.Equal("empty-catch", d.Rule));
         Assert.Equal("ts:client:src/b.ts#f", diagnostics.Single(d => d.Location.File.StartsWith("client")).Node);
         Assert.Equal("M:Api.A.M", diagnostics.Single(d => d.Location.File.StartsWith("Api")).Node);
+    }
+
+    [PythonFact]
+    public void Python_checks_become_findings_on_nodes_of_the_map()
+    {
+        using var ws = new TestWorkspace().Project("Api");
+        ws.File("Api/A.cs", "namespace Api; public class A { public void M() { try { } catch { } } }");
+        ws.File("worker/requirements.txt", "requests\n");
+        ws.File("worker/jobs.py", """
+            import json
+            import time
+
+
+            class Job:
+                async def run(self, items=[]):
+                    try:
+                        time.sleep(1)
+                    except:
+                        pass
+            """);
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(ws.Root, registry, Checks);
+
+        var python = graph.Analysis.Diagnostics!.Where(d => d.Location.File == "worker/jobs.py").ToList();
+        Assert.Equal(new[] { "bare-except", "blocking-in-async", "empty-catch", "mutable-default", "unused-import" }, python.Select(d => d.Rule).Order(StringComparer.Ordinal));
+        Assert.All(python.Where(d => d.Rule != "unused-import"), d => Assert.Equal("py:worker:jobs.py#Job.run", d.Node));
+        Assert.Equal("py:worker:jobs.py", python.Single(d => d.Rule == "unused-import").Node);
+        Assert.Contains(graph.Analysis.Diagnostics!, d => d.Location.File == "Api/A.cs" && d.Rule == "empty-catch");
+
+        var findings = FindingsAnalysis.Compute(graph).Findings;
+        var blocking = findings.Single(f => f.Rule == "code.blocking-in-async");
+        Assert.Equal(new[] { "py:worker:jobs.py#Job.run" }, blocking.Nodes);
+        Assert.NotNull(FindingRules.Find("code.blocking-in-async"));
+        Assert.Contains("Python", FindingRules.Find("code.empty-catch")!.Detection);
     }
 }

@@ -205,6 +205,14 @@ costs. `FindingsAnalysis.Compute(graph)` gives the same in code.
   * CodeMap's own rules: empty or swallowing `catch`, floating promises, a promise used as a condition, `forEach` with
     an `async` callback, an `async` Promise executor, unreachable code, `x = x`, `x === x`, duplicate `case`, constant
     conditions, and loose `==` between different types.
+* **Python** (CodeMap's own rules, no linter needed; a line with `# noqa` is left alone):
+  * exceptions: bare `except:`, an `except` of everything that is empty or drops the error, `return` / `break` /
+    `continue` in `finally`, `raise NotImplemented`, an exception created without `raise`;
+  * async: an `async def` called without `await` (also as a condition), blocking calls in `async def` (`time.sleep`,
+    `requests`, `subprocess`, `os.system`, `urlopen`, `input`);
+  * correctness: mutable default arguments, `== None`, `is` with a literal, `assert (x, "msg")`, duplicate dict keys,
+    a function defined twice, f-strings without placeholders, `x = x`, `x == x`, constant conditions;
+  * dead code: unreachable code, unused imports and variables; and, as information, variables named like built-ins.
 
 Test code and generated code are not checked. The checks do not change the health score, which measures structure.
 

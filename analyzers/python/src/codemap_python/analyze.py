@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 
+from .checks import collect_diagnostics
 from .declarations import declare_module
 from .discover import discover, is_generated
 from .frameworks import Frameworks
@@ -107,6 +108,13 @@ def analyze(request: dict, log=lambda message: None) -> dict:
         _imports(ctx, module)
 
     di = ctx.frameworks.finish()
+    diagnostics: list[dict] = []
+    if options.get("checks"):
+        for module in mapped:
+            try:
+                diagnostics.extend(collect_diagnostics(ctx, module))
+            except RecursionError:
+                warnings.append(f"{module.rel}: too deeply nested to check.")
     _entry_points(ctx, discovery, mapped)
     _packages(ctx, discovery)
 
@@ -131,7 +139,7 @@ def analyze(request: dict, log=lambda message: None) -> dict:
     if di:
         analysis["di"] = di
     if options.get("checks"):
-        analysis["diagnostics"] = []
+        analysis["diagnostics"] = sorted(diagnostics, key=lambda d: (d["location"]["file"], d["location"]["line"], d["column"], d["rule"]))
 
     if manifest:
         project = next((p for p in discovery.analyzed_projects if p.dir == scan), None)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import unittest
 
 from helpers import Workspace
@@ -201,6 +202,21 @@ class FoldersTest(unittest.TestCase):
             result = ws.analyze()
             self.assertEqual(result.node("old.py")["kind"], "module")
             self.assertTrue(any("1 file(s) could not be parsed" in w and "old.py" in w for w in result.warnings), result.warnings)
+
+    def test_python_3_14_excepts_without_parentheses_parse_on_older_pythons(self):
+        groups = "    try:\n        g()\n    except* OSError, TimeoutError:\n        pass\n" if sys.version_info >= (3, 11) else "    pass\n    pass\n    pass\n    pass\n"
+        code = "def f():\n    try:\n        g()\n    except ValueError, KeyError as error:\n        raise\n" + groups + "\ndef g(): pass\n"
+        with Workspace({"m.py": code}) as ws:
+            result = ws.analyze()
+            self.assertEqual(result.warnings, [])
+            self.assertTrue(result.has("m.py#f", "calls", "m.py#g"))
+            self.assertEqual(result.node("m.py#g")["location"]["line"], 11)  # the lines stay where they are
+
+    def test_alembic_migrations_are_generated(self):
+        with Workspace({"alembic/versions/1a2b_add_orders.py": 'revision = "1a2b"\ndown_revision = None\nimport sqlmodel\n', "alembic/env.py": "x = 1\n"}) as ws:
+            result = ws.analyze()
+            self.assertIsNone(result.find("alembic/versions/1a2b_add_orders.py"))
+            self.assertIsNotNone(result.find("alembic/env.py"))
 
     def test_encodings_and_byte_order_marks(self):
         with Workspace({}) as ws:

@@ -168,11 +168,38 @@ def read_source(module) -> None:
         text = text[1:]
     module.text = text
     module.lines = _line_count(text)
-    try:
-        module.tree = ast.parse(text, module.file)
-    except (SyntaxError, ValueError, RecursionError, MemoryError) as error:
-        module.parse_error = f"{getattr(error, 'msg', None) or error} (line {getattr(error, 'lineno', '?')})"
-        module.tree = None
+    source = text
+    for _ in range(50):
+        try:
+            module.tree = ast.parse(source, module.file)
+            return
+        except SyntaxError as error:
+            repaired = _repair(source, error)
+            if repaired is None:
+                module.parse_error = f"{error.msg or error} (line {error.lineno or '?'})"
+                break
+            source = repaired
+        except (ValueError, RecursionError, MemoryError) as error:
+            module.parse_error = str(error) or type(error).__name__
+            break
+    module.tree = None
+
+
+_EXCEPT = re.compile(r"^(\s*except\*?\s+)(?!\()([^:]+?)(\s+as\s+\w+)?\s*:")
+
+
+def _repair(text: str, error: SyntaxError) -> str | None:
+    """Newer syntax an older Python can read once it is spelled the old way, on the same line (so lines stay):
+    Python 3.14's `except A, B:` (PEP 758) is `except (A, B):`."""
+    if not error.lineno or not any(m in (error.msg or "") for m in ("must be parenthesized", "invalid syntax")):
+        return None  # 3.10+ says "must be parenthesized", 3.9 only "invalid syntax": the line itself decides
+    lines = text.split("\n")
+    line = lines[error.lineno - 1] if error.lineno <= len(lines) else ""
+    match = _EXCEPT.match(line)
+    if match is None or "," not in match.group(2):
+        return None
+    lines[error.lineno - 1] = f"{match.group(1)}({match.group(2)}){match.group(3) or ''}:{line[match.end():]}"
+    return "\n".join(lines)
 
 
 def _line_count(text: str) -> int:

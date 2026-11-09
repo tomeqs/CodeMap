@@ -70,6 +70,8 @@ def is_test_file(path: str) -> bool:
 def is_generated(path: str, text: str) -> bool:
     if _GENERATED_NAME.search(path):
         return True
+    if "/versions/" in f"/{path}" and "down_revision" in text and "revision" in text:
+        return True  # an Alembic migration
     head = "\n".join(text.splitlines()[:5])
     return bool(_GENERATED_HEAD.search(head))
 
