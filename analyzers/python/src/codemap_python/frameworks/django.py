@@ -6,15 +6,14 @@
   actions) routes. urls.py: path() and re_path() route to views, include() nests other URLconfs (by module name, as
   a module, or a DRF router's urls), and the routes get their full paths. Function views a URL routes to are routes.
 - What Django loads itself, by name or by setting, is an entry point: admin.py, apps.py, URLconfs, management
-  commands, template tags, wsgi.py / asgi.py, signal receivers, AppConfig.ready. Settings modules are config, and
-  the dotted paths their settings name (MIDDLEWARE, INSTALLED_APPS, ROOT_URLCONF…) are used by them.
+  commands, template tags, wsgi.py / asgi.py, signal receivers, AppConfig.ready. Settings modules are config (the
+  dotted paths they name, MIDDLEWARE, INSTALLED_APPS, ROOT_URLCONF…, are Roles' part, as in every config module).
 - Serializers and forms are DTOs, ModelAdmins config, middleware named in MIDDLEWARE middleware.
 """
 from __future__ import annotations
 
 import ast
 import os
-import re
 
 from ..resolve import ClassVal, FuncVal, ModuleVal, PackageStub, VarVal
 from ..symbols import ClassDecl, FuncDecl, VarDecl, decorator_name, symbols_of
@@ -27,7 +26,6 @@ VIEWSET_ACTIONS = {
     "partial_update": ("PATCH", True), "destroy": ("DELETE", True),
 }
 HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options", "trace"]
-_DOTTED = re.compile(r"^[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)+$")
 
 
 class Django(Part):
@@ -39,7 +37,6 @@ class Django(Part):
         self.routers: dict[str, list] = {}  # DRF router variable id → [(prefix, viewset class)]
         self.models: list[ClassDecl] = []
         self.relations: list[tuple] = []  # (field, target expression, scope)
-        self.settings: list = []
 
     def uses_django(self, project) -> bool:
         key = id(project)
@@ -61,8 +58,7 @@ class Django(Part):
             if base != "__init__.py":
                 tag(module_node, "entrypoint")
         if base == "settings.py" or "/settings/" in f"/{module.path}" or base.startswith("settings_"):
-            tag(module_node, "config")
-            self.settings.append(module)
+            tag(module_node, "config")  # what its settings name by dotted path: Roles, for every config module
         for decl in owners:
             if isinstance(decl, ClassDecl):
                 self._class(module, decl)
@@ -141,7 +137,6 @@ class Django(Part):
 
     def finish(self) -> None:
         self._relations()
-        self._settings()
         self._routes()
 
     def _relations(self) -> None:
@@ -164,39 +159,6 @@ class Django(Part):
                 model = (same or candidates or [None])[0]
             if model is not None and model.id != field.id:
                 self.graph.add_edge(field.id, model.id, "holds")
-
-    def _settings(self) -> None:
-        """Dotted paths in settings name code Django loads: those settings use it, and it is an entry point."""
-        for module in self.settings:
-            for decl in symbols_of(module).decls:
-                if not isinstance(decl, VarDecl) or decl.owner is not None or not decl.name.isupper():
-                    continue
-                for value, _ in decl.values:
-                    for text in _strings_in(value):
-                        target = self._dotted(text, module)
-                        if target is None:
-                            continue
-                        self.graph.add_edge(decl.id, target, "uses")
-                        tag(self.node(target), "middleware" if decl.name == "MIDDLEWARE" and "#" in target else "entrypoint")
-
-    def _dotted(self, text: str, module) -> str | None:
-        if not _DOTTED.match(text) and not text.isidentifier():
-            return None
-        found = self.resolver.find_module(text, module)
-        if found is not None and not isinstance(found, PackageStub):
-            return found.id
-        owner, _, attribute = text.rpartition(".")
-        found = self.resolver.find_module(owner, module) if owner else None
-        if found is None or isinstance(found, PackageStub):
-            return None
-        value = self.resolver.module_attr(found, attribute)
-        if isinstance(value, ClassVal):
-            return value.cls.id
-        if isinstance(value, FuncVal):
-            return value.func.id
-        if isinstance(value, ModuleVal) and not isinstance(value.module, PackageStub):
-            return value.module.id
-        return None
 
     def _routes(self) -> None:
         """URLconfs from the roots (those nothing includes) down, so every route has its full path."""

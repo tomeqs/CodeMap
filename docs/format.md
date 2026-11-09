@@ -108,6 +108,7 @@ każdego mają swój `language`.
 | `route` | trasa HTTP (Express, NestJS; w Pythonie FastAPI, Flask, Django i Django REST framework, z pełną ścieżką na początku `doc`) albo plik trasy w routingu plikowym (`app/**/page.tsx`, `pages/**`, `+page.svelte`, `src/routes/**`, `server/api/**`) |
 | `config`, `barrel` | TypeScript: konfiguracja narzędzia w katalogu paczki (`vite.config.ts`, `.eslintrc.cjs`) i plik złożony tylko z importów i re-eksportów (`index.ts` folderu); Python: `setup.py`, `noxfile.py`, `docs/conf.py`, ustawienia Django, `__init__.py` tylko z importami |
 | `init` | Python: `__init__.py` z kodem, który wykonuje się przy imporcie pakietu |
+| `maybe-used` | Python: prywatna składowa, której może używać kod, którego analiza nie śledzi: jej nazwa pada na obiekcie nieznanego typu albo w `getattr`, albo to metoda klasy dziedziczącej po klasie spoza analizy (która może ją wołać jako hook); nie jest zgłaszana jako nieużywana |
 | `generated` | `[GeneratedCode]`, `[CompilerGenerated]` |
 | `positional` | właściwość z parametru pozycyjnego rekordu |
 | `in-cycle` | element należy do cyklu zależności |

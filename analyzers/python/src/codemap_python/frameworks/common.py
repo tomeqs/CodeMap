@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import ast
 
-from ..resolve import ExtVal
+from ..resolve import ClassVal, ExtVal, FuncVal
 
 
 def string_of(node) -> str | None:
@@ -46,9 +46,15 @@ def is_false(node) -> bool:
 
 
 def external_name(resolver, node, scope) -> str:
-    """The qualified name of what an expression stands for outside the analysis (fastapi.APIRouter.get), else ""."""
+    """The qualified name of what an expression stands for (fastapi.APIRouter.get): outside the analysis, or one of its
+    own classes and functions, so that a framework is recognised in its own repository too (celery.app.base.Celery)."""
     value = resolver.infer(node, scope)
-    return value.name if isinstance(value, ExtVal) else ""
+    if isinstance(value, ExtVal):
+        return value.name
+    if isinstance(value, (ClassVal, FuncVal)):
+        decl = value.cls if isinstance(value, ClassVal) else value.func
+        return f"{decl.module.name}.{decl.qualname}" if decl.module.name else ""
+    return ""
 
 
 def decorator_target(decorator):

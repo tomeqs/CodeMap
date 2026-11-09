@@ -115,7 +115,13 @@ constructor, properties, fields from the class body and from `self.x = …`).
 * **Edges:** `imports` between modules, calls (in order), class calls (`instantiates`), inheritance, implemented
   Protocols and abstract methods, overrides, constructor parameters (`injects`), annotations (`accepts`, `returns`,
   `holds`), fields and properties (`accesses`), `raise` and `except`, decorators, PyPI packages.
-* **Entry points:** `if __name__ == "__main__":`, `__main__.py`, `#!` scripts, `[project.scripts]` / console scripts.
+* **Entry points:** `if __name__ == "__main__":`, `__main__.py`, `#!` scripts, `[project.scripts]` / console scripts,
+  modules nothing imports whose top-level code calls something (scripts, examples), and what configuration modules
+  (`settings.py`, `celeryconfig.py`, `docs/conf.py`…) name by dotted path.
+* **Tests:** `test_*.py`, `*_test.py`, `conftest.py`, `tests/`, and the folders pytest's `testpaths` names.
+* **Unused code:** private names nothing references. A private member is not reported when code without types may
+  use it (its name is used on an object of unknown type or in `getattr`, or it is a method of a class derived from a
+  third-party class, which may call it as a hook); it is tagged `maybe-used`.
 
 Frameworks recognised from what the code imports and calls:
 

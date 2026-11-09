@@ -102,10 +102,12 @@ class Checker:
             self.expression_statement(node, scope, function)
             return
         if isinstance(node, ast.Assign):
-            if len(node.targets) == 1 and _same(node.targets[0], node.value) and not (self.in_class and isinstance(node.value, ast.Name)):
+            # In a class body or a module, name = name copies a module's or a built-in's name in (str = str): only methods
+            # and functions have the no-op.
+            if len(node.targets) == 1 and _same(node.targets[0], node.value) and not ((self.in_class or function is None) and isinstance(node.value, ast.Name)):
                 self.report(node, "self-assignment", "warning", "correctness", f"'{self.text(node)}' assigns a value to itself: probably a typo.")
             if not self.in_class:
-                self.shadowing(node.targets, function)
+                self.shadowing(node.targets, function, node.value)
         elif isinstance(node, ast.AnnAssign) and node.value is not None and not self.in_class:
             self.shadowing([node.target], function)
         elif isinstance(node, ast.Assert) and isinstance(node.test, ast.Tuple) and node.test.elts:
@@ -297,8 +299,10 @@ class Checker:
             else:
                 self.report(where, "unused-variable", "info", "dead-code", f"'{name}' is assigned but never read.")
 
-    def shadowing(self, targets, function) -> None:
+    def shadowing(self, targets, function, value=None) -> None:
         for target in targets:
+            if isinstance(value, ast.Name) and value.id == getattr(target, "id", None):
+                continue  # str = str: the built-in itself, as a module attribute
             if isinstance(target, ast.Name) and target.id in SHADOWED:
                 where = "this function" if function is not None else "the module"
                 self.report(target, "shadowed-builtin", "info", "correctness", f"'{target.id}' hides the built-in {target.id}() in {where}.")
@@ -383,7 +387,7 @@ class Checker:
                 parsed = self.resolver.parse_annotation(node.value) if _looks_like_annotation(node.value) else None
                 if parsed is not None:
                     used.update(n.id for n in ast.walk(parsed) if isinstance(n, ast.Name))
-        exported = set(self.table.all_names or [])
+        exported = set(self.table.all_names or []) | self.ctx.imported_names.get(self.module.id, set())
         for statement, optional in _module_imports(tree.body):
             if optional:
                 continue

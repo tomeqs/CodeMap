@@ -1,11 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - **Python**, as a third language next to C# and TypeScript / JavaScript, with nothing to install: the analyzer reads it with Python's own parser (Python 3.9 or newer, the standard library alone), on the interpreter the Python extension chose for the workspace (`codemap.pythonPath` sets another one). Projects (`pyproject.toml`, `setup.py`, requirements files) or folders of scripts, packages and modules, with calls, inheritance, Protocols, imports and re-exports resolved from the code itself, and the metrics, cycles, layers and dead code of the other languages.
   - **Frameworks**: FastAPI, Flask, Django and Django REST framework routes with their full paths start the call flows; FastAPI's `Depends` is in the DI view, with its lifetimes and captive dependencies; SQLAlchemy and Django models, Celery tasks, click and typer commands, pytest fixtures.
   - **Checks inside functions** (and in the MCP server): forgotten `await`s, blocking calls in `async def`, bare or swallowed `except`s, `return` in `finally`, mutable default arguments, `== None`, `is` with literals, unused imports and variables…
   - *Show in Code Map* and *Show Call Flow* work in `.py` files, and the map follows changes to Python files.
+  - Tested on real repositories (requests, httpx, Flask, microblog, the full-stack FastAPI template, djangoproject.com, Celery, Saleor): pytest fixtures give test parameters their types, SQLAlchemy 2.0's `select()` gives its model, a framework is recognised in its own repository, an example folder named like a package (`examples/pydantic/`) no longer hides it, pytest's `testpaths` are test code, configuration modules and what they name by dotted path (Sphinx extensions, Celery and Django settings) are used, scripts nothing imports are entry points, and private members that code without types may reach are not reported as unused. Saleor's 2,600 modules map in about half a minute.
 
 ## 0.3.0
 

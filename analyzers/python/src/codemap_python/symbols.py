@@ -149,7 +149,32 @@ class SymbolTable:
 
 
 def read_source(module) -> None:
-    """Reads and parses a module's file once (its encoding from a coding line or BOM)."""
+    """Reads and parses a module's file once."""
+    read_text(module)
+    if module.parsed:
+        return
+    module.parsed = True
+    if module.parse_error:
+        return
+    source = module.text
+    for _ in range(50):
+        try:
+            module.tree = ast.parse(source, module.file)
+            return
+        except SyntaxError as error:
+            repaired = _repair(source, error)
+            if repaired is None:
+                module.parse_error = f"{error.msg or error} (line {error.lineno or '?'})"
+                break
+            source = repaired
+        except (ValueError, RecursionError, MemoryError) as error:
+            module.parse_error = str(error) or type(error).__name__
+            break
+    module.tree = None
+
+
+def read_text(module) -> None:
+    """Reads a module's file once (its encoding from a coding line or BOM), without parsing it."""
     if module.text is not None:
         return
     try:
@@ -168,21 +193,6 @@ def read_source(module) -> None:
         text = text[1:]
     module.text = text
     module.lines = _line_count(text)
-    source = text
-    for _ in range(50):
-        try:
-            module.tree = ast.parse(source, module.file)
-            return
-        except SyntaxError as error:
-            repaired = _repair(source, error)
-            if repaired is None:
-                module.parse_error = f"{error.msg or error} (line {error.lineno or '?'})"
-                break
-            source = repaired
-        except (ValueError, RecursionError, MemoryError) as error:
-            module.parse_error = str(error) or type(error).__name__
-            break
-    module.tree = None
 
 
 _EXCEPT = re.compile(r"^(\s*except\*?\s+)(?!\()([^:]+?)(\s+as\s+\w+)?\s*:")
@@ -238,26 +248,21 @@ class Builder:
     # ---------------------------------------------------------------- imports, everywhere in the module
 
     def collect_imports(self, tree: ast.Module) -> None:
-        type_checking_nodes = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.If) and _is_type_checking(node.test):
-                for inner in node.body:
-                    for sub in ast.walk(inner):
-                        type_checking_nodes.add(id(sub))
-        module_level = set()
-        self._module_level_imports(tree.body, module_level)
-        for node in ast.walk(tree):
+        """Every import of the module, in functions too: imports are statements, so only statements are walked."""
+        stack = [(s, False, False) for s in reversed(tree.body)]  # (statement, under TYPE_CHECKING, inside a function)
+        while stack:
+            node, type_checking, local = stack.pop()
             if isinstance(node, (ast.Import, ast.ImportFrom)):
-                local = id(node) not in module_level
-                for binding, _ in import_bindings(self.module, node, id(node) in type_checking_nodes, local):
+                for binding, _ in import_bindings(self.module, node, type_checking, local):
                     self.table.imports.append(binding)
-
-    def _module_level_imports(self, body, out: set) -> None:
-        for statement in body:
-            if isinstance(statement, (ast.Import, ast.ImportFrom)):
-                out.add(id(statement))
-            for block in _blocks(statement):
-                self._module_level_imports(block, out)
+                continue
+            inner_local = local or isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            checking = type_checking or (isinstance(node, ast.If) and _is_type_checking(node.test))
+            blocks = [node.body] if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) else list(_blocks(node))
+            for index, block in enumerate(blocks):
+                # the else of `if TYPE_CHECKING:` runs
+                flag = checking if not (isinstance(node, ast.If) and index > 0) else type_checking
+                stack.extend((s, flag, inner_local) for s in reversed(block))
 
     # ---------------------------------------------------------------- module-level statements
 

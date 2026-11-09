@@ -186,6 +186,8 @@ select_for_update reverse none filter_by join outerjoin options limit offset whe
 QUERY_ONE = frozenset("""get first last latest earliest create one one_or_none scalar get_or_404 first_or_404 one_or_404
 aget afirst alast alatest aearliest acreate""".split())
 # Calls of a task that run it (Celery, Dramatiq, RQ): task.delay(…) calls the task.
+# What a session gives for a select: one row (scalar) or the rows (scalars).
+SELECTED = {"scalar": True, "scalar_one": True, "scalar_one_or_none": True, "first_or_404": True, "one_or_404": True, "scalars": False}
 TASK_CALLS = frozenset("delay apply_async s si signature send send_with_options map starmap chunks".split())
 TASK_DECORATORS = frozenset("task shared_task periodic_task actor job".split())
 
@@ -220,38 +222,62 @@ class PackageStub:
 
 
 class ModuleIndex:
+    """Modules by every dotted name they can be imported as. A name only the __init__.py chain gives, from a folder that
+    is no source root (examples/pydantic/ as "pydantic"), is weak: it does not hide the standard library or a declared
+    dependency, and a package never imports itself through it."""
+
     def __init__(self, discovery) -> None:
-        self.by_name: dict[str, list] = {}
-        self.stubs: dict[str, PackageStub] = {}
+        self.by_name: dict[str, list] = {}  # name → [(module, weak top folder or None)]
+        self.stubs: dict[str, tuple] = {}  # package name → (stub, weak top folder or None)
         self.by_file = discovery.by_file
-        self.tops: set[str] = set()
+        self.tops: dict[str, str | None] = {}  # top-level name → weak top folder, None once a strong name has it
         for module in discovery.modules:
             for name in module.names:
-                self.by_name.setdefault(name, []).append(module)
+                weak = module.weak.get(name)
+                self.by_name.setdefault(name, []).append((module, weak))
                 parts = name.split(".")
-                self.tops.add(parts[0])
+                self.tops[parts[0]] = weak if self.tops.get(parts[0], weak) is not None and weak is not None else None
                 for size in range(1, len(parts)):
                     prefix = ".".join(parts[:size])
-                    if prefix not in self.stubs:
-                        self.stubs[prefix] = PackageStub(prefix, module.project)
+                    stub = self.stubs.get(prefix)
+                    if stub is None:
+                        self.stubs[prefix] = (PackageStub(prefix, module.project), weak)
+                    elif stub[1] is not None and weak is None:
+                        self.stubs[prefix] = (stub[0], None)
+
+    @staticmethod
+    def plausible(weak: str | None, name: str, importer) -> bool:
+        if weak is None or importer is None:
+            return True
+        if "." not in name and importer.file.startswith(weak.rstrip(os.sep) + os.sep):
+            return False  # examples/pydantic/tasks.py's `from pydantic import …` is the real pydantic, not its own folder
+        top = name.split(".")[0]
+        from .distributions import import_names
+        from .stdlib import is_stdlib
+
+        declared = {n.split(".")[0] for d in importer.project.dependencies.values() for n in import_names(d.name)}
+        return not is_stdlib(top) and top not in declared
 
     def find(self, name: str, importer=None):
-        found = self.by_name.get(name)
+        found = [m for m, weak in self.by_name.get(name, ()) if self.plausible(weak, name, importer)]
         if found:
             if len(found) > 1 and importer is not None:
                 same = [m for m in found if m.project is importer.project]
                 if same:
                     return same[0]
             return found[0]
-        return self.stubs.get(name)
+        stub = self.stubs.get(name)
+        return stub[0] if stub is not None and self.plausible(stub[1], name, importer) else None
 
     def near(self, importer, name: str):
         """A module next to a script (a folder that is not a package is on sys.path when its script runs)."""
         base = os.path.join(os.path.dirname(importer.file), *name.split("."))
         return self.by_file.get(base + ".py") or self.by_file.get(os.path.join(base, "__init__.py"))
 
-    def is_project_top(self, top: str) -> bool:
-        return top in self.tops
+    def is_project_top(self, name: str, importer=None) -> bool:
+        """Whether a module name starts in the analysis' own packages (then a module missing there is no PyPI package)."""
+        top = name.split(".")[0]
+        return top in self.tops and self.plausible(self.tops[top], name, importer)
 
 
 # ---------------------------------------------------------------------------------------------- scopes
@@ -354,7 +380,9 @@ class FunctionScope(Scope):
             self._add(args.kwarg.arg, ("unknown", None))
         if isinstance(node, ast.Lambda):
             return
-        for child in _local_nodes(node):
+        # Names are bound by statements (and :=, the only expression that binds: then every node is looked at).
+        walrus = ":=" in (getattr(self.module, "text", None) or ":=")
+        for child in (_local_nodes(node) if walrus else _local_statements(node)):
             self._collect_node(child)
 
     def _collect_node(self, node) -> None:
@@ -459,6 +487,8 @@ class FunctionScope(Scope):
                 values.append(resolver.exception_value(payload[0], self))
             elif kind == "param" and payload[1] is not None:
                 values.append(resolver.infer(payload[1], self.parent))
+            elif kind == "param" and resolver.parameter_hook is not None and payload[0] is None and payload[2] is None:
+                values.append(resolver.parameter_hook(self.module, self.node, name))
             elif kind == "unknown":
                 return None
         return agree(values)
@@ -508,6 +538,9 @@ class Resolver:
         self._scopes: dict = {}
         self._module_scopes: dict = {}
         self._strings: dict = {}
+        self._yields: dict = {}
+        # What a parameter without annotation is, when a framework says (pytest: the fixture it names); set by the frameworks.
+        self.parameter_hook = None
 
     # ---------------------------------------------------------------- modules and imports
 
@@ -529,7 +562,7 @@ class Resolver:
         found = self.find_module(name, importer)
         if found is not None:
             return ModuleVal(found)
-        if self.index.is_project_top(name.split(".")[0]):
+        if self.index.is_project_top(name, importer):
             return None  # a module of the project's packages that is not there
         return ExtVal(name)
 
@@ -734,10 +767,13 @@ class Resolver:
         if name.startswith("builtins."):
             return None
         last = name.rsplit(".", 1)[-1]
-        if args and (last == "query" or (last in QUERY_ONE and len(args) >= 2)) and _is_orm(name):
-            model = self.deref(self.infer(args[0], scope))  # session.query(Order), session.get(Order, 1), db.get_or_404(Order, 1)
-            if isinstance(model, ClassVal):
-                return QueryVal(model.cls) if last == "query" else InstanceVal(model.cls)
+        if args and _is_orm(name):
+            model = self.deref(self.infer(args[0], scope))
+            if isinstance(model, ClassVal) and (last in ("query", "select") or (last in QUERY_ONE and len(args) >= 2)):
+                # session.query(Order), select(Order), session.get(Order, 1), db.get_or_404(Order, 1)
+                return QueryVal(model.cls) if last in ("query", "select") else InstanceVal(model.cls)
+            if isinstance(model, QueryVal) and last in SELECTED:
+                return InstanceVal(model.cls) if SELECTED[last] else model  # session.scalar(select(User).where(…))
         return ExtVal(name, instance=True)
 
     def subscript(self, base: Value | None, index) -> Value | None:
@@ -936,6 +972,23 @@ class Resolver:
         self._returns[key] = value
         return value
 
+    def yield_type(self, func: FuncDecl) -> Value | None:
+        """What a generator yields (a pytest fixture that yields its value, a @contextmanager)."""
+        key = id(func)
+        if key in self._yields:
+            return self._yields[key]
+        guard = ("yield", key)
+        if guard in self._active:
+            return None
+        self._active.add(guard)
+        try:
+            scope = self.function_scope(func, func.node)
+            value = agree([self.infer(n.value, scope) for n in _local_nodes(func.node) if isinstance(n, ast.Yield) and n.value is not None])
+        finally:
+            self._active.discard(guard)
+        self._yields[key] = value
+        return value
+
     def _return_type(self, func: FuncDecl) -> Value | None:
         node = func.node
         if node.returns is not None:
@@ -1073,7 +1126,7 @@ class Resolver:
 
 
 def _is_orm(name: str) -> bool:
-    """A call of SQLAlchemy's session or Flask-SQLAlchemy's (session.get, db.session.query, db.get_or_404)."""
+    """A call of SQLAlchemy (select), its session or Flask-SQLAlchemy's (session.get, db.session.query, db.get_or_404)."""
     return name.startswith(("sqlalchemy.", "sqlmodel.", "flask_sqlalchemy.")) or ".session." in name.lower() or ".Session." in name
 
 
@@ -1145,8 +1198,29 @@ def _local_nodes(function):
         stack.extend(ast.iter_child_nodes(node))
 
 
+def _local_statements(function):
+    """The statements of a function's own body (and its except handlers and match patterns): nested functions and
+    classes are there as statements, not their bodies."""
+    stack = list(reversed(function.body))
+    while stack:
+        node = stack.pop()
+        yield node
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for field in ("body", "orelse", "finalbody"):
+            block = getattr(node, field, None)
+            if isinstance(block, list):
+                stack.extend(reversed(block))
+        for handler in getattr(node, "handlers", ()) or ():
+            yield handler
+            stack.extend(reversed(handler.body))
+        for case in getattr(node, "cases", ()) or ():
+            yield from ast.walk(case.pattern)
+            stack.extend(reversed(case.body))
+
+
 def _returns(function):
-    for node in _local_nodes(function):
+    for node in _local_statements(function):
         if isinstance(node, ast.Return):
             yield node
 
