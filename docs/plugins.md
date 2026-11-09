@@ -47,6 +47,7 @@ chyba że wskazano inny w ustawieniu `codemap.nodePath` albo w zmiennej `CODEMAP
     "markers": ["package.json", "tsconfig.json", "jsconfig.json"],
     "sources": [".ts", ".tsx", ".js"],
     "inputs": ["package.json", "tsconfig.json", "*.ts", "*.js"],
+    "excludeFiles": ["*.d.ts", "*.min.js"],
     "ignoreDirs": ["node_modules", "dist", "build"]
   },
   "display": {
@@ -63,12 +64,17 @@ chyba że wskazano inny w ustawieniu `codemap.nodePath` albo w zmiennej `CODEMAP
 | `id` | identyfikator języka (małe litery, cyfry, `-`); `--lang` go używa |
 | `idPrefix` | każdy id węzła wtyczki musi się od niego zaczynać (min. 2 znaki + `:`); `project:`, `namespace:`, `package:`, `assembly:` są zarezerwowane dla C# |
 | `command` | program i argumenty; argumenty zaczynające się od `./` to pliki wtyczki |
-| `runtime` | gdy `command[0]` to `runtime.name`, CodeMap szuka go w zmiennej `envVar`, a potem w `PATH`, i sprawdza `minVersion` (`--version`); bez niego język jest niedostępny z komunikatem `help` |
+| `runtime` | gdy `command[0]` to `runtime.name`, CodeMap szuka programu w zmiennej `envVar` (wtedy go nie sprawdza), a potem w `PATH`; bez niego język jest niedostępny z komunikatem `help` |
+| `runtime.minVersion` | najstarsza wersja: główna (`18`) albo główna.poboczna (`"3.9"`); czytana z `--version` (stdout albo stderr). Program, który nie poda wersji (np. alias Microsoft Store w Windows), się nie liczy |
+| `runtime.candidates` | polecenia do sprawdzenia po kolei, każde jako program i argumenty: `[["python3"], ["python"], ["py", "-3"]]`; pierwsze, które działa i jest dość nowe, zastępuje `command[0]` (z argumentami). Bez nich – sam `runtime.name` |
 | `inputs`, `markers` | słowa do komunikatów („Use … or a directory”, „No … found”) |
 | `detect.markers` | pliki projektu: folder zawiera kod języka, gdy pod takim plikiem są pliki źródłowe |
-| `detect.sources` | rozszerzenia plików źródłowych (`.d.ts` i `.min.js` się nie liczą) |
+| `detect.sources` | rozszerzenia plików źródłowych |
+| `detect.excludeFiles` | pliki z rozszerzeniem źródłowym, które nie są kodem, z `*` (`*.d.ts`, `*.min.js`, `*_pb2.py`) |
+| `detect.withoutMarker` | `true`: pliki źródłowe liczą się też bez pliku projektu (folder skryptów) |
 | `detect.inputs` | wzorce nazw plików, które można podać wprost (`*.ts`, `package.json`) |
-| `detect.ignoreDirs` | foldery, do których wykrywanie nie zagląda (foldery z kropką są pomijane zawsze) |
+| `detect.ignoreDirs` | foldery, do których wykrywanie, przeglądarka folderów i odświeżanie na żywo nie zaglądają, z `*` (`*.egg-info`); foldery z kropką są pomijane zawsze. Dotyczą wszystkich języków, więc nie wpisuj nazw, pod którymi inny język trzyma kod |
+| `detect.ignoreMarkers` | pliki, które wykluczają swój folder, jakkolwiek się nazywa (`pyvenv.cfg`: środowisko wirtualne Pythona) |
 | `display` | jak mapa nazywa poziomy tego języka i kod spoza analizy (trafia do `source.languages`) |
 | `unused` | reguły nieużywanego kodu: `memberAccessibility`, `typeAccessibility`, `skipAttributed`, `skipTags`, `skipMemberKinds`, `skipModifiers`, `skipNames`, `skipNamePattern`, `skipParentKinds`, `skipParentTags`, `skipTypeTags` |
 

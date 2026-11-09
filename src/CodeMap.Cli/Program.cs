@@ -264,8 +264,10 @@ internal static class Cli
             }
 
             var (found, problem) = RuntimeLocator.Find(runtime);
+            // "node v22.3.0", "Python 3.12.1" (python says its own name)
+            var version = found?.Version is { Length: > 0 } v && char.IsLetter(v[0]) && !v.StartsWith('v') ? v : $"{runtime.Name} {found?.Version}".TrimEnd();
             Console.WriteLine(found != null
-                ? $"  {language.Info.Name} ({language.Info.Id}): {where}, {runtime.Name} {found.Version} at {found.Path}"
+                ? $"  {language.Info.Name} ({language.Info.Id}): {where}, {version} at {found.Path}"
                 : $"  {language.Info.Name} ({language.Info.Id}): {where} – not available: {problem}");
         }
 

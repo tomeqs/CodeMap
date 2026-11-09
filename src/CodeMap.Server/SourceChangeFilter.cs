@@ -14,16 +14,27 @@ public static class SourceChangeFilter
     /// </summary>
     public static bool IsRelevant(string path, LanguageRegistry registry, string? root = null)
     {
-        var ignored = IgnoredFolders(registry);
+        if (!registry.Languages.Any(l => l.IsWatched(path))) return false;
+        var filter = Filter(registry);
         var inside = root != null ? Path.GetRelativePath(root, path) : path;
         var parts = inside.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.SkipLast(1).Any(p => p.StartsWith('.') || ignored.Contains(p))) return false;
-        return registry.Languages.Any(l => l.IsWatched(path));
+        if (parts.SkipLast(1).Any(filter.SkipsName)) return false;
+
+        // A folder skipped by a marker file in it (a virtual environment): its folders inside the root.
+        if (root == null) return true;
+        var dir = Path.GetDirectoryName(Path.GetFullPath(path));
+        var top = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        while (dir != null && dir.Length > top.Length && dir.StartsWith(top, StringComparison.OrdinalIgnoreCase))
+        {
+            if (filter.Skips(dir)) return false;
+            dir = Path.GetDirectoryName(dir);
+        }
+
+        return true;
     }
 
-    /// <summary>Folders no language reads: build output and dependencies.</summary>
-    public static HashSet<string> IgnoredFolders(LanguageRegistry registry) =>
-        new(new[] { "bin", "obj", "node_modules" }.Concat(registry.Languages.SelectMany(l => l.IgnoredFolders)), StringComparer.OrdinalIgnoreCase);
+    /// <summary>Folders no language reads: build output, dependencies, virtual environments.</summary>
+    public static FolderFilter Filter(LanguageRegistry registry) => FolderFilter.For(registry, "bin", "obj", "node_modules");
 
     /// <summary>
     /// Watchers for a root: the root itself, and each folder in it that can hold code with everything below.
@@ -32,15 +43,14 @@ public static class SourceChangeFilter
     /// </summary>
     public static List<FileSystemWatcher> Watch(string root, LanguageRegistry registry, FileSystemEventHandler changed, ErrorEventHandler? error = null)
     {
-        var ignored = IgnoredFolders(registry);
+        var filter = Filter(registry);
         var watchers = new List<FileSystemWatcher>();
         try
         {
             watchers.Add(Create(root, recursive: false));
             foreach (var dir in Directory.EnumerateDirectories(root))
             {
-                var name = Path.GetFileName(dir);
-                if (!name.StartsWith('.') && !ignored.Contains(name)) watchers.Add(Create(dir, recursive: true));
+                if (!filter.Skips(dir)) watchers.Add(Create(dir, recursive: true));
             }
 
             return watchers;

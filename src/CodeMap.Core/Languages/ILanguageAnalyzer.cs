@@ -38,8 +38,11 @@ public interface ILanguageAnalyzer
     /// <summary>Whether a change to this file can change the map (live updates).</summary>
     bool IsWatched(string path) => false;
 
-    /// <summary>Folders with no code of the language (build output, dependencies): not browsed, not watched.</summary>
+    /// <summary>Folders with no code of the language (build output, dependencies): not browsed, not watched. Names may have * wildcards.</summary>
     IReadOnlyCollection<string> IgnoredFolders => Array.Empty<string>();
+
+    /// <summary>Files that mark a folder as having no code of the language, whatever its name (pyvenv.cfg: a virtual environment).</summary>
+    IReadOnlyCollection<string> IgnoredFolderMarkers => Array.Empty<string>();
 
     /// <summary>Why the language cannot be analyzed on this computer (a missing runtime), or null.</summary>
     string? Unavailable => null;

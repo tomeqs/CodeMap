@@ -44,15 +44,32 @@ public sealed class PluginManifest
 
     public sealed class RuntimeSpec
     {
-        /// <summary>The program the command starts with, e.g. "node".</summary>
+        /// <summary>The program the command starts with, e.g. "node"; the command's first item names it.</summary>
         public string Name { get; set; } = "";
-        public int MinVersion { get; set; }
+
+        /// <summary>
+        /// The oldest version that works: a major version (18) or major.minor ("3.9"). Read from the program's
+        /// <c>--version</c> output (stdout or stderr), its first number or two.
+        /// </summary>
+        [JsonConverter(typeof(VersionTextConverter))]
+        public string? MinVersion { get; set; }
+
+        /// <summary>
+        /// Commands to try in order, each a program and its arguments (python3; python; py -3). Without them the
+        /// program is <see cref="Name"/> on the PATH. The first one that runs and is new enough is used.
+        /// </summary>
+        public List<List<string>>? Candidates { get; set; }
 
         /// <summary>Environment variable that may name the program's path, e.g. CODEMAP_NODE.</summary>
         public string? EnvVar { get; set; }
 
         /// <summary>What to tell people who do not have it.</summary>
         public string? Help { get; set; }
+
+        /// <summary>The commands to try: the candidates, or the name alone.</summary>
+        [JsonIgnore]
+        public IReadOnlyList<IReadOnlyList<string>> Commands =>
+            Candidates is { Count: > 0 } ? Candidates : new[] { new[] { Name } };
     }
 
     public sealed class DetectSpec
@@ -66,8 +83,31 @@ public sealed class PluginManifest
         /// <summary>File name patterns the plugin takes as input ("*.ts", "package.json").</summary>
         public List<string> Inputs { get; set; } = new();
 
-        /// <summary>Folders never searched (node_modules, dist…).</summary>
+        /// <summary>Folders never searched (node_modules, dist…); * wildcards allowed (*.egg-info).</summary>
         public List<string> IgnoreDirs { get; set; } = new();
+
+        /// <summary>Files that make a folder ignored whatever its name (pyvenv.cfg: a virtual environment).</summary>
+        public List<string> IgnoreMarkers { get; set; } = new();
+
+        /// <summary>Files with a source extension that are not source code, with * wildcards (*.d.ts, *.min.js).</summary>
+        public List<string> ExcludeFiles { get; set; } = new();
+
+        /// <summary>Source files count without a project file (a folder of scripts is a project too).</summary>
+        public bool WithoutMarker { get; set; }
+    }
+
+    /// <summary>A version written as a number (18) or a string ("3.9").</summary>
+    private sealed class VersionTextConverter : JsonConverter<string?>
+    {
+        public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => reader.TokenType switch
+        {
+            JsonTokenType.Number => reader.TryGetInt32(out var major) ? major.ToString(System.Globalization.CultureInfo.InvariantCulture) : throw new JsonException("runtime.minVersion must be a whole number or a string such as \"3.9\"."),
+            JsonTokenType.String => reader.GetString(),
+            JsonTokenType.Null => null,
+            _ => throw new JsonException("runtime.minVersion must be a number or a string such as \"3.9\"."),
+        };
+
+        public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options) => writer.WriteStringValue(value);
     }
 
     public sealed class DisplaySpec
@@ -145,13 +185,23 @@ public sealed class PluginManifest
         if (ReservedPrefixes.Any(p => p.StartsWith(IdPrefix, StringComparison.Ordinal) || IdPrefix.StartsWith(p, StringComparison.Ordinal))) return $"idPrefix '{IdPrefix}' is reserved.";
         if (string.IsNullOrWhiteSpace(Name)) return "a name is needed.";
         if (Command == null || Command.Count == 0 || Command.Any(string.IsNullOrWhiteSpace)) return "a command is needed (a program and its arguments, none empty).";
-        if (Runtime != null && string.IsNullOrWhiteSpace(Runtime.Name)) return "runtime needs a name.";
+        if (Runtime != null)
+        {
+            if (string.IsNullOrWhiteSpace(Runtime.Name)) return "runtime needs a name.";
+            if (Runtime.MinVersion is { Length: > 0 } min && RuntimeLocator.ParseVersion(min) == null) return $"runtime.minVersion '{min}' is not a version (18, or \"3.9\").";
+            if (Runtime.Candidates != null && (Runtime.Candidates.Count == 0 || Runtime.Candidates.Any(c => c == null || c.Count == 0 || c.Any(string.IsNullOrWhiteSpace))))
+                return "runtime.candidates must each be a program and its arguments, none empty.";
+        }
+
         if (Detect == null) return "detect is needed.";
         Detect.Markers = Clean(Detect.Markers);
         Detect.Sources = Clean(Detect.Sources);
         Detect.Inputs = Clean(Detect.Inputs);
         Detect.IgnoreDirs = Clean(Detect.IgnoreDirs);
+        Detect.IgnoreMarkers = Clean(Detect.IgnoreMarkers);
+        Detect.ExcludeFiles = Clean(Detect.ExcludeFiles);
         if (Detect.Sources.Count == 0 && Detect.Inputs.Count == 0) return "detect needs sources or inputs.";
+        if (Detect.WithoutMarker && Detect.Sources.Count == 0) return "detect.withoutMarker needs sources.";
         Version ??= "";
         Inputs ??= "";
         Markers ??= "";

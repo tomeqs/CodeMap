@@ -47,6 +47,14 @@
       "*.mjs",
       "*.cjs"
     ],
+    "excludeFiles": [
+      "*.d.ts",
+      "*.d.mts",
+      "*.d.cts",
+      "*.min.js",
+      "*.min.mjs",
+      "*.min.cjs"
+    ],
     "ignoreDirs": [
       "node_modules",
       "dist",
