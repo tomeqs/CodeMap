@@ -120,7 +120,7 @@ Dokument [CodeMap JSON](format.md) w wersji `1.x`:
 * gdy `options.checks` jest `true`: `analysis.diagnostics`, problemy w treści funkcji (`rule`, `source`, `severity`, `category`, `message`, `location`, `column`, opcjonalnie `node`;
   [format](format.md#diagnostics)). Bez `node` CodeMap przypisze najgłębszy węzeł, którego deklaracja obejmuje linię; wyniki spoza `root` albo bez `rule` odrzuci,
   a każdej reguły zostawi najwyżej 300;
-* opcjonalnie `analysis.di`: rejestracje kontenera (`registrations`, z `framework`) i zależności konstruktorów (`dependencies`: `consumer`, `service`, `external`, `many`, `optional`). Czasy życia, implementacje i problemy policzy CodeMap według reguł kontenera: `microsoft` (domyślny), `nest`, `angular`; dla nieznanej nazwy tylko powiązania i brakujące rejestracje.
+* opcjonalnie `analysis.di`: rejestracje kontenera (`registrations`, z `framework`) i zależności konstruktorów (`dependencies`: `consumer`, `service`, `external`, `many`, `optional`). Czasy życia, implementacje i problemy policzy CodeMap według reguł kontenera: `microsoft` (domyślny), `nest`, `angular`, `fastapi`; dla nieznanej nazwy tylko powiązania i brakujące rejestracje.
 
 Metryki pochodne (coupling, fan-in/out, abstractness…), cykle, warstwy, nieużywany kod, hotspoty i statystyki liczy CodeMap.
 

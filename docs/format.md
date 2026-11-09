@@ -95,10 +95,12 @@ każdego mają swój `language`.
 |---|---|
 | `controller`, `dbcontext`, `repository`, `service`, `handler`, `hosted-service`, `middleware`, `hub`, `exception`, `attribute`, `options`, `dto`, `validator`, `factory`, `extensions` | rozpoznane role (dziedziczenie, interfejsy, atrybuty, konwencje nazw) |
 | `page`, `component` | C#: strona Razor (`PageModel` albo code-behind pliku `.cshtml`) i komponent Blazora (`ComponentBase` albo code-behind pliku `.razor`); ich składowe nie są „nieużywane”, bo używa ich markup. `component` także dla komponentów Angulara |
-| `test`, `test-project` | klasa/metoda testowa, projekt testowy; w TypeScripcie także pliki w `test/`, `tests/`, `__tests__/`, `__fixtures__/`, `__testfixtures__/` oraz `*.test-d.ts` |
+| `test`, `test-project` | klasa/metoda testowa, projekt testowy; w TypeScripcie także pliki w `test/`, `tests/`, `__tests__/`, `__fixtures__/`, `__testfixtures__/` oraz `*.test-d.ts`; w Pythonie `test_*.py`, `*_test.py`, `tests.py`, `conftest.py`, pliki w `tests/` i klasy `TestCase` |
+| `entity` | model ORM: Django, SQLAlchemy (także Flask-SQLAlchemy i SQLModel z `table=True`) |
 | `entrypoint` | `Main`, top-level statements, projekt wykonywalny; w TypeScripcie pliki z `main`, `module`, `bin` i `exports` w package.json (bez warunków `types`), pliki uruchamiające kod, których nikt nie importuje, i pliki, które framework ładuje sam (Next.js, SvelteKit, SolidStart, Astro, Nuxt) |
-| `route` | trasa HTTP (Express, NestJS) albo plik trasy w routingu plikowym (`app/**/page.tsx`, `pages/**`, `+page.svelte`, `src/routes/**`, `server/api/**`) |
-| `config`, `barrel` | TypeScript: konfiguracja narzędzia w katalogu paczki (`vite.config.ts`, `.eslintrc.cjs`) i plik złożony tylko z importów i re-eksportów (`index.ts` folderu) |
+| `route` | trasa HTTP (Express, NestJS; w Pythonie FastAPI, Flask, Django i Django REST framework, z pełną ścieżką na początku `doc`) albo plik trasy w routingu plikowym (`app/**/page.tsx`, `pages/**`, `+page.svelte`, `src/routes/**`, `server/api/**`) |
+| `config`, `barrel` | TypeScript: konfiguracja narzędzia w katalogu paczki (`vite.config.ts`, `.eslintrc.cjs`) i plik złożony tylko z importów i re-eksportów (`index.ts` folderu); Python: `setup.py`, `noxfile.py`, `docs/conf.py`, ustawienia Django, `__init__.py` tylko z importami |
+| `init` | Python: `__init__.py` z kodem, który wykonuje się przy imporcie pakietu |
 | `generated` | `[GeneratedCode]`, `[CompilerGenerated]` |
 | `positional` | właściwość z parametru pozycyjnego rekordu |
 | `in-cycle` | element należy do cyklu zależności |
@@ -233,10 +235,10 @@ NestJS albo Angular w TypeScripcie (pole `framework`; bez niego to kontener .NET
 | `service` | id typu usługi; dla typów frameworka pełna nazwa i `external: true`; typ, którego kompilator nie rozwiązał (pakiet nieprzywrócony), ma nazwę jak w kodzie (`IMediator`, `IRequestHandler<>`) |
 | `typeArguments` | argumenty typu zamkniętej usługi generycznej (`["Shop.Kind"]` dla `ILookup<Kind>`); brak dla otwartej (`typeof(ILookup<>)`) i niegenerycznej |
 | `implementation` | id implementacji; dla `forward` usługa, do której prowadzi (brak dla fabryk, których nie da się prześledzić) |
-| `lifetime` | `singleton`, `scoped`, `transient` (NestJS: `Scope.DEFAULT` / `REQUEST` / `TRANSIENT`; Angular: `providedIn: 'root'` i `NgModule` → singleton, providery komponentu → scoped, komponenty → transient) |
+| `lifetime` | `singleton`, `scoped`, `transient` (NestJS: `Scope.DEFAULT` / `REQUEST` / `TRANSIENT`; Angular: `providedIn: 'root'` i `NgModule` → singleton, providery komponentu → scoped, komponenty → transient; FastAPI: `Depends` → scoped, z `use_cache=False` → transient, provider z `@lru_cache` i obiekt modułu → singleton) |
 | `effective` | czas życia, który kontener w końcu nadaje, gdy różni się od zadeklarowanego (NestJS: zasięg żądania przechodzi na zależnych) |
-| `kind` | `type` (`AddScoped<I, T>()`, `typeof`, `useClass`), `instance` (`AddSingleton(obj)`, `useValue`), `factory` (lambda, `useFactory`), `forward` (`sp => sp.GetRequiredService<T>()`, `useExisting`), `hosted` (`AddHostedService`), `dbcontext` (`AddDbContext`, `Add…DbContext` z Aspire), `httpclient` (typowany `AddHttpClient<T>`), `controller` (kontrolery NestJS), `component` (komponenty, dyrektywy i pipe’y Angulara) |
-| `framework` | `nest`, `angular`… (brak: .NET) |
+| `kind` | `type` (`AddScoped<I, T>()`, `typeof`, `useClass`), `instance` (`AddSingleton(obj)`, `useValue`), `factory` (lambda, `useFactory`), `forward` (`sp => sp.GetRequiredService<T>()`, `useExisting`), `hosted` (`AddHostedService`), `dbcontext` (`AddDbContext`, `Add…DbContext` z Aspire), `httpclient` (typowany `AddHttpClient<T>`), `controller` (kontrolery NestJS, endpointy FastAPI), `component` (komponenty, dyrektywy i pipe’y Angulara). W FastAPI funkcje-providery to `factory`, które kontener sam wywołuje z ich zależnościami, a klasy (`Depends()`) to `type` |
+| `framework` | `nest`, `angular`, `fastapi`… (brak: .NET) |
 | `key` | klucz dla `AddKeyed*`: napis jak w kodzie, wartość enuma jako `Typ.Wartość`, inne stałe jako wartość |
 | `registeredIn`, `location` | metoda i miejsce w kodzie, które rejestruje usługę (`location.line` to linia nazwy metody, także w łańcuchu wywołań) |
 
@@ -264,6 +266,9 @@ oraz typów aktywowanych przez framework (kontrolery i huby jako `transient`, mi
 | `implementations` | co kontener faktycznie wstrzyknie (pusta lista: nic nie jest zarejestrowane) |
 | `lifetime` | czas życia wstrzykiwanej usługi |
 | `framework` | kontener (brak: .NET); w surowym grafie wtyczki może go pominąć, wtedy decyduje rejestracja konsumenta |
+
+W Pythonie (FastAPI) zależności to parametry endpointów i providerów: `Depends(x)`, `Security(x)`, `Annotated[T, Depends(x)]` (także przez alias), `Depends()` klasy z adnotacji
+oraz `dependencies=[…]` trasy, routera i `include_router`.
 
 W TypeScripcie zależności to parametry konstruktora (typ albo token z `@Inject(TOKEN)`, `@InjectRepository(E)` → `Repository<E>`,
 `@Optional`), właściwości z `@Inject` i wywołania `inject(X)` w Angularze.

@@ -49,6 +49,50 @@ public class DiRulesTests
     }
 
     [Fact]
+    public void Fastapi_calls_its_providers_with_their_dependencies_and_a_cached_one_must_not_take_per_request_ones()
+    {
+        var graph = new CodeGraph
+        {
+            Nodes =
+            {
+                Class("read_order", NodeKinds.Function), Class("OrderService"), Class("get_db", NodeKinds.Function),
+                Class("get_repo", NodeKinds.Function), Class("get_settings", NodeKinds.Function), Class("get_counter", NodeKinds.Function),
+            },
+        };
+        ServiceRegistration Provider(string service, string lifetime, string kind = "factory") => new() { Service = service, Lifetime = lifetime, Kind = kind, Framework = "fastapi" };
+        graph.Analysis.Di = new DiAnalysis
+        {
+            Registrations =
+            {
+                Provider("read_order", "scoped", "controller"), Provider("OrderService", "scoped", "type"), Provider("get_db", "scoped"),
+                Provider("get_repo", "singleton"), Provider("get_settings", "singleton"), Provider("get_counter", "transient"),
+            },
+            Dependencies =
+            {
+                new DiDependency { Consumer = "read_order", Service = "OrderService", Framework = "fastapi" },
+                new DiDependency { Consumer = "read_order", Service = "fastapi.Request", External = true, Framework = "fastapi" },
+                new DiDependency { Consumer = "OrderService", Service = "get_db", Framework = "fastapi" },
+                new DiDependency { Consumer = "OrderService", Service = "get_settings", Framework = "fastapi" },
+                new DiDependency { Consumer = "get_repo", Service = "get_db", Framework = "fastapi" },
+                new DiDependency { Consumer = "get_repo", Service = "get_counter", Framework = "fastapi" },
+            },
+        };
+
+        var di = Run(graph);
+
+        // The factory get_repo is built by the container, so its own dependencies are checked: it is cached (@lru_cache).
+        Assert.Equal(new[] { ("captive", "error", "get_repo", "get_db"), ("captive-transient", "warning", "get_repo", "get_counter") },
+            di.Issues.Select(i => (i.Kind, i.Severity, i.Consumer, i.Service)).Order());
+        Assert.Contains("get_repo is cached for the whole application but depends on the per-request get_db", di.Issues.Single(i => i.Service == "get_db").Message);
+        Assert.Contains("per-call get_counter", di.Issues.Single(i => i.Service == "get_counter").Message);
+        Assert.Equal("scoped", di.Dependencies.Single(d => d.Service == "fastapi.Request").Lifetime); // known
+        Assert.Equal(("scoped", "singleton"), (di.Dependencies.Single(d => d.Service == "get_settings").ConsumerLifetime, di.Dependencies.Single(d => d.Service == "get_settings").Lifetime));
+        Assert.DoesNotContain(di.Issues, i => i.Kind == "unregistered");
+        Assert.All(di.Dependencies, d => Assert.Equal("fastapi", d.Framework));
+        Assert.True(graph.Node("get_repo").HasTag("singleton") && graph.Node("get_db").HasTag("scoped"));
+    }
+
+    [Fact]
     public void Nest_cannot_inject_an_interface_without_a_token()
     {
         var graph = new CodeGraph { Nodes = { Class("Service"), Class("IRepo", NodeKinds.Interface), Class("Missing") } };

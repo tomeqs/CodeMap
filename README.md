@@ -140,7 +140,10 @@ Full reference: [docs/mcp.md](docs/mcp.md).
   * `.vue`, `.svelte` and `.astro` files.
 * **Python** (needs Python 3.9+, nothing to install): open a folder, `pyproject.toml`, `setup.py`,
   `requirements.txt` or a `.py` file. Works without a virtual environment, with `src/` layouts, namespace packages
-  and several projects in one repository.
+  and several projects in one repository. Recognises:
+  * FastAPI (routes, and `Depends` in the DI view), Flask, Django and Django REST framework (routes with their full paths);
+  * SQLAlchemy, SQLModel, Django and Pydantic models;
+  * Celery tasks, click and typer commands, pytest fixtures.
 * **Several in one repository:** one map with all of them.
 * **Other languages:** as [plugins](docs/plugins.md).
 

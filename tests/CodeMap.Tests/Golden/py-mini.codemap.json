@@ -734,6 +734,9 @@
         "line": 9,
         "endLine": 17
       },
+      "tags": [
+        "repository"
+      ],
       "metrics": {
         "complexity": 3,
         "constructors": 1,
@@ -845,6 +848,9 @@
         "line": 20,
         "endLine": 45
       },
+      "tags": [
+        "service"
+      ],
       "metrics": {
         "complexity": 8,
         "constructors": 1,

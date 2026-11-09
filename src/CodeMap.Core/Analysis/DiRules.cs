@@ -17,8 +17,15 @@ internal abstract class DiRules
         Microsoft => new MicrosoftDiRules(),
         "nest" => new NestDiRules(),
         "angular" => new AngularDiRules(),
+        "fastapi" => new FastApiDiRules(),
         _ => new GenericDiRules(framework),
     };
+
+    /// <summary>
+    /// Whether the container builds what a registration provides itself, resolving its dependencies; not instances,
+    /// forwards and factories, which user code builds (FastAPI calls its factories with their own dependencies).
+    /// </summary>
+    public virtual bool Constructs(ServiceRegistration registration) => registration.Kind is not ("instance" or "factory" or "forward");
 
     /// <summary>Lifetime of a service that is not in the analyzed code, when it is known.</summary>
     public virtual string? KnownLifetime(string service) => null;
@@ -229,6 +236,46 @@ internal sealed class AngularDiRules : DiRules
             Consumer = consumer,
             Service = service,
             Message = $"{name(consumer)} is an application-wide service, but {name(service)} is only provided by components: the root injector cannot give it (NullInjectorError).",
+        };
+    }
+}
+
+/// <summary>
+/// FastAPI (Python): what Depends() asks for is called once per request and shared within it (scoped), every time with
+/// use_cache=False (transient); an @lru_cache provider and a module-level object live as long as the application
+/// (singleton). FastAPI calls a provider with the dependencies its own parameters ask for, so factories are built by the
+/// container too. A cached provider that depends on something per request either keeps the first one for good or keeps
+/// one cache entry per request.
+/// </summary>
+internal sealed class FastApiDiRules : DiRules
+{
+    private static readonly Dictionary<string, string> Known = new(StringComparer.Ordinal)
+    {
+        ["fastapi.Request"] = Scoped,
+        ["fastapi.Response"] = Scoped,
+        ["fastapi.BackgroundTasks"] = Scoped,
+        ["fastapi.WebSocket"] = Scoped,
+        ["starlette.requests.Request"] = Scoped,
+    };
+
+    public override string Framework => "fastapi";
+
+    public override bool Constructs(ServiceRegistration registration) => registration.Kind is not ("instance" or "forward");
+
+    public override string? KnownLifetime(string service) => Known.GetValueOrDefault(service);
+
+    public override IEnumerable<DiIssue> Check(string consumer, string consumerLifetime, string service, bool external, List<string> lifetimes, Func<string, string> name)
+    {
+        if (consumerLifetime != Singleton || !(lifetimes.Contains(Scoped) || lifetimes.Contains(Transient))) yield break;
+        var perRequest = lifetimes.Contains(Scoped);
+        yield return new DiIssue
+        {
+            Kind = perRequest ? "captive" : "captive-transient",
+            Severity = perRequest ? "error" : "warning",
+            Consumer = consumer,
+            Service = service,
+            Message = $"{name(consumer)} is cached for the whole application but depends on the {(perRequest ? "per-request" : "per-call")} {ShortName(service, external, name)}: " +
+                      "the cache either keeps the first one it got or keeps an entry for every request.",
         };
     }
 }
