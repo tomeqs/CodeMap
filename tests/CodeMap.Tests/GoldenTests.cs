@@ -11,6 +11,7 @@ namespace CodeMap.Tests;
 /// Whole maps against stored copies: any change to what the analysis writes shows up here.
 /// - shop: samples/Shop (C#);
 /// - booking: samples/Booking (C# and TypeScript in one folder, every edge case of BookingSampleTests);
+/// - py-mini: the Python plugin on analyzers/python/test/fixtures/mini, with the shared analysis;
 /// - ts-mini: a TypeScript-shaped raw graph written by hand (ts-mini.fragment.json) after the shared analysis;
 ///   the viewer's smoke tests load it too.
 /// After an intended change, regenerate with CODEMAP_UPDATE_GOLDEN=1 dotnet test --filter GoldenTests and review
@@ -32,6 +33,14 @@ public class GoldenTests
         var root = RepoRoot();
         var graph = CodeMapAnalyzer.Analyze(BookingSampleTests.Booking, BookingSampleTests.Registry, new AnalyzerOptions { Git = false });
         AssertGolden("booking", Normalize(graph, root));
+    }
+
+    [PythonFact]
+    public void Python_map_matches_the_golden_file()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(PluginTests.PythonFixture("mini"), registry, new AnalyzerOptions { Git = false });
+        AssertGolden("py-mini", Normalize(graph, RepoRoot()));
     }
 
     [Fact]

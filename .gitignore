@@ -488,3 +488,4 @@ tests/CodeMap.Tests/Golden/*.actual.json
 
 # The TypeScript plugin's test fixtures are code, whatever their folders are called (express/, packages/…)
 !analyzers/typescript/test/fixtures/**
+!analyzers/python/test/fixtures/**

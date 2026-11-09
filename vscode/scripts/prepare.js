@@ -5,6 +5,7 @@
 //   media/viewer.html – the built 3D viewer (from src/CodeMap.Cli/Assets, run `npm run build` in /viewer after changing it)
 //   analyzer/         – the codemap analyzer, framework-dependent: one copy for every OS, runs on the installed .NET,
 //                       with the TypeScript / JavaScript plugin in analyzer/plugins/typescript (runs on VS Code's Node.js)
+//                       and the Python plugin in analyzer/plugins/python (runs on the Python the workspace uses)
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -40,7 +41,10 @@ execFileSync('dotnet', [
 if (!fs.existsSync(path.join(analyzer, 'plugins', 'typescript', 'codemap-plugin.json'))) {
   throw new Error('The TypeScript plugin is missing from analyzer/plugins/typescript.');
 }
+if (!fs.existsSync(path.join(analyzer, 'plugins', 'python', 'src', 'cli.py'))) {
+  throw new Error('The Python plugin is missing from analyzer/plugins/python.');
+}
 
 const size = (dir) => fs.readdirSync(dir, { withFileTypes: true })
   .reduce((sum, f) => sum + (f.isDirectory() ? size(path.join(dir, f.name)) : fs.statSync(path.join(dir, f.name)).size), 0);
-console.log(`viewer.html and analyzer (${(size(analyzer) / 1024 / 1024).toFixed(1)} MB, with the TypeScript plugin) are ready.`);
+console.log(`viewer.html and analyzer (${(size(analyzer) / 1024 / 1024).toFixed(1)} MB, with the TypeScript and Python plugins) are ready.`);
