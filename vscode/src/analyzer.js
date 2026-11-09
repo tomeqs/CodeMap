@@ -32,8 +32,10 @@ function resolveAnalyzer({ extensionPath, analyzerPath, dotnetPath }) {
 /**
  * The analyzer's environment. TypeScript / JavaScript run on Node.js: `codemap.nodePath`, else CODEMAP_NODE
  * from the environment, else the Node.js inside VS Code itself (Electron run as Node), so nothing has to be installed.
+ * Python runs on `codemap.pythonPath`, else CODEMAP_PYTHON from the environment, else the interpreter the Python
+ * extension chose for the workspace; without any of them the analyzer looks for Python on the PATH.
  */
-function analyzerEnv({ nodePath } = {}, base = process.env, runtime = { execPath: process.execPath, electron: !!process.versions.electron }) {
+function analyzerEnv({ nodePath, pythonPath, pythonInterpreter } = {}, base = process.env, runtime = { execPath: process.execPath, electron: !!process.versions.electron }) {
   const env = { ...base, DOTNET_NOLOGO: '1', DOTNET_CLI_TELEMETRY_OPTOUT: '1' };
   if (nodePath) {
     env.CODEMAP_NODE = nodePath;
@@ -42,6 +44,8 @@ function analyzerEnv({ nodePath } = {}, base = process.env, runtime = { execPath
     if (runtime.electron) env.ELECTRON_RUN_AS_NODE = '1';
   }
 
+  if (pythonPath) env.CODEMAP_PYTHON = pythonPath;
+  else if (!env.CODEMAP_PYTHON && pythonInterpreter) env.CODEMAP_PYTHON = pythonInterpreter;
   return env;
 }
 

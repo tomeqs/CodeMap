@@ -102,6 +102,7 @@ jobs:
           "$exe" samples -o smoke-mixed -f json -q
           grep -q '"T:Shop.Domain.Orders.Order"' smoke-mixed/samples.codemap.json
           grep -q '"ts:project:@shop/domain"' smoke-mixed/samples.codemap.json
+          grep -q '"py:project:shop-domain"' smoke-mixed/samples.codemap.json
           "$exe" analyzers/python/test/fixtures/mini -o smoke-py -f json -q
           grep -q '"py:mini:src/mini/orders/service.py#OrderService.place"' smoke-py/mini.codemap.json
           # The MCP server, as an agent uses it: analysis, findings, proposals, a diagram and a picture of the map.

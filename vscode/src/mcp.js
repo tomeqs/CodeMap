@@ -9,17 +9,19 @@ const PROVIDER_ID = 'codemap.mcp';
 /** The server's name in Cursor and in mcp.json files. */
 const SERVER_NAME = 'codemap';
 /** Settings that change how the server is started. */
-const SERVER_SETTINGS = ['codemap.mcpServer', 'codemap.analyzerPath', 'codemap.dotnetPath', 'codemap.nodePath'];
+const SERVER_SETTINGS = ['codemap.mcpServer', 'codemap.analyzerPath', 'codemap.dotnetPath', 'codemap.nodePath', 'codemap.pythonPath'];
 
 /**
  * How the editor starts `codemap mcp` for its agents: the analyzer the map uses, with `mcp --root <folder>`. The
- * environment holds only what CodeMap adds to the editor's own (Node.js for TypeScript, no .NET banners).
+ * environment holds only what CodeMap adds to the editor's own (Node.js for TypeScript, the workspace's Python, no
+ * .NET banners).
  */
 function serverLaunch({ extensionPath, settings = {}, folder, base = process.env, runtime } = {}) {
   const analyzer = resolveAnalyzer({ extensionPath, analyzerPath: settings.analyzerPath, dotnetPath: settings.dotnetPath });
   const args = [...analyzer.args, 'mcp'];
   if (folder) args.push('--root', folder);
-  return { command: analyzer.command, args, env: added(analyzerEnv({ nodePath: settings.nodePath }, base, runtime), base), label: analyzer.label };
+  const env = analyzerEnv({ nodePath: settings.nodePath, pythonPath: settings.pythonPath, pythonInterpreter: settings.pythonInterpreter }, base, runtime);
+  return { command: analyzer.command, args, env: added(env, base), label: analyzer.label };
 }
 
 /**
@@ -35,6 +37,7 @@ function portableLaunch({ extensionPath, settings = {}, root, base = process.env
   const env = {};
   if (settings.nodePath) env.CODEMAP_NODE = settings.nodePath;
   else if (!base.CODEMAP_NODE && !onPath('node', base)) Object.assign(env, added(analyzerEnv({}, {}, runtime), {}, ['CODEMAP_NODE', 'ELECTRON_RUN_AS_NODE']));
+  if (settings.pythonPath) env.CODEMAP_PYTHON = settings.pythonPath;
 
   const args = [...analyzer.args, 'mcp'];
   if (root) args.push('--root', root);
@@ -108,13 +111,16 @@ function isCursor(vscode) {
  * Cursor's extension API. Only in trusted workspaces, and unless `codemap.mcpServer` is off. Returns how it was
  * offered: 'vscode', 'cursor' or null (an editor without either API: the commands still write a configuration).
  */
-function registerMcpServer(context, vscode, { version } = {}) {
+function registerMcpServer(context, vscode, { version, python } = {}) {
   const settings = () => vscode.workspace.getConfiguration('codemap');
   const enabled = () => settings().get('mcpServer', true) !== false && vscode.workspace.isTrusted !== false;
   const folder = () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const launch = () => serverLaunch({
     extensionPath: context.extensionPath,
-    settings: { analyzerPath: settings().get('analyzerPath'), dotnetPath: settings().get('dotnetPath'), nodePath: settings().get('nodePath') },
+    settings: {
+      analyzerPath: settings().get('analyzerPath'), dotnetPath: settings().get('dotnetPath'), nodePath: settings().get('nodePath'),
+      pythonPath: settings().get('pythonPath'), pythonInterpreter: python?.known,
+    },
     folder: folder(),
   });
 
@@ -162,6 +168,7 @@ function registerMcpServer(context, vscode, { version } = {}) {
   listen(vscode.workspace.onDidChangeConfiguration, (e) => SERVER_SETTINGS.some((s) => e.affectsConfiguration(s)) && refresh());
   listen(vscode.workspace.onDidGrantWorkspaceTrust, refresh);
   listen(vscode.workspace.onDidChangeWorkspaceFolders, refresh);
+  if (python) context.subscriptions.push(python.onDidChange(refresh)); // the Python extension's interpreter
   return kind;
 }
 
@@ -178,7 +185,7 @@ class McpCommands {
     const settings = this.vscode.workspace.getConfiguration('codemap');
     return portableLaunch({
       extensionPath: this.context.extensionPath,
-      settings: { analyzerPath: settings.get('analyzerPath'), dotnetPath: settings.get('dotnetPath'), nodePath: settings.get('nodePath') },
+      settings: { analyzerPath: settings.get('analyzerPath'), dotnetPath: settings.get('dotnetPath'), nodePath: settings.get('nodePath'), pythonPath: settings.get('pythonPath') },
       root,
       runtime: this.runtime,
     });

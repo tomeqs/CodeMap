@@ -72,11 +72,18 @@ pojedynczej i mnogiej, a `external` nazywa kod spoza analizy. Viewer bierze stą
 |---|---|---|---|---|---|
 | C# (`csharp`) | Project / Projects | Namespace / Namespaces | Type / Types | Member / Members | BCL / NuGet |
 | TypeScript (`typescript`) | Package / Packages | Folder / Folders | File / Files | Declaration / Declarations | npm packages |
+| Python (`python`) | Project / Projects | Package / Packages | Module / Modules | Declaration / Declarations | PyPI packages |
 
 W TypeScripcie jednostką mapy jest plik (`module`, `level: "type"`), a klasy, interfejsy, funkcje, aliasy typów
 i stałe są jego składowymi (`level: "member"`); metody klasy mają ją za `parent` i też są składowymi. Metryki pliku
 liczą się z najgłębszych składowych (metod, funkcji), a klasa dostaje swoje. Paczki i foldery to zwykłe węzły
 `project` i `namespace` (folder jest jeden na ścieżkę, jak namespace w C#).
+
+W Pythonie jednostką mapy jest moduł (`module`, plik `.py`, `level: "type"`), a namespace’ami są pakiety (nazwa z kropkami,
+np. `shop.orders`, a moduły bez pakietu leżą w `(root)`). Klasy, funkcje i zmienne modułu to jego składowe, metody,
+właściwości i pola klasy mają ją za `parent`. Id: `py:project:<projekt>`, `py:ns:<projekt>/<pakiet>`,
+`py:<projekt>:<ścieżka pliku>`, `…#Klasa.metoda`, kod na poziomie modułu `…#(top-level)`, paczki `py:pypi:<nazwa>`;
+`fullName` to pełna nazwa z kropkami (`shop.orders.service.OrderService.place`).
 
 Mapa kilku języków (np. folder z solucją C# i aplikacją TypeScript) ma wszystkie w `source.languages`, a projekty i paczki
 każdego mają swój `language`.

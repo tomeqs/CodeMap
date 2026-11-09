@@ -203,3 +203,14 @@ test('live updates follow C# and TypeScript / JavaScript sources and their proje
     assert.ok(!isSourceFile(file), file);
   }
 });
+
+test('live updates follow Python sources and project files, not environments or caches', () => {
+  const { isSourceFile } = require('../../src/extension');
+  for (const file of ['app/main.py', 'pyproject.toml', 'api/setup.cfg', 'Pipfile', 'requirements.txt', 'requirements-dev.txt', 'apps\\api\\deps.py']) {
+    assert.ok(isSourceFile(file), file);
+  }
+
+  for (const file of ['app/__pycache__/main.py', '.venv/lib/x.py', 'venv/lib/site.py', 'lib/site-packages/x.py', 'pkg.egg-info/x.py', '.tox/py/x.py', 'poetry.lock', 'setup.py.orig']) {
+    assert.ok(!isSourceFile(file), file);
+  }
+});

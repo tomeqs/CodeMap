@@ -5,11 +5,20 @@ using CodeMap.Model;
 
 namespace CodeMap.Tests;
 
-/// <summary>Runs only where Node.js is installed (and, for the TypeScript plugin, its npm install was done); CI requires both.</summary>
+/// <summary>
+/// Runs only where Node.js is installed (and, for the TypeScript plugin, its npm install was done; with python, where a
+/// Python the Python plugin accepts is found too); CI requires them all.
+/// </summary>
 public sealed class NodeFactAttribute : FactAttribute
 {
-    public NodeFactAttribute(bool typescript = false)
+    public NodeFactAttribute(bool typescript = false, bool python = false)
     {
+        if (python && Environment.GetEnvironmentVariable("CODEMAP_REQUIRE_PYTHON") != "1" && PythonFactAttribute.Missing() is { } missing)
+        {
+            Skip = missing;
+            return;
+        }
+
         if (Environment.GetEnvironmentVariable("CODEMAP_REQUIRE_NODE") == "1") return;
         if (RuntimeLocator.SearchPath("node") == null) Skip = "Node.js is not installed.";
         else if (typescript && !Directory.Exists(Path.Combine(GoldenTests.RepoRoot(), "analyzers", "typescript", "node_modules", "typescript")))
@@ -23,9 +32,15 @@ public sealed class PythonFactAttribute : FactAttribute
     public PythonFactAttribute()
     {
         if (Environment.GetEnvironmentVariable("CODEMAP_REQUIRE_PYTHON") == "1") return;
+        Skip = Missing();
+    }
+
+    /// <summary>Why the Python plugin cannot run here, or null.</summary>
+    internal static string? Missing()
+    {
         var manifest = PluginManifest.Load(Path.Combine(GoldenTests.RepoRoot(), "analyzers", "python", PluginManifest.FileName));
         var (found, problem) = RuntimeLocator.Find(manifest.Runtime!);
-        if (found == null) Skip = problem;
+        return found == null ? problem : null;
     }
 }
 

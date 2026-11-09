@@ -3,8 +3,9 @@
 // work, no errors – once per renderer.
 //
 //   npm run test:smoke [-- --renderers webgl,webgpu] [--headed] [--only 'name part'] [--dist other/build]
-//                      [--samples dir]  with shop-ts.codemap.json and samples.codemap.json, the analyzer's maps of
-//                                       samples/shop-ts and of samples/ (C# and TypeScript in one map); CI passes it
+//                      [--samples dir]  with shop-ts.codemap.json, shop-py.codemap.json and samples.codemap.json, the
+//                                       analyzer's maps of samples/shop-ts, samples/shop-py and of samples/ (C#,
+//                                       TypeScript and Python in one map); CI passes it
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { CHROMIUM_ARGS, fixture, graph, launch, open, serve, settled } from './lib.mjs';
@@ -805,8 +806,8 @@ async function graphicsFallbacks() {
 }
 
 /**
- * The analyzer's own maps: samples/shop-ts (NestJS API, Express gateway, Angular web on a domain library) and
- * samples/ (that and the C# Shop in one map).
+ * The analyzer's own maps: samples/shop-ts (NestJS API, Express gateway, Angular web on a domain library),
+ * samples/shop-py (FastAPI, Django, Flask, Celery on a domain library) and samples/ (those and the C# Shop in one map).
  */
 async function sampleTests(query) {
   const views = async (app, list) => {
@@ -871,8 +872,33 @@ async function sampleTests(query) {
   });
   await shop.page.close();
 
+  const python = await open(browser, query(fixture(resolve(samples, 'shop-py.codemap.json'))));
+  await test('samples/shop-py: projects, packages, modules; flows from FastAPI routes; the DI view\'s captive dependency', async () => {
+    await settled(python.page, 60000);
+    const info = await python.page.evaluate(() => {
+      const app = window.codemap;
+      const buttons = [...document.querySelectorAll('#level-toggle [data-level]')].map((b) => b.textContent);
+      app.setLevel('type');
+      app.setView('galaxy');
+      app.showFlow(['py:shop-api:src/shop_api/routers/payments.py#pay_order']);
+      const pay = [...(app.flow?.nodes.keys() ?? [])];
+      app.setView('di');
+      return { buttons, pay, entries: app.getEntryPoints().map((e) => e.node.id), hud: document.getElementById('hud').textContent };
+    });
+    assert.deepEqual(info.buttons, ['Projects', 'Packages', 'Modules', 'Declarations', 'Auto']);
+    // POST /api/payments/{order_id} → PaymentsService.pay → PaymentGateway.charge (Protocol) → FakePaymentGateway.charge, and Order.pay in the domain library
+    assert.ok(info.pay.includes('py:shop-api:src/shop_api/services/payments.py#FakePaymentGateway.charge'), `pay: ${info.pay}`);
+    assert.ok(info.pay.includes('py:shop-domain:src/shop_domain/orders.py#Order.pay'), `pay: ${info.pay}`);
+    assert.ok(info.entries.includes('py:shop-api:src/shop_api/routers/orders.py'), `entries: ${info.entries}`);
+    assert.ok(info.entries.includes('py:backoffice:orders/views.py#OrderDetailView'), `entries: ${info.entries}`);
+    assert.match(info.hud, /1 lifetime error\(s\)/);
+    await views(python, ['galaxy', 'city', 'layers', 'di', 'flow', 'matrix']);
+    assert.deepEqual(python.errors, []);
+  });
+  await python.page.close();
+
   const mixed = await open(browser, query(fixture(resolve(samples, 'samples.codemap.json'))));
-  await test('samples/: C# and TypeScript in one map, in both languages\' words', async () => {
+  await test('samples/: C#, TypeScript and Python in one map, in each language\'s words', async () => {
     await settled(mixed.page, 60000);
     const info = await mixed.page.evaluate(() => {
       const app = window.codemap;
@@ -882,10 +908,11 @@ async function sampleTests(query) {
         entries: app.getEntryPoints().map((e) => e.node.id),
       };
     });
-    assert.deepEqual(info.buttons, ['Projects / Packages', 'Namespaces / Folders', 'Types / Files', 'Members / Declarations', 'Auto']);
-    assert.deepEqual(info.languages.sort(), ['csharp', 'typescript']);
+    assert.deepEqual(info.buttons, ['Projects / Packages', 'Namespaces / Packages / Folders', 'Types / Modules / Files', 'Members / Declarations', 'Auto']);
+    assert.deepEqual(info.languages.sort(), ['csharp', 'python', 'typescript']);
     assert.ok(info.entries.includes('T:Shop.Api.Controllers.OrdersController'), `entries: ${info.entries}`);
     assert.ok(info.entries.includes('ts:@shop/api:src/orders/orders.controller.ts#OrdersController'), `entries: ${info.entries}`);
+    assert.ok(info.entries.includes('py:shop-api:src/shop_api/routers/orders.py'), `entries: ${info.entries}`);
     await views(mixed, ['galaxy', 'city', 'layers', 'di', 'flow', 'matrix']);
     assert.deepEqual(mixed.errors, []);
   });

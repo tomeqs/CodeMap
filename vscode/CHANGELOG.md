@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Python**, as a third language next to C# and TypeScript / JavaScript, with nothing to install: the analyzer reads it with Python's own parser (Python 3.9 or newer, the standard library alone), on the interpreter the Python extension chose for the workspace (`codemap.pythonPath` sets another one). Projects (`pyproject.toml`, `setup.py`, requirements files) or folders of scripts, packages and modules, with calls, inheritance, Protocols, imports and re-exports resolved from the code itself, and the metrics, cycles, layers and dead code of the other languages.
+  - **Frameworks**: FastAPI, Flask, Django and Django REST framework routes with their full paths start the call flows; FastAPI's `Depends` is in the DI view, with its lifetimes and captive dependencies; SQLAlchemy and Django models, Celery tasks, click and typer commands, pytest fixtures.
+  - **Checks inside functions** (and in the MCP server): forgotten `await`s, blocking calls in `async def`, bare or swallowed `except`s, `return` in `finally`, mutable default arguments, `== None`, `is` with literals, unused imports and variables…
+  - *Show in Code Map* and *Show Call Flow* work in `.py` files, and the map follows changes to Python files.
+
 ## 0.3.0
 
 - **An MCP server for AI agents**, `codemap mcp`. The extension offers it to Copilot's agent mode in VS Code (1.101 or newer) and to the Cursor agent by itself, in trusted workspaces (`codemap.mcpServer` turns it off). *CodeMap: Copy MCP Server Configuration* gives the configuration for Claude Code, Claude Desktop and other agents, and *CodeMap: Add MCP Server to Workspace* writes it to `.cursor/mcp.json` or `.vscode/mcp.json`. With it, an agent can:

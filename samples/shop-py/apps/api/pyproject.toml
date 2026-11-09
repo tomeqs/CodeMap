@@ -1,0 +1,11 @@
+[project]
+name = "shop-api"
+version = "0.3.0"
+requires-python = ">=3.10"
+dependencies = ["fastapi>=0.110", "sqlalchemy>=2", "pydantic>=2", "pydantic-settings>=2", "httpx", "shop-domain"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.uv.sources]
+shop-domain = { workspace = true }

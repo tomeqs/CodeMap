@@ -1,0 +1,183 @@
+## py:shop-api:src/shop_api/routers/orders.py (controller, reach 17): py:shop-api:src/shop_api/routers/orders.py#place_order, py:shop-api:src/shop_api/routers/orders.py#read_order
+methods 17, types 7, depth 3, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as orders.py
+    participant P1 as deps.py
+    participant P2 as Money
+    participant P3 as OrdersService
+    participant P4 as Order
+    participant P5 as SqlOrderRepository
+    Note over P0: place_order
+    P0->>P1: get_price_list()
+    P0-)P2: new Money
+    P0->>P3: place()
+    activate P3
+    P3-)P4: new Order
+    P3->>P4: add_line()
+    P3->>P5: save() [OrderRepository]
+    deactivate P3
+    P0->>P4: total()
+    activate P4
+    P4-)P2: new Money
+    deactivate P4
+    P0->>P2: percent()
+    activate P2
+    P2-)P2: new Money
+    deactivate P2
+
+sequenceDiagram
+    autonumber
+    participant P0 as orders.py
+    participant P1 as OrdersService
+    participant P2 as SqlOrderRepository
+    participant P3 as Order
+    participant P4 as PercentOff
+    participant P5 as discounts.py
+    participant P6 as Money
+    participant P7 as BulkDiscount
+    Note over P0: read_order
+    P0->>P1: find()
+    activate P1
+    P1->>P2: get() [OrderRepository]
+    activate P2
+    P2-)P3: new Order
+    deactivate P2
+    deactivate P1
+    P0->>P1: to_pay()
+    activate P1
+    P1-)P4: new PercentOff
+    P1->>P5: best_discount()
+    activate P5
+    P5-)P6: new Money
+    alt BulkDiscount
+        P5->>P7: apply() [Discount]
+        activate P7
+        P7-)P6: new Money
+        P7->>P6: percent() (see above)
+        P7->>P3: total() (see above)
+        deactivate P7
+    else PercentOff
+        P5->>P4: apply() [Discount]
+        activate P4
+        P4->>P6: percent() (see above)
+        P4->>P3: total() (see above)
+        deactivate P4
+    end
+    deactivate P5
+    P1->>P3: total() (see above)
+    deactivate P1
+
+## py:shop-api:src/shop_api/routers/payments.py (controller, reach 15): py:shop-api:src/shop_api/routers/payments.py#pay_order
+methods 15, types 7, depth 5, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as payments.py
+    participant P1 as PaymentsService
+    participant P2 as OrdersService
+    participant P3 as SqlOrderRepository
+    participant P4 as Order
+    participant P5 as PercentOff
+    participant P6 as discounts.py
+    participant P7 as Money
+    participant P8 as BulkDiscount
+    participant P9 as FakePaymentGateway
+    Note over P0: pay_order
+    P0->>P1: pay()
+    activate P1
+    P1->>P2: find()
+    activate P2
+    P2->>P3: get() [OrderRepository]
+    activate P3
+    P3-)P4: new Order
+    deactivate P3
+    deactivate P2
+    P1->>P2: to_pay()
+    activate P2
+    P2-)P5: new PercentOff
+    P2->>P6: best_discount()
+    activate P6
+    P6-)P7: new Money
+    alt BulkDiscount
+        P6->>P8: apply() [Discount]
+        activate P8
+        P8-)P7: new Money
+        P8->>P7: percent()
+        activate P7
+        P7-)P7: new Money
+        deactivate P7
+        P8->>P4: total()
+        activate P4
+        P4-)P7: new Money
+        deactivate P4
+        deactivate P8
+    else PercentOff
+        P6->>P5: apply() [Discount]
+        activate P5
+        P5->>P7: percent() (see above)
+        P5->>P4: total() (see above)
+        deactivate P5
+    end
+    deactivate P6
+    P2->>P4: total() (see above)
+    deactivate P2
+    P1->>P9: charge() [PaymentGateway]
+    P1->>P4: pay()
+    deactivate P1
+
+## py:backoffice:orders/views.py#OrderDetailView (controller, reach 3): py:backoffice:orders/views.py#OrderDetailView.post
+methods 3, types 2, depth 1, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as OrderDetailView
+    Note over P0: get
+
+sequenceDiagram
+    autonumber
+    participant P0 as OrderDetailView
+    participant P1 as Order
+    Note over P0: post
+    P0->>P1: close()
+
+## py:worker:worker/tasks.py (handler, reach 2): py:worker:worker/tasks.py#send_receipt
+methods 2, types 1, depth 0, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as tasks.py
+    Note over P0: nightly_report()
+
+sequenceDiagram
+    autonumber
+    participant P0 as tasks.py
+    Note over P0: send_receipt()
+
+## py:worker:worker/cli.py (entrypoint, reach 5): py:worker:worker/cli.py#report, py:worker:worker/cli.py#resend
+methods 5, types 2, depth 1, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as cli.py
+    Note over P0: (top-level)()
+
+sequenceDiagram
+    autonumber
+    participant P0 as cli.py
+    participant P1 as tasks.py
+    Note over P0: report()
+    P0->>P1: nightly_report()
+
+sequenceDiagram
+    autonumber
+    participant P0 as cli.py
+    participant P1 as tasks.py
+    Note over P0: resend()
+    P0->>P1: send_receipt()
+
+## py:backoffice:orders/management/commands/close_stale.py#Command (entrypoint, reach 2): py:backoffice:orders/management/commands/close_stale.py#Command.handle
+methods 2, types 2, depth 1, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as Command
+    participant P1 as Order
+    Note over P0: handle()
+    P0->>P1: close()
+

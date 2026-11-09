@@ -1,7 +1,7 @@
 {
   "name": "codemap-3d",
   "displayName": "CodeMap 3D",
-  "description": "Interactive 3D map of your C# and TypeScript / JavaScript code: dependencies, architecture layers, DI lifetimes, call flows and sequence diagrams, one click away from the code. Includes an MCP server that lets AI agents read and improve the structure.",
+  "description": "Interactive 3D map of your C#, TypeScript / JavaScript and Python code: dependencies, architecture layers, DI lifetimes, call flows and sequence diagrams, one click away from the code. Includes an MCP server that lets AI agents read and improve the structure.",
   "version": "0.3.0",
   "publisher": "tomeqs",
   "license": "MIT",
@@ -32,7 +32,11 @@
     "sequence diagram",
     "3d",
     "mcp",
-    "ai"
+    "ai",
+    "python",
+    "fastapi",
+    "django",
+    "flask"
   ],
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -47,7 +51,8 @@
     "onWebviewPanel:codemap.map",
     "onMcpServerDefinitionProvider:codemap.mcp",
     "workspaceContains:**/*.{sln,slnx,slnf,csproj}",
-    "workspaceContains:**/{package.json,tsconfig.json,jsconfig.json}"
+    "workspaceContains:**/{package.json,tsconfig.json,jsconfig.json}",
+    "workspaceContains:**/{pyproject.toml,setup.py,setup.cfg,requirements.txt,Pipfile}"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -56,7 +61,8 @@
       "restrictedConfigurations": [
         "codemap.analyzerPath",
         "codemap.dotnetPath",
-        "codemap.nodePath"
+        "codemap.nodePath",
+        "codemap.pythonPath"
       ]
     },
     "virtualWorkspaces": false
@@ -111,19 +117,19 @@
       "explorer/context": [
         {
           "command": "codemap.open",
-          "when": "explorerResourceIsFolder || resourceExtname =~ /^\\.(sln|slnx|slnf|csproj)$/ || resourceFilename =~ /^(package|jsconfig|tsconfig(\\.[\\w-]+)?)\\.json$/",
+          "when": "explorerResourceIsFolder || resourceExtname =~ /^\\.(sln|slnx|slnf|csproj)$/ || resourceFilename =~ /^((package|jsconfig|tsconfig(\\.[\\w-]+)?)\\.json|pyproject\\.toml|setup\\.py|requirements\\.txt)$/",
           "group": "navigation@90"
         }
       ],
       "editor/context": [
         {
           "command": "codemap.revealInMap",
-          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact)$/",
+          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python)$/",
           "group": "navigation@90"
         },
         {
           "command": "codemap.callFlow",
-          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact)$/",
+          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python)$/",
           "group": "navigation@91"
         }
       ],
@@ -142,11 +148,11 @@
       "commandPalette": [
         {
           "command": "codemap.revealInMap",
-          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact)$/"
+          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python)$/"
         },
         {
           "command": "codemap.callFlow",
-          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact)$/"
+          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python)$/"
         }
       ]
     },
@@ -214,6 +220,12 @@
           "default": "",
           "scope": "machine",
           "markdownDescription": "Node.js (18 or newer) that analyzes TypeScript and JavaScript. Empty: the Node.js built into VS Code, so nothing needs to be installed. Set it to a `node` executable for very large code bases (VS Code's Node.js has a smaller memory limit)."
+        },
+        "codemap.pythonPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Python (3.9 or newer) that analyzes Python code. Empty: the interpreter the Python extension uses for the workspace (its virtual environment), else `python3` / `python` / `py -3` on the `PATH`. Nothing has to be installed into it: the analyzer uses the standard library only."
         }
       }
     },
