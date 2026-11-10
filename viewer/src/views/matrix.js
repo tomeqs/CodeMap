@@ -1,12 +1,9 @@
 import {
-  AmbientLight,
   BoxGeometry,
   BufferGeometry,
   Color,
-  DirectionalLight,
   Float32BufferAttribute,
   Group,
-  HemisphereLight,
   InstancedMesh,
   LineBasicMaterial,
   LineSegments,
@@ -20,6 +17,7 @@ import {
 import { columnMaterial } from '../scene/materials.js';
 import { uploadAll } from '../scene/uploads.js';
 import { disposeObject } from '../scene/disposer.js';
+import { instances } from '../scene/instances.js';
 import { VIOLATION_COLORS } from './galaxy.js';
 import { shortNamespace } from './city.js';
 
@@ -67,15 +65,18 @@ export class MatrixView {
 
     this.ground = new Mesh(new PlaneGeometry(1, 1), new MeshStandardMaterial({ color: '#070b16', roughness: 1 }));
     this.ground.rotation.x = -Math.PI / 2;
-    this.sun = new DirectionalLight(0xc8d8ff, 1.4);
+    // The sun is the stage's shared light; it stands where the last build put it.
+    this.sunPosition = new Vector3(0, 1, 0);
     this.guides = new InstancedMesh(this.flat, this.guideMaterial, 4);
     this.guides.count = 0;
     this.guides.renderOrder = 2;
-    this.group.add(new HemisphereLight(0x8fb4ff, 0x0b0f1a, 0.9), new AmbientLight(0x404a66, 0.6), this.sun, this.sun.target, this.ground, this.guides);
+    this.group.add(this.ground, this.guides);
   }
 
   activate() {
     this.stage.scene.add(this.group);
+    this.active = true;
+    this.applyLights();
     this.stage.setAtmosphere({ background: '#05070f', fog: 0, stars: true, nebula: 0.35 });
     this.stage.setBloom(0.7, 0.45, 0.35);
     this.stage.controls.maxPolarAngle = Math.PI * 0.49;
@@ -83,8 +84,18 @@ export class MatrixView {
     this.stage.invalidate();
   }
 
+  /** Sky and ground light, a little ambient and a sun over the grid. */
+  applyLights() {
+    this.stage.lights.set({
+      hemisphere: { sky: 0x8fb4ff, ground: 0x0b0f1a, intensity: 0.9 },
+      ambient: { color: 0x404a66, intensity: 0.6 },
+      sun: { color: 0xc8d8ff, intensity: 1.4, position: this.sunPosition },
+    });
+  }
+
   deactivate() {
     this.stage.scene.remove(this.group);
+    this.active = false;
     this.stage.controls.maxPolarAngle = Math.PI;
     this.labels.clear();
     this.stage.invalidate();
@@ -161,6 +172,7 @@ export class MatrixView {
     });
     uploadAll(this.bandMesh.instanceMatrix);
     if (this.bandMesh.instanceColor) uploadAll(this.bandMesh.instanceColor);
+    this.bandMesh.computeBoundingSphere();
 
     const blocks = layout.blocks;
     this.frameMesh = this.replaceMesh(this.frameMesh, this.box, this.frameMaterial, blocks.length * 4);
@@ -185,6 +197,7 @@ export class MatrixView {
     });
     uploadAll(this.frameMesh.instanceMatrix);
     if (this.frameMesh.instanceColor) uploadAll(this.frameMesh.instanceColor);
+    this.frameMesh.computeBoundingSphere();
 
     this.group.remove(this.grid);
     this.grid?.geometry.dispose();
@@ -202,8 +215,8 @@ export class MatrixView {
 
     this.ground.scale.set(size * 1.6 + 200, size * 1.6 + 200, 1);
     this.ground.position.y = -0.05;
-    this.sun.position.set(size * 0.4, size * 1.2, size * 0.8);
-    this.sun.target.position.set(0, 0, 0);
+    this.sunPosition.set(size * 0.4, size * 1.2, size * 0.8);
+    if (this.active) this.applyLights();
 
     this.labelOrder = [...this.units].sort((a, b) => b.height - a.height);
     this.hovered = null;
@@ -217,17 +230,9 @@ export class MatrixView {
     this.cellMaterial.userData.rise.value = rise;
   }
 
-  /** A new instanced mesh of `count` instances in place of the old one. */
+  /** An instanced mesh of `count` instances: the old one while it has room (see instances()). */
   replaceMesh(old, geometry, material, count) {
-    if (old) {
-      this.group.remove(old);
-      old.dispose();
-    }
-
-    const mesh = new InstancedMesh(geometry, material, Math.max(1, count));
-    mesh.count = count;
-    this.group.add(mesh);
-    return mesh;
+    return instances(this.group, old, geometry, material, count);
   }
 
   // ------------------------------------------------------------------ colour and highlight

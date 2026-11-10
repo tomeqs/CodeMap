@@ -1,11 +1,7 @@
 import {
-  AmbientLight,
   BoxGeometry,
   Color,
-  DirectionalLight,
   Group,
-  HemisphereLight,
-  InstancedMesh,
   Matrix4,
   Mesh,
   MeshStandardMaterial,
@@ -20,6 +16,7 @@ import { GpuParticles, particlesPerLink } from '../scene/particles.js';
 import { uploadAll, uploadRange } from '../scene/uploads.js';
 import { PositionStore } from '../gpu/position-store.js';
 import { disposeObject } from '../scene/disposer.js';
+import { instances } from '../scene/instances.js';
 
 const PROJECT_SLAB = 2.2;
 const NAMESPACE_SLAB = 1.4;
@@ -56,23 +53,16 @@ export class CityView {
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.receiveShadow = true;
 
-    this.sun = new DirectionalLight(0xc8d8ff, 1.6);
-    this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
-    this.sun.shadow.bias = -0.0005;
-    this.group.add(
-      new HemisphereLight(0x8fb4ff, 0x0b0f1a, 0.9),
-      new AmbientLight(0x404a66, 0.6),
-      this.sun,
-      this.sun.target,
-      this.ground,
-      this.arcs,
-      this.particles.points,
-    );
+    // The sun (the stage's shared light) stands where the last build put it, and casts the buildings' shadows.
+    this.sunPosition = new Vector3(300, 450, 175);
+    this.shadowSize = 500;
+    this.group.add(this.ground, this.arcs, this.particles.points);
   }
 
   activate() {
     this.stage.scene.add(this.group);
+    this.active = true;
+    this.applyLights();
     this.stage.setAtmosphere({ background: '#05070f', fog: 0, stars: true, nebula: 0.4 });
     this.stage.setBloom(0.75, 0.45, 0.35);
     this.stage.controls.maxPolarAngle = Math.PI * 0.49;
@@ -80,8 +70,26 @@ export class CityView {
     this.stage.invalidate();
   }
 
+  /** Sky and ground light, a little ambient and a sun over the city whose shadow covers it. */
+  applyLights() {
+    const lights = this.stage.lights;
+    lights.set({
+      hemisphere: { sky: 0x8fb4ff, ground: 0x0b0f1a, intensity: 0.9 },
+      ambient: { color: 0x404a66, intensity: 0.6 },
+      sun: { color: 0xc8d8ff, intensity: 1.6, position: this.sunPosition },
+    });
+    const size = this.shadowSize;
+    const cam = lights.sun.shadow.camera;
+    cam.left = cam.bottom = -size * 0.75;
+    cam.right = cam.top = size * 0.75;
+    cam.near = 1;
+    cam.far = size * 3;
+    cam.updateProjectionMatrix();
+  }
+
   deactivate() {
     this.stage.scene.remove(this.group);
+    this.active = false;
     this.stage.controls.maxPolarAngle = Math.PI;
     this.labels.clear();
     this.stage.invalidate();
@@ -137,9 +145,7 @@ export class CityView {
     const maxHeight = Math.max(40, size * 0.16);
 
     // ---------------------------------------------------------------- districts
-    this.group.remove(this.districtMesh);
-    this.districtMesh?.dispose();
-    this.districtMesh = new InstancedMesh(this.boxGeometry, this.districtMaterial, districts.length);
+    this.districtMesh = instances(this.group, this.districtMesh, this.boxGeometry, this.districtMaterial, districts.length);
     this.districtMesh.receiveShadow = true;
     this.districts = districts.map((d, i) => {
       const base = d.depth === 1 ? 0 : PROJECT_SLAB;
@@ -157,12 +163,12 @@ export class CityView {
       this.districtMesh.setColorAt(i, c);
       return { node: d.data.data, depth: d.depth, x: d.x0 + w / 2 - offset, z: d.y0 + dd / 2 - offset, w, d: dd, top: base + height, front: d.y0 - offset };
     });
-    this.group.add(this.districtMesh);
+    uploadAll(this.districtMesh.instanceMatrix);
+    uploadAll(this.districtMesh.instanceColor);
+    this.districtMesh.computeBoundingSphere();
 
     // ---------------------------------------------------------------- buildings
-    this.group.remove(this.buildingMesh);
-    this.buildingMesh?.dispose();
-    this.buildingMesh = new InstancedMesh(this.boxGeometry, this.buildingMaterial, leaves.length);
+    this.buildingMesh = instances(this.group, this.buildingMesh, this.boxGeometry, this.buildingMaterial, leaves.length);
     this.buildingMesh.castShadow = leaves.length < 6000;
     this.buildingMesh.receiveShadow = true;
     this.byId = new Map();
@@ -192,19 +198,13 @@ export class CityView {
     for (const u of this.units) this.store.set(u.index, u.x, u.top, u.z);
     this.store.upload();
     this.updateMatrices();
-    this.group.add(this.buildingMesh);
 
     // ---------------------------------------------------------------- ground, light, links
     this.ground.scale.set(size * 3, size * 3, 1);
     this.ground.position.y = -0.05;
-    this.sun.position.set(size * 0.6, size * 0.9, size * 0.35);
-    this.sun.target.position.set(0, 0, 0);
-    const cam = this.sun.shadow.camera;
-    cam.left = cam.bottom = -size * 0.75;
-    cam.right = cam.top = size * 0.75;
-    cam.near = 1;
-    cam.far = size * 3;
-    cam.updateProjectionMatrix();
+    this.sunPosition.set(size * 0.6, size * 0.9, size * 0.35);
+    this.shadowSize = size;
+    if (this.active) this.applyLights();
 
     this.links = links
       .filter((l) => this.byId.has(l.source) && this.byId.has(l.target))

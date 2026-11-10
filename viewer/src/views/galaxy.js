@@ -1,10 +1,8 @@
 import {
   AdditiveBlending,
-  AmbientLight,
   BoxGeometry,
   Color,
   ConeGeometry,
-  DirectionalLight,
   DodecahedronGeometry,
   BufferGeometry,
   Group,
@@ -12,7 +10,6 @@ import {
   InstancedBufferAttribute,
   Mesh,
   OctahedronGeometry,
-  PointLight,
   Sprite,
   TetrahedronGeometry,
   TorusGeometry,
@@ -52,6 +49,13 @@ const RADIUS = {
   member: [0.9, 3.4],
 };
 
+/** A soft blue ambient, a white key light from above and a blue rim from behind (the stage's shared lights). */
+const GALAXY_LIGHTS = {
+  ambient: { color: 0x8899cc, intensity: 0.55 },
+  sun: { color: 0xffffff, intensity: 1.2, position: new Vector3(300, 500, 400) },
+  point: { color: 0x6ea8ff, intensity: 2, position: new Vector3(-400, -200, -300) },
+};
+
 /** Edge colours for problems: dependencies against the layering, DI lifetime errors / warnings. */
 export const VIOLATION_COLORS = { error: '#ff4545', warning: '#ffb02e', info: '#64b5f6', true: '#ff4545' };
 
@@ -82,23 +86,15 @@ export class GalaxyView {
     this.lines = this.linkMesh.mesh;
     this.particles = new GpuParticles(this.store, { max: 60000, size: 9 });
     this.coronas = new Coronas(this.store);
-    this.halo = new Sprite(new SpriteNodeMaterial({ map: dotTexture(), color: 0xffffff, transparent: true, opacity: 0.4, blending: AdditiveBlending, depthWrite: false }));
-    this.halo.visible = false;
+    // The halo and the shock ring are drawn all the time, transparent while there is no selection: hidden, their
+    // shaders would be compiled on the first click – a stall just when the user expects an answer.
+    this.halo = new Sprite(new SpriteNodeMaterial({ map: dotTexture(), color: 0xffffff, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
+    this.haloOn = false;
     // The shock wave around a unit when it is selected.
     this.ring = new Sprite(new SpriteNodeMaterial({ map: ringTexture(), color: 0xffffff, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
-    this.ring.visible = false;
     this.wave = null;
 
-    this.lightGroup = new Group();
-    this.lightGroup.add(new AmbientLight(0x8899cc, 0.55));
-    const key = new DirectionalLight(0xffffff, 1.2);
-    key.position.set(300, 500, 400);
-    this.lightGroup.add(key);
-    const rim = new PointLight(0x6ea8ff, 2, 0, 0);
-    rim.position.set(-400, -200, -300);
-    this.lightGroup.add(rim);
-
-    this.group.add(this.lines, this.coronas.sprite, this.particles.points, this.halo, this.ring, this.lightGroup);
+    this.group.add(this.lines, this.coronas.sprite, this.particles.points, this.halo, this.ring);
     this.userMoved = false;
     /** Optional (node) => label text; the call-flow view labels methods with their type. */
     this.labelText = null;
@@ -108,6 +104,9 @@ export class GalaxyView {
 
   activate() {
     this.stage.scene.add(this.group);
+    // The camera showed another view until now: whatever this one builds next is framed (see build()).
+    this.builtIds = null;
+    this.stage.lights.set(GALAXY_LIGHTS);
     this.stage.setAtmosphere({ background: '#03050b', fog: 0, stars: true });
     this.stage.setBloom(1.1, 0.6, 0.14);
     this.stage.controls.autoRotate = this.options.autoRotate;
@@ -137,6 +136,7 @@ export class GalaxyView {
 
   build(units, links, state, ghosts = []) {
     this.savePositions();
+    const shown = this.builtIds ?? new Set(); // what the last build put on screen
     this.state = state;
     this.hovered = null; // a unit of the old build
     const model = this.model;
@@ -144,7 +144,9 @@ export class GalaxyView {
     const byId = new Map();
 
     let cached = 0;
+    let kept = 0;
     this.units = all.map(({ node, ghost }) => {
+      if (shown.has(node.id)) kept++;
       const r = this.radiusFor(node, state, ghost);
       const unit = { id: node.id, node, ghost, r, x: 0, y: 0, z: 0 };
       const known = this.positions.get(node.id);
@@ -189,7 +191,15 @@ export class GalaxyView {
     this.startSimulation(state, cached / Math.max(1, this.units.length));
     this.labelOrder = [...this.units].sort((a, b) => labelRank(b) - labelRank(a));
     this.setHighlight(null);
-    if (cached < this.units.length * 0.5) this.fit(false);
+    // Mostly units the last build did not show (another level, also one seen before, or the first build since
+    // the view came back): a different map, framed now and again once its layout has settled – even if the user
+    // had moved the camera on the old one. Moving it from now on keeps it where the user puts it.
+    if (kept < this.units.length * 0.5) {
+      this.userMoved = false;
+      this.fit(false);
+    }
+
+    this.builtIds = new Set(this.units.map((u) => u.id));
   }
 
   /** Every unit knows the indices of its links (hover updates only those). */
@@ -428,7 +438,7 @@ export class GalaxyView {
     if (this.store.tickIntro()) busy = true;
     if (this.wave) busy = this.advanceWave() || busy;
 
-    const halo = this.halo.visible && this.highlight?.primary ? this.byId.get(this.highlight.primary) : null;
+    const halo = this.haloOn && this.highlight?.primary ? this.byId.get(this.highlight.primary) : null;
     if (halo) {
       this.halo.position.set(halo.x, halo.y, halo.z);
       const pulse = 1 + 0.12 * Math.sin(performance.now() / 260);
@@ -530,8 +540,9 @@ export class GalaxyView {
   setHighlight(highlight) {
     const previous = this.highlight?.primary;
     this.highlight = highlight;
-    this.halo.visible = !!highlight?.primary && this.byId?.has(highlight.primary);
-    if (this.halo.visible) this.halo.material.color.copy(this.model.colorOf(this.model.get(highlight.primary), this.state.colorMode, new Color()));
+    this.haloOn = !!highlight?.primary && !!this.byId?.has(highlight.primary);
+    this.halo.material.opacity = this.haloOn ? 0.4 : 0;
+    if (this.haloOn) this.halo.material.color.copy(this.model.colorOf(this.model.get(highlight.primary), this.state.colorMode, new Color()));
     if (highlight?.primary !== previous || !highlight) this.startWave(highlight);
     this.recolor();
     this.refreshParticles();
@@ -546,7 +557,7 @@ export class GalaxyView {
     this.linkMesh.clearWaves();
     if (!primary || this.stage.motion === 'off') {
       this.wave = null;
-      this.ring.visible = false;
+      this.ring.material.opacity = 0;
       this.linkMesh.waveFront.value = this.coronas.waveFront.value = -100;
       this.coronas.setHops(null);
       return;
@@ -579,7 +590,6 @@ export class GalaxyView {
     this.coronas.setHops(new Map([...hops].map(([u, hop]) => [u.index, hop])));
     this.wave = { start: performance.now(), max, unit: primary };
     this.ring.material.color.copy(this.model.colorOf(primary.node, this.state.colorMode, new Color()));
-    this.ring.visible = true;
     this.advanceWave();
   }
 
@@ -595,7 +605,7 @@ export class GalaxyView {
     this.ring.material.opacity = 0.9 * (1 - ring);
     if (front > wave.max + 1.5 && ring >= 1) {
       this.wave = null;
-      this.ring.visible = false;
+      this.ring.material.opacity = 0;
       this.linkMesh.waveFront.value = this.coronas.waveFront.value = -100;
       return false;
     }
