@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
 
 - **Switching views no longer stalls.** Each view brought lights of its own, and the lights are part of the shaders, so every switch (also back to a view seen before, and between Types and Auto) compiled the shaders of the whole map again: up to a second or more without a frame, longer on Windows. One set of lights now serves every view, and the city, the matrix and the layers keep their meshes and materials from one build to the next. The first click on a planet no longer compiles the selection's halo either.
 - **A level switch frames the new level** (e.g. Folders → Files), also after the map was turned or zoomed. The camera used to stay where it was, so the files spread out of the screen and the planets looked oversized and washed out.
