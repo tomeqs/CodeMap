@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -47,11 +47,11 @@ jobs:
         include:
           - { rid: win-x64, os: windows-latest, smoke: true }
           - { rid: win-arm64, os: windows-latest }
-          - { rid: linux-x64, os: ubuntu-latest, smoke: true }
-          - { rid: linux-arm64, os: ubuntu-latest }
+          - { rid: linux-x64, os: ubuntu-24.04, smoke: true }
+          - { rid: linux-arm64, os: ubuntu-24.04 }
           - { rid: osx-arm64, os: macos-latest, smoke: true }
           # Intel macOS needs no code signature, so it cross-compiles on Linux (no wait for a macOS runner).
-          - { rid: osx-x64, os: ubuntu-latest }
+          - { rid: osx-x64, os: ubuntu-24.04 }
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -124,7 +124,7 @@ jobs:
 
   vscode:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: vscode
@@ -167,7 +167,7 @@ jobs:
 
   release:
     needs: [build, vscode]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     env:
