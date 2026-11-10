@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   dotnet:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -42,7 +42,7 @@ jobs:
 
   # The TypeScript / JavaScript language plugin on the Node versions it supports.
   typescript:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         node: [20, 22]
@@ -65,8 +65,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, python: '3.9' }
-          - { os: ubuntu-latest, python: '3.13' }
+          - { os: ubuntu-24.04, python: '3.9' }
+          - { os: ubuntu-24.04, python: '3.13' }
           - { os: windows-latest, python: '3.12' }
     runs-on: ${{ matrix.os }}
     defaults:
@@ -80,7 +80,7 @@ jobs:
       - run: python -B -m unittest discover -s test -v
 
   viewer:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: viewer
@@ -124,7 +124,7 @@ jobs:
         run: npm run test:smoke -- --renderers webgpu,webgl --samples "$RUNNER_TEMP/samples"
 
   vscode:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: vscode

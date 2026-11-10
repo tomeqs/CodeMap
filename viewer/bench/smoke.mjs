@@ -336,13 +336,13 @@ try {
         const started = { front: view.linkMesh.waveFront.value, reached: [...view.coronas.hops.array.slice(0, view.units.length)].filter((h) => h >= 0).length };
         const deadline = performance.now() + 30000;
         while (view.wave && performance.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
-        const ended = { front: view.linkMesh.waveFront.value, ring: view.ring.visible };
+        const ended = { front: view.linkMesh.waveFront.value, ring: view.ring.material.opacity };
         app.select(null);
         return { started, ended };
       });
       assert.ok(result.started.front > -1, `the wave starts at the selection (front ${result.started.front})`);
       assert.ok(result.started.reached >= 2, `units on the wave's way: ${result.started.reached}`);
-      assert.ok(result.ended.front < -10 && !result.ended.ring, 'the wave and the shock ring end');
+      assert.ok(result.ended.front < -10 && result.ended.ring === 0, 'the wave and the shock ring end (the ring fades out)');
     });
 
     await test('a new layout unfolds from its centre, then stops', async () => {
@@ -470,10 +470,94 @@ try {
       assert.equal(result.differences, 0, `positions that differ: ${result.differences} of ${result.count}`);
     });
 
+    await test('a level switch frames the new level, also after the user turned the map (and so does coming back to the galaxy)', async () => {
+      const still = () => page.waitForFunction(() => {
+        const app = window.codemap;
+        return app.view === app.galaxy && app.galaxy.settled && !app.galaxy.store.introRunning && !app.stage.flight;
+      }, null, { timeout: 60000, polling: 100 });
+      // The user turns the map a little (from then on the camera is theirs), then switches the level or the view.
+      const turnAndSwitch = async (change) => {
+        await page.mouse.move(760, 420);
+        await page.mouse.down();
+        await page.mouse.move(800, 440, { steps: 4 });
+        await page.mouse.up();
+        assert.equal(await page.evaluate(() => window.codemap.galaxy.userMoved), true);
+        await page.evaluate(change);
+        await still();
+        // The farthest unit from the middle of the view, in half views (beyond 1: off the screen; a fit frames
+        // the units' spheres a little tightly, so an outer centre may sit just past 1).
+        return page.evaluate(() => {
+          const app = window.codemap;
+          app.stage.camera.updateMatrixWorld();
+          let worst = 0;
+          for (const u of app.galaxy.units) {
+            const p = app.galaxy.positionOf(u.id).project(app.stage.camera);
+            worst = Math.max(worst, Math.abs(p.x), Math.abs(p.y));
+          }
+          return worst;
+        });
+      };
+      await page.evaluate(() => (window.codemap.select(null), window.codemap.setView('galaxy'), window.codemap.setLevel('type')));
+      await still();
+      const namespaces = await turnAndSwitch(() => (window.codemap.select(null), window.codemap.setLevel('namespace')));
+      assert.ok(namespaces <= 1.1, `namespaces: a unit is ${namespaces.toFixed(2)} half views from the middle, the level is not framed`);
+      // Back to the types: laid out before, but not what was on screen – framed as well.
+      const types = await turnAndSwitch(() => (window.codemap.select(null), window.codemap.setLevel('type')));
+      assert.ok(types <= 1.1, `types again: a unit is ${types.toFixed(2)} half views from the middle, the level is not framed`);
+      // Back from the city, whose camera looked at something else.
+      const back = await turnAndSwitch(() => (window.codemap.setView('city'), window.codemap.setView('galaxy')));
+      assert.ok(back <= 1.1, `back from the city: a unit is ${back.toFixed(2)} half views from the middle, the galaxy is not framed`);
+    });
+
     await test('no errors on the page', async () => {
       assert.deepEqual(errors, []);
     });
     await page.close();
+
+    // Shaders compiled while drawing stall the page (WebGL waits for each one, WebGPU's queue too): a view
+    // compiles its shaders the first time it is drawn, and never again – not when the user comes back to it,
+    // not on the first click.
+    const counted = await open(browser, query('/sample.codemap.json'), { init: countCompiles });
+    await test('shaders compile once: neither the first click nor going back to a view compiles any', async () => {
+      const p = counted.page;
+      await settled(p, 60000);
+      const compiles = () => p.evaluate(() => window.__compiles);
+      const drawn = async () => {
+        await p.waitForFunction(() => {
+          const app = window.codemap;
+          return app.view.units.length && app.view.settled !== false && (app.view !== app.zoomView || app.zoomView.semantic);
+        }, null, { timeout: 60000, polling: 100 });
+        const renders = await p.evaluate(() => window.codemap.perf.renders);
+        await p.waitForFunction((n) => window.codemap.perf.renders >= n + 2, renders, { timeout: 60000, polling: 50 });
+      };
+      await drawn();
+      let before = await compiles();
+      await p.evaluate(() => window.codemap.select(window.codemap.view.units[0].id));
+      await drawn();
+      assert.equal((await compiles()) - before, 0, 'shaders compiled by the first selection');
+      await p.evaluate(() => window.codemap.select(null));
+
+      const tour = ['galaxy', 'city', 'layers', 'di', 'flow', 'matrix', 'auto'];
+      const visit = async (view) => {
+        await p.evaluate((v) => {
+          const app = window.codemap;
+          if (v === 'auto') return app.setLevel('auto');
+          app.setView(v);
+          app.setLevel('type');
+        }, view);
+        await drawn();
+      };
+      for (const view of tour) await visit(view);
+      const again = [];
+      for (const view of tour) {
+        before = await compiles();
+        await visit(view);
+        again.push(`${view} ${(await compiles()) - before}`);
+      }
+      assert.ok(again.every((c) => c.endsWith(' 0')), `shaders compiled when going back to a view: ${again.join(', ')}`);
+      assert.deepEqual(counted.errors, []);
+    });
+    await counted.page.close();
 
     if (renderer === 'webgpu') {
       // The compute-shader layout (forced: the CI adapter is a software one, where it is not chosen by itself).
@@ -968,6 +1052,22 @@ async function eyeHalves(page) {
 
     return { left, right, differing };
   }, shot.toString('base64'));
+}
+
+/** Runs in the page before its scripts: counts the shader programs (WebGL) and pipelines (WebGPU) made. */
+function countCompiles() {
+  window.__compiles = 0;
+  const count = (proto, name) => {
+    const original = proto?.[name];
+    if (!original) return;
+    proto[name] = function (...args) {
+      window.__compiles++;
+      return original.apply(this, args);
+    };
+  };
+  count(window.WebGL2RenderingContext?.prototype, 'linkProgram');
+  count(window.GPUDevice?.prototype, 'createRenderPipeline');
+  count(window.GPUDevice?.prototype, 'createRenderPipelineAsync');
 }
 
 /** Pixels of the canvas that are clearly brighter than the background. */

@@ -5,6 +5,7 @@ import { stereoPass } from 'three/addons/tsl/display/StereoPassNode.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { beginFrame, createRenderer } from '../gpu/renderer.js';
 import { Sky } from './sky.js';
+import { Lights } from './lights.js';
 import { perf } from '../perf/stats.js';
 import { rememberMotion, storedMotion } from './motion.js';
 
@@ -52,6 +53,8 @@ export class Stage {
     this.lastTime = performance.now();
     this.sky = new Sky();
     this.scene.add(this.sky.group);
+    /** One set of lights for every view (see Lights); views set them in activate(). */
+    this.lights = new Lights(this.scene);
 
     this.raf = 0;
     this.ambientTimer = 0;

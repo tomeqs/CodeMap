@@ -76,9 +76,10 @@ export async function launch({ headed = false, args = CHROMIUM_ARGS } = {}) {
   return playwright.chromium.launch({ headless: !headed, args });
 }
 
-/** Opens the viewer and collects page errors and console errors. */
-export async function open(browser, url, { width = 1280, height = 800 } = {}) {
+/** Opens the viewer and collects page errors and console errors; `init` runs in the page before its own scripts. */
+export async function open(browser, url, { width = 1280, height = 800, init } = {}) {
   const page = await browser.newPage({ viewport: { width, height } });
+  if (init) await page.addInitScript(init);
   const errors = [];
   page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
   page.on('console', (message) => {

@@ -82,25 +82,32 @@ export class LayeredView extends GalaxyView {
   // ------------------------------------------------------------------ planes
 
   buildPlanes() {
-    for (const plane of this.planes) {
-      plane.group.traverse((o) => o.material?.dispose());
-      this.planeGroup.remove(plane.group);
-    }
-
     const members = this.layering.layers.map(() => []);
     for (const u of this.units) members[u.layer]?.push(u);
 
+    // Planes (and their materials) stay from build to build and only take the layer's tint: new materials
+    // would be new shaders to compile every time the view is built.
+    this.planePool ??= [];
     this.planes = this.layering.layers.map((layer, index) => {
+      let plane = this.planePool[index];
+      if (!plane) {
+        const material = (opacity) => new MeshBasicNodeMaterial({ transparent: true, opacity, side: DoubleSide, depthWrite: false });
+        const fill = new Mesh(circle, material(0.075));
+        const rim = new Mesh(ring, material(0.5));
+        fill.rotation.x = rim.rotation.x = -Math.PI / 2;
+        fill.raycast = rim.raycast = () => {}; // planes are scenery, not pickable
+        const group = new Group();
+        group.add(fill, rim);
+        plane = this.planePool[index] = { group, fill, rim };
+      }
+
       const tint = new Color(layer.color ?? '#6ea8ff');
-      const fill = new Mesh(circle, new MeshBasicNodeMaterial({ color: tint, transparent: true, opacity: 0.075, side: DoubleSide, depthWrite: false }));
-      const rim = new Mesh(ring, new MeshBasicNodeMaterial({ color: tint, transparent: true, opacity: 0.5, side: DoubleSide, depthWrite: false }));
-      fill.rotation.x = rim.rotation.x = -Math.PI / 2;
-      fill.raycast = rim.raycast = () => {}; // planes are scenery, not pickable
-      const group = new Group();
-      group.add(fill, rim);
-      this.planeGroup.add(group);
-      return { group, index, layer, members: members[index], radius: 40, center: new Vector3() };
+      plane.fill.material.color.copy(tint);
+      plane.rim.material.color.copy(tint);
+      this.planeGroup.add(plane.group);
+      return { group: plane.group, index, layer, members: members[index], radius: 40, center: new Vector3() };
     });
+    for (const unused of this.planePool.slice(this.planes.length)) this.planeGroup.remove(unused.group);
     this.updatePlanes();
   }
 
@@ -153,6 +160,11 @@ export class LayeredView extends GalaxyView {
     const halfHeight = (max.y - min.y) / 2 + 20;
     const halfWidth = Math.max(max.x - min.x, max.z - min.z) / 2;
     this.fitSphere(center, Math.max(halfHeight * 1.15, halfWidth * 0.85, 40), animate, 1);
+  }
+
+  dispose() {
+    for (const plane of this.planePool ?? []) plane.group.traverse((o) => o.material?.dispose());
+    super.dispose();
   }
 
   extraLabels() {
