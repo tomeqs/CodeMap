@@ -103,6 +103,8 @@ export class GalaxyView {
   }
 
   activate() {
+    this.active = true;
+    this.labelKey = null;
     this.stage.scene.add(this.group);
     // The camera showed another view until now: whatever this one builds next is framed (see build()).
     this.builtIds = null;
@@ -117,9 +119,11 @@ export class GalaxyView {
   }
 
   deactivate() {
+    this.active = false;
     this.stage.scene.remove(this.group);
     this.stage.controls.autoRotate = false;
     this.labels.clear();
+    this.labelKey = null;
     this.stage.invalidate();
   }
 
@@ -128,13 +132,15 @@ export class GalaxyView {
     Object.assign(this.options, options);
     this.stage.controls.autoRotate = this.options.autoRotate;
     if (flowChanged && this.links?.length) this.recolorLines(); // the dashes follow
-    this.refreshParticles();
+    // A view off screen gets its particles when it is built again.
+    if (this.active) this.refreshParticles();
     this.stage.invalidate();
   }
 
   // ------------------------------------------------------------------ build
 
   build(units, links, state, ghosts = []) {
+    if (this.keepLayout && this.refresh(units, links, state, ghosts)) return;
     this.savePositions();
     const shown = this.builtIds ?? new Set(); // what the last build put on screen
     this.state = state;
@@ -200,6 +206,47 @@ export class GalaxyView {
     }
 
     this.builtIds = new Set(this.units.map((u) => u.id));
+  }
+
+  /**
+   * A map loaded again with the units and links that are on screen (a save that changed no structure): they take
+   * the new nodes, sizes, colours and weights where they are. No new layout, nothing unfolds, and the selection
+   * and the camera stay. False when anything else changed: then the map is built anew.
+   */
+  refresh(units, links, state, ghosts = []) {
+    const all = [...units.map((n) => ({ node: n, ghost: false })), ...ghosts.map((n) => ({ node: n, ghost: true }))];
+    if (!this.builtIds || !this.layout || all.length !== this.units.length || state.level !== this.state?.level) return false;
+    const shape = (node) => KIND_SHAPES[node.kind] ?? 'sphere';
+    for (let i = 0; i < all.length; i++) {
+      const u = this.units[i];
+      if (u.id !== all[i].node.id || u.ghost !== all[i].ghost || shape(u.node) !== shape(all[i].node)) return false;
+    }
+
+    const shown = links.filter((l) => this.byId.has(l.source) && this.byId.has(l.target));
+    if (shown.length !== this.links.length || shown.some((l, i) => l.source !== this.links[i].source || l.target !== this.links[i].target)) return false;
+    if (!this.sameArrangement()) return false;
+
+    this.state = state;
+    all.forEach(({ node, ghost }, i) => {
+      const u = this.units[i];
+      u.node = node;
+      u.r = this.radiusFor(node, state, ghost);
+      this.setScale(u);
+    });
+    for (const mesh of this.meshes) uploadAll(mesh.geometry.attributes.aScale);
+    this.coronas.flushRadii();
+    this.links = shown.map((l) => ({ ...l, s: this.byId.get(l.source), t: this.byId.get(l.target) }));
+    this.indexUnitLinks();
+    this.recolor();
+    this.labelOrder = [...this.units].sort((a, b) => labelRank(b) - labelRank(a));
+    this.refreshParticles();
+    this.stage.invalidate();
+    return true;
+  }
+
+  /** Whether the units may stay where they are for the data of this build (the layered views: the same layers). */
+  sameArrangement() {
+    return true;
   }
 
   /** Every unit knows the indices of its links (hover updates only those). */
@@ -404,7 +451,13 @@ export class GalaxyView {
       this.store.upload();
     }
 
+    this.moved();
     this.stage.invalidate();
+  }
+
+  /** Units changed place: what follows them on screen (labels) is laid out again. */
+  moved() {
+    this.positionsVersion = (this.positionsVersion ?? 0) + 1;
   }
 
   stopLayout() {
@@ -445,8 +498,14 @@ export class GalaxyView {
       this.halo.scale.setScalar(halo.r * 3.6 * pulse);
     }
 
-    if (this.options.labels && !this.store.introRunning) this.renderLabels();
-    else this.labels.clear();
+    if (this.options.labels && !this.store.introRunning) {
+      // Laying the labels out is thousands of projections: only when the camera, the units or the selection moved.
+      if (busy || this.labelsChanged()) this.renderLabels();
+    } else {
+      this.labels.clear();
+      this.labelKey = null;
+    }
+
     return busy || (halo || this.particles.count || this.linkMesh.flowing ? 'ambient' : false);
   }
 
@@ -462,6 +521,7 @@ export class GalaxyView {
 
     this.coronas.flushRadii();
 
+    this.moved();
     this.stage.invalidate();
   }
 
@@ -646,12 +706,13 @@ export class GalaxyView {
     const h = this.highlight;
     let selected;
     let calm = []; // the quiet flow of a living map at rest
-    if (h) selected = this.links.filter((_, i) => h.links.has(i));
-    else if (this.hovered) selected = this.links.filter((l) => l.s === this.hovered || l.t === this.hovered);
+    const byIndex = (indices) => [...indices].sort((a, b) => a - b).map((i) => this.links[i]).filter(Boolean);
+    if (h) selected = byIndex(h.links);
+    else if (this.hovered) selected = byIndex(new Set(this.hovered.linkIndices ?? []));
     else if (this.options.flowAll) selected = this.links;
     else {
-      selected = this.links.filter((l) => l.violation);
-      if (this.stage.motion === 'living') calm = this.strongestLinks().filter((l) => !l.violation);
+      selected = this.violations();
+      if (this.stage.motion === 'living') calm = this.calmPaths(this.options.particles);
     }
 
     // The GPU animates them all; only the budget for very large selections is limited.
@@ -664,14 +725,35 @@ export class GalaxyView {
       speed: 0.28 + Math.random() * 0.12,
       color: linkColor(l).clone().multiplyScalar(1.8),
     })) : [];
-    if (density > 0) {
-      for (const l of calm) {
-        paths.push({ source: l.s.index, target: l.t.index, count: particlesPerLink(1, density), speed: 0.12 + Math.random() * 0.08, color: linkColor(l).clone().multiplyScalar(1.5) });
-      }
-    }
-
+    if (density > 0) paths.push(...calm);
     this.particles.setPaths(paths);
     this.stage.invalidate();
+  }
+
+  /** The links that are problems (they always flow); kept per build. */
+  violations() {
+    if (this.violating?.links !== this.links) this.violating = { links: this.links, list: this.links.filter((l) => l.violation) };
+    return this.violating.list;
+  }
+
+  /**
+   * The quiet flow of a living map at rest, along its heaviest links. Kept per build, with each path's speed and
+   * phase: hovering a unit and leaving it brings the same flow back, not one that jumps.
+   */
+  calmPaths(density) {
+    if (this.calm?.links !== this.links || this.calm.density !== density) {
+      const paths = density > 0 ? this.strongestLinks().filter((l) => !l.violation).map((l) => ({
+        source: l.s.index,
+        target: l.t.index,
+        count: particlesPerLink(1, density),
+        speed: 0.12 + Math.random() * 0.08,
+        phase: Math.random(),
+        color: linkColor(l).clone().multiplyScalar(1.5),
+      })) : [];
+      this.calm = { links: this.links, density, paths };
+    }
+
+    return this.calm.paths;
   }
 
   /** The heaviest links (about the top 12%, at most 1500), for the quiet flow at rest; kept per build. */
@@ -683,6 +765,21 @@ export class GalaxyView {
   }
 
   // ------------------------------------------------------------------ labels
+
+  /** Whether anything the labels depend on changed since they were last laid out (and remembers the new state). */
+  labelsChanged() {
+    const stage = this.stage;
+    if (stage.stereo) return true; // per eye, with the head's movement
+    const { position, quaternion, fov, aspect } = stage.camera;
+    const key = [
+      position.x, position.y, position.z, quaternion.x, quaternion.y, quaternion.z, quaternion.w, fov, aspect,
+      stage.width, stage.height, this.positionsVersion, this.highlight, this.hovered, this.labelOrder, this.labelText,
+    ];
+    const last = this.labelKey;
+    if (last && key.every((value, i) => value === last[i])) return false;
+    this.labelKey = key;
+    return true;
+  }
 
   renderLabels() {
     const items = [];

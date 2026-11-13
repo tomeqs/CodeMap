@@ -281,7 +281,7 @@ public sealed class JobManager : IDisposable
     private void OnSourceChanged(object sender, FileSystemEventArgs e)
     {
         var root = _watchRoot;
-        if (!IsRelevant(e.FullPath, root) && !(e is RenamedEventArgs r && IsRelevant(r.OldFullPath, root))) return;
+        if (!SourceChangeFilter.IsRelevant(e, LanguageRegistry.Default, root)) return;
         _debounce?.Change(1200, Timeout.Infinite);
     }
 

@@ -73,6 +73,7 @@ class App {
    */
   load(doc, { preserve = false } = {}) {
     if (preserve && this.model && this.state) return this.reload(doc);
+    this.tooltipFor = null;
     const model = perf.time('model', () => new CodeModel(doc));
     this.view?.deactivate();
     // A new graph gets new views: free the GPU memory of the old ones.
@@ -175,11 +176,16 @@ class App {
       this.details.hide();
     }
 
-    for (const view of [this.galaxy, this.layers, this.diView, this.flowView, this.zoomView]) view.userMoved = true; // keep the camera where the user left it
+    // The camera stays where the user left it: a view they moved keeps it (userMoved), one they did not is framed
+    // again when its layout settles. Units and links that are the same stay where they are (keepLayout).
+    const layouts = [this.galaxy, this.layers, this.diView, this.flowView];
+    for (const view of layouts) view.keepLayout = true;
     this.city.keepCamera = true;
     this.matrix.keepCamera = true;
+    this.tooltipFor = null;
     this.sidebar.render();
     this.rebuild();
+    for (const view of layouts) view.keepLayout = false;
     this.city.keepCamera = false;
     this.matrix.keepCamera = false;
     if (this.selection) this.details.show(model.get(this.selection.nodeId), this.selection.unitId ? model.get(this.selection.unitId)?.level : undefined);
@@ -244,6 +250,11 @@ class App {
     document.getElementById('btn-reanalyze').disabled = !project;
     document.getElementById('btn-live').disabled = !project;
     this.setWatching(this.watchedPath);
+  }
+
+  /** Whether the project at this path is the one on screen (live updates of another one are not shown). */
+  showsProject(path) {
+    return !!this.serverProject && samePath(path, this.serverProject.path);
   }
 
   /** The server watches at most one project; it only counts as "live" when it is the one on screen. */
@@ -1054,8 +1065,9 @@ class App {
       }
 
       if (!this.model) return;
-      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement;
-      if (typing) return;
+      // Plain keys only: Ctrl/Cmd+C copies, Ctrl+1 is the editor's, and text is typed in inputs and text areas.
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement || e.target?.isContentEditable;
+      if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === '/') {
         e.preventDefault();
         document.getElementById('search').focus();
@@ -1150,9 +1162,13 @@ class App {
     this.stage.canvas.style.cursor = id ? 'pointer' : '';
     if (!id) {
       this.tooltip.classList.add('hidden');
+      this.tooltipFor = null;
       return;
     }
 
+    if (this.tooltipFor === id) return this.placeTooltip(e);
+    this.tooltipFor = id;
+    this.tooltipSize = null;
     const node = this.model.get(id);
     const m = node.metrics;
     const parts = [];
@@ -1174,6 +1190,8 @@ class App {
 
   /** Matrix: the dependency under the pointer. */
   showCellTooltip(cell, e) {
+    this.tooltipFor = null;
+    this.tooltipSize = null;
     const kindColorOf = cell.upward ? '#ff6b6b' : EDGE_KINDS[cell.kind]?.color ?? '#9fb3c8';
     clear(this.tooltip).append(
       h('div', { class: 't-kind', style: { color: kindColorOf } }, cell.upward ? 'dependency · against the layers' : 'dependency'),
@@ -1185,8 +1203,10 @@ class App {
 
   placeTooltip(e) {
     this.tooltip.classList.remove('hidden');
-    const x = Math.min(e.clientX + 16, window.innerWidth - this.tooltip.offsetWidth - 8);
-    const y = Math.min(e.clientY + 16, window.innerHeight - this.tooltip.offsetHeight - 8);
+    // Measured once per content: reading the size on every pointer move forces a layout each time.
+    const size = (this.tooltipSize ??= { width: this.tooltip.offsetWidth, height: this.tooltip.offsetHeight });
+    const x = Math.min(e.clientX + 16, window.innerWidth - size.width - 8);
+    const y = Math.min(e.clientY + 16, window.innerHeight - size.height - 8);
     this.tooltip.style.left = x + 'px';
     this.tooltip.style.top = y + 'px';
   }

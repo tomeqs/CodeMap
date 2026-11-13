@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const vscode = require('vscode');
@@ -169,25 +170,32 @@ class CodeMapController {
     this.readyTimer = setTimeout(() => {
       if (this.panel === panel && !this.ready && !this.fatal) this.offerBrowser('The map did not start in this window.');
     }, READY_TIMEOUT_MS);
-    panel.webview.onDidReceiveMessage((message) => this.onMessage(message), null, this.context.subscriptions);
+    // What the panel subscribes to goes with the panel (not kept until the extension is deactivated).
+    const subscriptions = [];
+    panel.webview.onDidReceiveMessage((message) => this.onMessage(message), null, subscriptions);
     panel.onDidDispose(() => {
+      for (const subscription of subscriptions.splice(0)) subscription.dispose();
       clearTimeout(this.readyTimer);
+      clearTimeout(this.saveTimer);
+      this.pending = false;
       this.running?.abort();
       this.panel = null;
       this.ready = false;
       this.doc = null;
       this.status.hide();
       this.resolveLoaded(null);
-    }, null, this.context.subscriptions);
+    }, null, subscriptions);
     this.updateStatus();
   }
 
   send(message) {
     if (!this.panel) return;
     if (!this.ready) {
-      // only the latest graph matters
-      if (message.type === 'load') this.queue = this.queue.filter((m) => m.type !== 'load');
-      this.queue.push(message);
+      // Only the latest graph matters. It takes the place of the one that waits: what was asked of the map after
+      // that one (reveal, call flow) still comes after a graph, not before the first.
+      const waiting = message.type === 'load' ? this.queue.findIndex((m) => m.type === 'load') : -1;
+      if (waiting >= 0) this.queue[waiting] = message;
+      else this.queue.push(message);
       return;
     }
 
@@ -281,28 +289,30 @@ class CodeMapController {
       return;
     }
 
-    const settings = this.settings;
-    const analyzer = resolveAnalyzer({
-      extensionPath: this.context.extensionPath,
-      analyzerPath: settings.get('analyzerPath'),
-      dotnetPath: settings.get('dotnetPath'),
-    });
-    const options = {
-      includeTests: settings.get('includeTests', true),
-      includeExternal: settings.get('includeExternal', false),
-      gitHistory: settings.get('gitHistory', true),
-      nodePath: settings.get('nodePath'),
-      pythonPath: settings.get('pythonPath'),
-      pythonInterpreter: settings.get('pythonPath') ? undefined : await this.python.current(vscode.workspace.workspaceFolders?.[0]?.uri),
-    };
-
+    // Taken before anything is awaited (finding the interpreter can take seconds): a save or a Refresh meanwhile
+    // waits its turn instead of starting an analysis of its own.
     const controller = new AbortController();
     this.running = controller;
-    this.updateStatus();
-    this.send({ type: 'status', text: preserve ? 'Updating the map…' : `Analyzing ${path.basename(target)}…` });
-    this.output.appendLine(`\n[${new Date().toLocaleTimeString()}] ${target} (${analyzer.label})`);
-
     try {
+      const settings = this.settings;
+      const analyzer = resolveAnalyzer({
+        extensionPath: this.context.extensionPath,
+        analyzerPath: settings.get('analyzerPath'),
+        dotnetPath: settings.get('dotnetPath'),
+      });
+      const options = {
+        includeTests: settings.get('includeTests', true),
+        includeExternal: settings.get('includeExternal', false),
+        gitHistory: settings.get('gitHistory', true),
+        nodePath: settings.get('nodePath'),
+        pythonPath: settings.get('pythonPath'),
+        pythonInterpreter: settings.get('pythonPath') ? undefined : await this.python.current(vscode.workspace.workspaceFolders?.[0]?.uri),
+      };
+      if (!this.panel || controller.signal.aborted) return; // the map was closed meanwhile
+
+      this.updateStatus();
+      this.send({ type: 'status', text: preserve ? 'Updating the map…' : `Analyzing ${path.basename(target)}…` });
+      this.output.appendLine(`\n[${new Date().toLocaleTimeString()}] ${target} (${analyzer.label})`);
       const doc = await vscode.window.withProgress(
         { location: preserve ? vscode.ProgressLocation.Window : vscode.ProgressLocation.Notification, title: 'CodeMap', cancellable: !preserve },
         (progress, token) => {
@@ -319,10 +329,21 @@ class CodeMapController {
       );
 
       if (!this.panel || this.target !== target) return;
+      // The same graph as the one on the map (the cached one right after opening, a save that changed nothing the
+      // map shows): the map stays as it is, with no reload.
+      const key = fingerprint(doc);
+      const same = !!this.doc && this.docKey === key;
       this.doc = doc;
-      this.send({ type: 'load', doc, preserve: preserve && this.ready, watching: settings.get('liveUpdate', true) });
+      this.docKey = key;
+      if (same) {
+        this.send({ type: 'status', text: null });
+        this.output.appendLine('The map is up to date.');
+      } else {
+        this.send({ type: 'load', doc, preserve: preserve && this.ready, watching: settings.get('liveUpdate', true) });
+        this.writeCache(doc);
+      }
+
       this.resolveLoaded(doc);
-      this.writeCache(doc);
     } catch (error) {
       if (error.cancelled) {
         this.send({ type: 'status', text: null });
@@ -334,23 +355,50 @@ class CodeMapController {
         vscode.window.showErrorMessage(`CodeMap: ${message.split('\n')[0]}`, 'Show Output').then((choice) => choice && this.output.show());
       }
     } finally {
-      this.running = null;
+      if (this.running === controller) this.running = null;
       this.updateStatus();
-      if (this.pending) {
+      if (this.pending && this.panel) {
         this.pending = false;
         this.analyze({ preserve: true });
       }
     }
   }
 
-  /** Live updates: analyze again shortly after source or project files are saved, created or deleted. */
+  /**
+   * Live updates: analyze again shortly after source or project files are saved, created, deleted, renamed or
+   * moved, alone or as a folder of them.
+   */
   onFileChanged(file) {
-    if (!this.panel || !this.doc || !this.settings.get('liveUpdate', true)) return;
+    if (!this.panel || !this.settings.get('liveUpdate', true)) return;
+    if (!this.doc) {
+      // The first analysis is still running: it may have read the file already, so another one follows it.
+      const relative = this.running && relativeToRoot(targetRoot(this.target), file);
+      if (relative && isSourceFile(relative)) this.pending = true;
+      return;
+    }
+
     const relative = relativeToRoot(this.doc.source?.root, file);
-    if (!relative || !isSourceFile(relative)) return;
+    if (!relative || !(isSourceFile(relative) || this.holdsSources(relative, file))) return;
     this.output.appendLine(`Changed: ${path.basename(file)}`);
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.analyze({ preserve: true }), 900);
+  }
+
+  /** A folder whose change changes the map: one with source files in it, or (gone or moved away) one the map has code from. */
+  holdsSources(relative, file) {
+    const inside = relative.replace(/\\/g, '/').replace(/\/$/, '') + '/';
+    if (NOT_SOURCE.test(inside)) return false;
+    let stat = null;
+    try {
+      stat = fs.statSync(file);
+    } catch {
+      // deleted, or renamed to something else
+    }
+
+    if (stat) return stat.isDirectory() && folderHasSources(file, inside);
+    const fold = (text) => (process.platform === 'win32' ? text.toLowerCase() : text);
+    const prefix = fold(inside);
+    return (this.doc.nodes ?? []).some((node) => typeof node.location?.file === 'string' && fold(node.location.file.replace(/\\/g, '/')).startsWith(prefix));
   }
 
   whenLoaded() {
@@ -376,6 +424,7 @@ class CodeMapController {
       const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (doc?.source?.path !== target) return;
       this.doc = doc;
+      this.docKey = fingerprint(doc);
       this.send({ type: 'load', doc, watching: this.settings.get('liveUpdate', true) });
       this.resolveLoaded(doc);
     } catch {
@@ -459,6 +508,42 @@ function isSourceFile(file) {
   return SOURCE_FILES.test(file) && !NOT_SOURCE.test(file);
 }
 
+/** Whether a folder (`inside`: its path in the analyzed folder, ending in /) holds a source file; a huge folder is taken to. */
+function folderHasSources(folder, inside, budget = { left: 5000 }) {
+  let entries;
+  try {
+    entries = fs.readdirSync(folder, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+
+  for (const entry of entries) {
+    if (budget.left-- <= 0) return true;
+    const name = inside + entry.name;
+    if (entry.isDirectory()) {
+      if (!entry.name.startsWith('.') && !NOT_SOURCE.test(name + '/') && folderHasSources(path.join(folder, entry.name), name + '/', budget)) return true;
+    } else if (isSourceFile(name)) return true;
+  }
+
+  return false;
+}
+
+/** The folder a target is analyzed in: the folder itself, or the one its solution or project file is in. */
+function targetRoot(target) {
+  if (!target) return null;
+  try {
+    return fs.statSync(target).isDirectory() ? target : path.dirname(target);
+  } catch {
+    return path.dirname(target);
+  }
+}
+
+/** What identifies the graph of a map document: everything but when it was made. */
+function fingerprint(doc) {
+  const { generatedAt, ...graph } = doc ?? {};
+  return crypto.createHash('sha1').update(JSON.stringify(graph)).digest('hex');
+}
+
 function activate(context) {
   const python = new PythonInterpreter(vscode);
   const controller = new CodeMapController(context, { python });
@@ -480,6 +565,10 @@ function activate(context) {
     vscode.workspace.onDidSaveTextDocument((document) => controller.onFileChanged(document.uri.fsPath)),
     vscode.workspace.onDidCreateFiles((event) => event.files.forEach((uri) => controller.onFileChanged(uri.fsPath))),
     vscode.workspace.onDidDeleteFiles((event) => event.files.forEach((uri) => controller.onFileChanged(uri.fsPath))),
+    vscode.workspace.onDidRenameFiles((event) => event.files.forEach(({ oldUri, newUri }) => {
+      controller.onFileChanged(oldUri.fsPath);
+      controller.onFileChanged(newUri.fsPath);
+    })),
     vscode.window.registerWebviewPanelSerializer(VIEW_TYPE, {
       // VS Code restarted with the map open: bring it back with the last graph, then refresh it.
       async deserializeWebviewPanel(panel) {
@@ -506,4 +595,4 @@ function extensionVersion(context) {
 
 function deactivate() {}
 
-module.exports = { activate, deactivate, CodeMapController, isSourceFile };
+module.exports = { activate, deactivate, CodeMapController, fingerprint, isSourceFile };

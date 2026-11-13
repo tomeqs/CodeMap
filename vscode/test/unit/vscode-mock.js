@@ -79,6 +79,9 @@ function globToRegExp(glob) {
 function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
   const log = { panels: [], posted: [], opened: [], errors: [], infos: [], warnings: [], clipboard: [], saved: [], external: [], executed: [], commands: new Map(), quickPicks: [] };
   const saveEmitter = new Emitter();
+  const createEmitter = new Emitter();
+  const deleteEmitter = new Emitter();
+  const renameEmitter = new Emitter();
 
   const vscode = {
     Uri,
@@ -177,12 +180,13 @@ function createMock({ workspaceRoot, settings = {}, files = [] } = {}) {
         createDirectory: async () => {},
       },
       onDidSaveTextDocument: (listener) => saveEmitter.event(listener),
-      onDidCreateFiles: () => ({ dispose() {} }),
-      onDidDeleteFiles: () => ({ dispose() {} }),
+      onDidCreateFiles: (listener) => createEmitter.event(listener),
+      onDidDeleteFiles: (listener) => deleteEmitter.event(listener),
+      onDidRenameFiles: (listener) => renameEmitter.event(listener),
     },
   };
 
-  return { vscode, log, saveEmitter };
+  return { vscode, log, saveEmitter, createEmitter, deleteEmitter, renameEmitter };
 }
 
 /** Makes `require('vscode')` return the mock for the code under test. */

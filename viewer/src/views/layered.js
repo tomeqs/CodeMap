@@ -37,6 +37,11 @@ export class LayeredView extends GalaxyView {
     this.buildPlanes();
   }
 
+  /** In place only when every unit stays on its plane. */
+  sameArrangement() {
+    return this.planes.length === this.layering.layers.length && this.units.every((u) => (this.layering.layerOf.get(u.id) ?? 0) === u.layer);
+  }
+
   layerY(index) {
     const count = Math.max(1, this.layering.layers.length);
     return (index - (count - 1) / 2) * this.spacing;

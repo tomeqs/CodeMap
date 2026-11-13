@@ -559,6 +559,171 @@ try {
     });
     await counted.page.close();
 
+    // The editor loads the map again after every analysis: the cached map first and the fresh one a moment later,
+    // then after every save. (A small canvas: without a GPU a frame of 2000 units costs seconds at the default size.)
+    const again = await open(browser, query(big), { width: 640, height: 400 });
+    const load = (change) => again.page.evaluate(async ({ url, change }) => {
+      const doc = await (await fetch(url)).json();
+      if (change === 'one type less') {
+        const type = doc.nodes.findLast((n) => n.kind === 'class');
+        const gone = new Set(doc.nodes.filter((n) => n.id === type.id || n.parent === type.id).map((n) => n.id));
+        doc.nodes = doc.nodes.filter((n) => !gone.has(n.id));
+        doc.edges = doc.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target));
+      }
+
+      window.codemap.load(doc, { preserve: true });
+    }, { url: big, change });
+    const rests = () => again.page.waitForFunction(() => {
+      const app = window.codemap;
+      return app?.view?.units?.length && app.view.settled && !app.view.store.introRunning && !app.stage.flight;
+    }, null, { timeout: 120000, polling: 100 });
+
+    await test('a map loaded again before its first layout has settled is framed all the same', async () => {
+      const p = again.page;
+      await p.waitForFunction(() => window.codemap?.view?.units?.length, null, { timeout: 60000, polling: 20 });
+      await p.waitForTimeout(300);
+      assert.equal(await p.evaluate(() => window.codemap.view.settled), false, 'the first layout is still running');
+      await load();
+      await rests();
+      const framed = await p.evaluate(() => {
+        const app = window.codemap;
+        app.stage.camera.updateMatrixWorld();
+        let worst = 0;
+        for (const u of app.view.units) {
+          const at = app.view.positionOf(u.id).project(app.stage.camera);
+          worst = Math.max(worst, Math.abs(at.x), Math.abs(at.y));
+        }
+
+        return { worst, userMoved: app.view.userMoved };
+      });
+      assert.equal(framed.userMoved, false, 'nobody moved the camera');
+      assert.ok(framed.worst <= 1.1, `a unit is ${framed.worst.toFixed(2)} half views from the middle: the camera stayed in the starting ball`);
+    });
+
+    await test('the same graph loaded again stays as it is (no new layout, the selection stays); another one is laid out', async () => {
+      const p = again.page;
+      await rests();
+      const state = () => p.evaluate(() => {
+        const app = window.codemap;
+        const view = app.view;
+        const unit = view.units[7];
+        return {
+          units: view.units.length,
+          layoutStart: view.layoutStart,
+          at: [unit.x, unit.y, unit.z],
+          selected: view.highlight?.primary ?? null,
+          unfolding: view.store.introRunning,
+          settled: view.settled,
+          newData: unit.node === app.model.get(unit.id),
+        };
+      });
+      await p.evaluate(() => window.codemap.select(window.codemap.view.units[5].id));
+      const before = await state();
+      await load();
+      const same = await state();
+      assert.deepEqual({ ...same, newData: true }, { ...before, newData: true }, 'the map changed although the graph did not');
+      assert.equal(same.newData, true, 'the units show the nodes of the new document');
+      assert.ok(same.selected, 'the selection is still there');
+
+      await load('one type less');
+      const other = await state();
+      assert.equal(other.units, before.units - 1);
+      assert.notEqual(other.layoutStart, before.layoutStart, 'a graph with other units gets a new layout');
+      await rests();
+      await p.evaluate(() => window.codemap.select(null));
+    });
+
+    await test('single-key shortcuts are plain keys: not with Ctrl or Cmd, not in a text area', async () => {
+      const p = again.page;
+      await rests();
+      const shown = () => p.evaluate(() => `${window.codemap.state.view} ${window.codemap.state.level}`);
+      const start = await shown();
+      await p.keyboard.press('Control+c'); // copy
+      await p.keyboard.press('Meta+c');
+      await p.keyboard.press('Control+1'); // the editor's "first editor group"
+      await p.keyboard.press('Alt+m');
+      assert.equal(await shown(), start, 'a shortcut with a modifier changed the map');
+      await p.evaluate(() => {
+        const area = document.createElement('textarea');
+        area.id = 'smoke-area';
+        document.body.append(area);
+        area.focus();
+      });
+      await p.keyboard.press('c');
+      assert.equal(await shown(), start, 'typing in a text area changed the map');
+      await p.evaluate(() => document.getElementById('smoke-area').remove());
+      await p.keyboard.press('c');
+      assert.match(await shown(), /^city /, 'the plain key still works');
+      await p.keyboard.press('g');
+      assert.match(await shown(), /^galaxy /);
+      await rests();
+    });
+
+    await test('labels are laid out when the camera, the units or the selection change, not on every frame', async () => {
+      const p = again.page;
+      await rests();
+      await p.evaluate(() => {
+        const app = window.codemap;
+        app.setMotion('living'); // the sky twinkles: frames keep coming
+        const labels = app.view.labels;
+        const render = labels.render.bind(labels);
+        window.__labelLayouts = 0;
+        labels.render = (...args) => {
+          window.__labelLayouts++;
+          return render(...args);
+        };
+      });
+      await rests();
+      const count = () => p.evaluate(() => ({ layouts: window.__labelLayouts, frames: window.codemap.perf.renders }));
+      const frames = async (n) => {
+        const from = (await count()).frames;
+        await p.waitForFunction((to) => window.codemap.perf.renders >= to, from + n, { timeout: 120000, polling: 50 });
+      };
+      await frames(2); // whatever was still pending
+      const idle = await count();
+      await frames(4);
+      const later = await count();
+      assert.ok(later.frames >= idle.frames + 4, 'frames are drawn');
+      assert.equal(later.layouts - idle.layouts, 0, 'labels were laid out again although nothing they depend on changed');
+
+      await p.evaluate(() => window.codemap.view.setHovered(window.codemap.view.units[3].id));
+      await frames(2);
+      const hovered = await count();
+      assert.ok(hovered.layouts > later.layouts, 'a hover lays the labels out again');
+      await p.evaluate(() => window.codemap.view.setHovered(null));
+      await p.mouse.move(320, 200);
+      await p.mouse.down();
+      await p.mouse.move(350, 215, { steps: 3 });
+      await p.mouse.up();
+      await frames(2);
+      assert.ok((await count()).layouts > hovered.layouts, 'turning the camera lays the labels out again');
+    });
+
+    await test('hovering a unit and leaving it brings the same quiet flow back', async () => {
+      const p = again.page;
+      await rests();
+      await p.evaluate(() => (window.codemap.setMotion('living'), window.codemap.select(null), window.codemap.view.setHovered(null)));
+      const flow = () => p.evaluate(() => {
+        const particles = window.codemap.view.particles;
+        return { count: particles.count, motion: Array.from(particles.motion.array.slice(0, 60)), ends: Array.from(particles.ends.array.slice(0, 60)) };
+      });
+      const rest = await flow();
+      assert.ok(rest.count > 0, 'a living map at rest has a quiet flow');
+      const linked = await p.evaluate(() => {
+        const view = window.codemap.view;
+        const unit = view.units.find((u) => u.linkIndices.length > 1);
+        view.setHovered(unit.id);
+        const ends = Array.from(view.particles.ends.array.slice(0, view.particles.count * 2));
+        return { index: unit.index, links: unit.linkIndices.length, strangers: ends.filter((_, i) => i % 2 === 0).filter((source, i) => source !== unit.index && ends[i * 2 + 1] !== unit.index).length, count: view.particles.count };
+      });
+      assert.ok(linked.count > 0, 'the hovered unit\'s links flow');
+      assert.equal(linked.strangers, 0, 'particles on links that are not the hovered unit\'s');
+      await p.evaluate(() => window.codemap.view.setHovered(null));
+      assert.deepEqual(await flow(), rest, 'the quiet flow came back as another one');
+      assert.deepEqual(again.errors, []);
+    });
+    await again.page.close();
+
     if (renderer === 'webgpu') {
       // The compute-shader layout (forced: the CI adapter is a software one, where it is not chosen by itself).
       const gpu = await open(browser, query('/sample.codemap.json') + '&layout=gpu');

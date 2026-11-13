@@ -213,6 +213,36 @@ public class RuntimeAndDetectionTests
         Assert.False(SourceChangeFilter.IsRelevant(Path.Combine(ws.Root, "dist-info.egg-info", "x.py"), registry, ws.Root));
     }
 
+    [Fact]
+    public void A_folder_of_sources_renamed_or_created_is_a_change_of_the_sources()
+    {
+        using var ws = new TestWorkspace()
+            .File("pyproject.toml", "")
+            .File("src/ordering/order.py", "")                 // renamed from src/orders: one event, for the folder
+            .File("docs/notes.md", "")
+            .File("env/pyvenv.cfg", "")
+            .File("env/lib/tools/site.py", "")
+            .File("node_modules/pkg/index.py", "");
+        Directory.CreateDirectory(Path.Combine(ws.Root, "empty"));
+        var registry = new LanguageRegistry(new ILanguageAnalyzer[] { new Languages.CSharp.CSharpAnalyzer(), Python(ws, withoutMarker: true) });
+        bool Relevant(FileSystemEventArgs e) => SourceChangeFilter.IsRelevant(e, registry, ws.Root);
+        FileSystemEventArgs Event(WatcherChangeTypes type, string folder, string name) => new(type, Path.Combine(ws.Root, folder), name);
+
+        Assert.True(Relevant(new RenamedEventArgs(WatcherChangeTypes.Renamed, Path.Combine(ws.Root, "src"), "ordering", "orders")));
+        Assert.True(Relevant(Event(WatcherChangeTypes.Created, "", "src")));                      // through its subfolders
+        Assert.False(Relevant(Event(WatcherChangeTypes.Changed, "src", "ordering")));             // a folder's own "changed": its files report themselves
+        Assert.False(Relevant(Event(WatcherChangeTypes.Created, "", "empty")));
+        Assert.False(Relevant(Event(WatcherChangeTypes.Created, "", "docs")));                    // nothing a language reads
+        Assert.False(Relevant(Event(WatcherChangeTypes.Created, "", "node_modules")));
+        Assert.False(Relevant(Event(WatcherChangeTypes.Created, "node_modules", "pkg")));
+        Assert.False(Relevant(Event(WatcherChangeTypes.Created, "env/lib", "tools")));            // inside a virtual environment
+        Assert.False(Relevant(Event(WatcherChangeTypes.Deleted, "src", "gone")));
+        // Files as before, a renamed one under either name.
+        Assert.True(Relevant(Event(WatcherChangeTypes.Changed, "src/ordering", "order.py")));
+        Assert.True(Relevant(new RenamedEventArgs(WatcherChangeTypes.Renamed, Path.Combine(ws.Root, "src", "ordering"), "order.txt", "order.py")));
+        Assert.False(Relevant(Event(WatcherChangeTypes.Changed, "docs", "notes.md")));
+    }
+
     /// <summary>A Python-like language from a manifest alone (no runtime needed to detect files).</summary>
     private static ExternalProcessAnalyzer Python(TestWorkspace ws, bool withoutMarker)
     {

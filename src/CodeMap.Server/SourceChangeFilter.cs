@@ -12,25 +12,74 @@ public static class SourceChangeFilter
     /// A change worth a new analysis: a file some language reads, outside build output, dependencies and hidden
     /// folders (.git…) of the watched <paramref name="root"/> (the root itself may be anywhere, ~/.local/… too).
     /// </summary>
-    public static bool IsRelevant(string path, LanguageRegistry registry, string? root = null)
+    public static bool IsRelevant(string path, LanguageRegistry registry, string? root = null) =>
+        registry.Languages.Any(l => l.IsWatched(path)) && !InSkippedFolder(path, Filter(registry), root);
+
+    /// <summary>
+    /// A file system event worth a new analysis: a file some language reads (a renamed one under its old or its new
+    /// name), or a folder with such files in it that was created, renamed or moved in. Renaming a folder raises one
+    /// event, for the folder: none for the files in it.
+    /// </summary>
+    public static bool IsRelevant(FileSystemEventArgs e, LanguageRegistry registry, string? root = null)
     {
-        if (!registry.Languages.Any(l => l.IsWatched(path))) return false;
-        var filter = Filter(registry);
+        if (IsRelevant(e.FullPath, registry, root)) return true;
+        if (e is RenamedEventArgs renamed && IsRelevant(renamed.OldFullPath, registry, root)) return true;
+        return e.ChangeType is WatcherChangeTypes.Created or WatcherChangeTypes.Renamed && HoldsSources(e.FullPath, registry, root);
+    }
+
+    /// <summary>Inside build output, dependencies, a hidden folder or a folder skipped by a marker file in it (a virtual environment).</summary>
+    private static bool InSkippedFolder(string path, FolderFilter filter, string? root)
+    {
         var inside = root != null ? Path.GetRelativePath(root, path) : path;
         var parts = inside.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.SkipLast(1).Any(filter.SkipsName)) return false;
+        if (parts.SkipLast(1).Any(filter.SkipsName)) return true;
 
-        // A folder skipped by a marker file in it (a virtual environment): its folders inside the root.
-        if (root == null) return true;
+        // A folder skipped by a marker file in it: its folders inside the root.
+        if (root == null) return false;
         var dir = Path.GetDirectoryName(Path.GetFullPath(path));
         var top = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         while (dir != null && dir.Length > top.Length && dir.StartsWith(top, StringComparison.OrdinalIgnoreCase))
         {
-            if (filter.Skips(dir)) return false;
+            if (filter.Skips(dir)) return true;
             dir = Path.GetDirectoryName(dir);
         }
 
-        return true;
+        return false;
+    }
+
+    /// <summary>A folder that is read, with a file some language reads somewhere in it. A huge one is taken to have one.</summary>
+    private static bool HoldsSources(string folder, LanguageRegistry registry, string? root)
+    {
+        if (!Directory.Exists(folder)) return false;
+        var filter = Filter(registry);
+        // It counts as a file in it would.
+        if (InSkippedFolder(Path.Combine(folder, "_"), filter, root)) return false;
+        var budget = 5000;
+        var pending = new Stack<string>();
+        pending.Push(folder);
+        while (pending.Count > 0)
+        {
+            var dir = pending.Pop();
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(dir))
+                {
+                    if (--budget < 0 || registry.Languages.Any(l => l.IsWatched(file))) return true;
+                }
+
+                foreach (var sub in Directory.EnumerateDirectories(dir))
+                {
+                    if (--budget < 0) return true;
+                    if (!filter.Skips(sub)) pending.Push(sub);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // gone again, or not ours to read
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Folders no language reads: build output, dependencies, virtual environments.</summary>
