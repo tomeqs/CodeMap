@@ -92,7 +92,10 @@ internal static class DependencyInjectionAnalysis
             // Instances and factories are built by user code (unless the container calls them); forwards resolve through another registration.
             if (!rules.Constructs(registration.Public)) continue;
             var implementation = registration.Public.Implementation ?? (registration.Public.External ? null : registration.Public.Service);
-            if (implementation != null) consumers.TryAdd(implementation, registration.Public.Lifetime);
+            // A class registered more than once is checked as the longest-lived of its registrations: a singleton
+            // must not hold what lives shorter, whatever else the class is registered as.
+            if (implementation != null && (!consumers.TryGetValue(implementation, out var known) || Longer(registration.Public.Lifetime, known)))
+                consumers[implementation] = registration.Public.Lifetime;
         }
 
         // Types the framework activates without a registration.
@@ -145,6 +148,12 @@ internal static class DependencyInjectionAnalysis
 
         static string? ImplementationOf(Registration r) => r.Public.Implementation ?? (r.Public.External ? null : r.Public.Service);
 
+        static bool Longer(string lifetime, string than)
+        {
+            static int Rank(string l) => l switch { DiRegistrationDetector.Singleton => 3, DiRegistrationDetector.Scoped => 2, DiRegistrationDetector.Transient => 1, _ => 0 };
+            return Rank(lifetime) > Rank(than);
+        }
+
         // The container's own rules may change lifetimes (NestJS: request scope spreads to consumers).
         var effective = new Dictionary<string, string>(consumers, StringComparer.Ordinal);
         var wiring = consumers.Keys
@@ -157,7 +166,15 @@ internal static class DependencyInjectionAnalysis
             .ToList();
         rules.Adjust(effective, wiring, di.Issues, Name);
 
-        string LifetimeOf(Registration r) => ImplementationOf(r) is { } id && effective.TryGetValue(id, out var lifetime) ? lifetime : r.Public.Lifetime;
+        // A registration lives as long as it says (the last one of a service is the one injected, with its own
+        // lifetime). Two things say otherwise: the container's rules changed the class' lifetime (NestJS: request
+        // scope spreads), and a registration that only forwards to another one lives as long as that one.
+        string LifetimeOf(Registration r)
+        {
+            if (ImplementationOf(r) is not { } id || !effective.TryGetValue(id, out var lifetime)) return r.Public.Lifetime;
+            var changedByRules = !consumers.TryGetValue(id, out var declared) || declared != lifetime;
+            return changedByRules || r.Public.Kind == "forward" ? lifetime : r.Public.Lifetime;
+        }
 
         di.Registrations.AddRange(registrations.Select(r => r.Public));
 

@@ -103,6 +103,32 @@ public class SimulatorTests
     }
 
     [Fact]
+    public void Operations_of_one_batch_see_the_tree_the_earlier_ones_left()
+    {
+        using var ws = new TestWorkspace().Project("App").Project("Lib");
+        ws.File("App/A.cs", "namespace App.Orders { public class Order { public int Total() => 1; } public class Line { } } namespace App.Billing { public class Invoice { } }");
+        ws.File("Lib/L.cs", "namespace Lib { public class Tool { } }");
+        var raw = GraphPipeline.BuildRaw(ws.Root, NoGit, LanguageRegistry.BuiltIn);
+        var orders = raw.Graph.Nodes.Single(n => n.Kind == NodeKinds.Namespace && n.Name == "App.Orders").Id;
+        var billing = raw.Graph.Nodes.Single(n => n.Kind == NodeKinds.Namespace && n.Name == "App.Billing").Id;
+        var lib = raw.Graph.Nodes.Single(n => n.Kind == NodeKinds.Project && n.Name == "Lib").Id;
+
+        // Order moves into App.Billing, then App.Billing moves to Lib: Order and its members go along, Line stays.
+        var result = Simulator.Run(raw, new SimOp[] { new MoveTypeOp("T:App.Orders.Order", billing), new MoveNamespaceOp(billing, lib) });
+
+        var moved = result.Graph.Nodes.Single(n => n.Id == "T:App.Orders.Order");
+        Assert.Equal((billing, lib), (moved.Parent, moved.Project));
+        Assert.Equal(lib, result.Graph.Nodes.Single(n => n.Id == "T:App.Billing.Invoice").Project);
+        Assert.All(result.Graph.Nodes.Where(n => n.Parent == "T:App.Orders.Order"), member => Assert.Equal(lib, member.Project));
+        Assert.NotEmpty(result.Graph.Nodes.Where(n => n.Parent == "T:App.Orders.Order"));
+        Assert.NotEqual(lib, result.Graph.Nodes.Single(n => n.Id == "T:App.Orders.Line").Project);
+        // Removing what was just moved takes its members with it.
+        var removed = Simulator.Run(raw, new SimOp[] { new MoveTypeOp("T:App.Orders.Order", billing), new RemoveNodeOp(billing) });
+        Assert.DoesNotContain(removed.Graph.Nodes, n => n.Id.Contains("App.Orders.Order", StringComparison.Ordinal) || n.Id == "T:App.Billing.Invoice");
+        Assert.Contains(removed.Graph.Nodes, n => n.Id == "T:App.Orders.Line");
+    }
+
+    [Fact]
     public void Splitting_extracting_merging_and_removing_change_the_structure_as_asked()
     {
         using var ws = new TestWorkspace().Project("App");

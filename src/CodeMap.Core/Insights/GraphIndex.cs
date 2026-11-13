@@ -51,6 +51,8 @@ public sealed class GraphIndex
     private readonly Dictionary<string, Dictionary<(string, string), Dependency>> _dependencies = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (ILookup<string, Dependency> Out, ILookup<string, Dependency> In)> _adjacency = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string?> _typeOf = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Dictionary<CycleInfo, List<Dependency>>> _insideCycles = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ILookup<string, GraphNode>> _typesIn = new(StringComparer.Ordinal);
     private readonly object _gate = new();
     private readonly HashSet<string> _testProjects;
     private ILookup<string, GraphNode>? _byName;
@@ -175,6 +177,53 @@ public sealed class GraphIndex
 
     /// <summary>What depends on a node at a level.</summary>
     public IEnumerable<Dependency> DependentsOf(string id, string level) => Adjacency(level).In[id];
+
+    /// <summary>
+    /// The dependencies inside a cycle of this graph (<see cref="AnalysisResult.Cycles"/>), in the order of
+    /// <see cref="Dependencies"/>; null for a cycle that is not this graph's. All cycles of a level are worked out
+    /// in one pass over its dependencies (asking per cycle looked at every dependency for every cycle).
+    /// </summary>
+    public IReadOnlyList<Dependency>? Inside(CycleInfo cycle)
+    {
+        lock (_gate)
+        {
+            if (!_insideCycles.TryGetValue(cycle.Level, out var byCycle))
+            {
+                byCycle = new Dictionary<CycleInfo, List<Dependency>>(ReferenceEqualityComparer.Instance);
+                var cycleOf = new Dictionary<string, CycleInfo>(StringComparer.Ordinal);
+                foreach (var other in Graph.Analysis.Cycles)
+                {
+                    if (other.Level != cycle.Level) continue;
+                    byCycle[other] = new List<Dependency>();
+                    foreach (var id in other.Nodes) cycleOf[id] = other;
+                }
+
+                foreach (var dependency in DependenciesLocked(cycle.Level).Values)
+                {
+                    if (cycleOf.TryGetValue(dependency.Source, out var from) && cycleOf.TryGetValue(dependency.Target, out var to) && ReferenceEquals(from, to))
+                        byCycle[from].Add(dependency);
+                }
+
+                _insideCycles[cycle.Level] = byCycle;
+            }
+
+            return byCycle.GetValueOrDefault(cycle);
+        }
+    }
+
+    /// <summary>The types a project or namespace holds (in the order of the graph's nodes), from one pass over the nodes per level.</summary>
+    public IEnumerable<GraphNode> TypesIn(string container, string level)
+    {
+        ILookup<string, GraphNode>? lookup;
+        lock (_gate) _typesIn.TryGetValue(level, out lookup);
+        if (lookup == null)
+        {
+            lookup = Graph.Nodes.Where(NodeLevels.IsType).Select(n => (Node: n, In: ContainerOf(n.Id, level))).Where(x => x.In != null).ToLookup(x => x.In!, x => x.Node, StringComparer.Ordinal);
+            lock (_gate) _typesIn[level] = lookup;
+        }
+
+        return lookup[container];
+    }
 
     /// <summary>The dependency between two nodes of one level, if there is one.</summary>
     public Dependency? DependencyBetween(string source, string target, string level) => Dependencies(level).GetValueOrDefault((source, target));

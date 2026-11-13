@@ -18,7 +18,23 @@ public sealed class GitHistory
         public long LastCommitUnix { get; set; }
     }
 
-    public Dictionary<string, FileStats> Files { get; } = new(StringComparer.Ordinal);
+    /// <summary>
+    /// How file paths compare: as the file system does where that is known (Windows ignores case). The paths are those
+    /// git prints, relative to the analyzed folder: nothing depends on how the folder itself was spelled (a drive
+    /// letter in another case, a symbolic link on the way), which made every file a stranger to its own history.
+    /// </summary>
+    public static StringComparer PathComparer { get; } = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+    /// <summary>A file's path as the history has it: relative to the analyzed folder, with forward slashes.</summary>
+    public static string Key(string relativePath)
+    {
+        var path = relativePath.Replace('\\', '/');
+        while (path.StartsWith("./", StringComparison.Ordinal)) path = path[2..];
+        return path;
+    }
+
+    /// <summary>Statistics per file, by <see cref="Key"/>.</summary>
+    public Dictionary<string, FileStats> Files { get; } = new(PathComparer);
     public string? Branch { get; private set; }
     public string? Head { get; private set; }
     public int CommitCount { get; private set; }
@@ -26,7 +42,7 @@ public sealed class GitHistory
     /// <summary>A shallow clone (<c>git clone --depth</c>): the history ends early, so its metrics see only part of it.</summary>
     public bool Shallow { get; private set; }
 
-    /// <summary>Files touched by each commit (absolute paths), newest first. Used for change coupling.</summary>
+    /// <summary>Files touched by each commit (by <see cref="Key"/>), newest first. Used for change coupling.</summary>
     public List<string[]> Commits { get; } = new();
 
     /// <summary>Returns null when <paramref name="directory"/> is not inside a git work tree or git is missing.</summary>
@@ -44,7 +60,8 @@ public sealed class GitHistory
 
         var args = new List<string>
         {
-            "-c", "core.quotepath=off", "log", "--no-merges", "--no-renames", "--numstat",
+            // --relative: paths as seen from the analyzed folder (the way the map's locations are written).
+            "-c", "core.quotepath=off", "log", "--no-merges", "--no-renames", "--numstat", "--relative",
             "--format=@@%H\t%an\t%at", "-n", maxCommits.ToString(CultureInfo.InvariantCulture),
         };
         if (!string.IsNullOrWhiteSpace(since)) args.Add("--since=" + since);
@@ -78,7 +95,7 @@ public sealed class GitHistory
 
             var columns = line.Split('\t');
             if (columns.Length < 3) continue;
-            var path = Path.GetFullPath(Path.Combine(top, columns[2].Trim()));
+            var path = Key(columns[2].Trim());
             commitFiles.Add(path);
             if (!history.Files.TryGetValue(path, out var stats)) history.Files[path] = stats = new FileStats();
             stats.Commits++;

@@ -17,10 +17,9 @@ internal static class GitEnrichment
 
     public static void Apply(CodeGraph graph, GitHistory history, AnalyzerOptions options)
     {
-        var root = graph.Source.Root;
-        ApplyChurn(graph, history, root);
+        ApplyChurn(graph, history);
         GraphMetrics.ComputeHotspots(graph);
-        ChangeCouplingAnalysis.Compute(graph, history, root);
+        ChangeCouplingAnalysis.Compute(graph, history);
         Finish(graph, new GitInfo { Branch = history.Branch, Commit = history.Head, CommitsAnalyzed = history.CommitCount, Since = options.GitSince, Shallow = history.Shallow });
     }
 
@@ -56,14 +55,14 @@ internal static class GitEnrichment
         }
     }
 
-    private static void ApplyChurn(CodeGraph graph, GitHistory history, string root)
+    private static void ApplyChurn(CodeGraph graph, GitHistory history)
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         foreach (var node in graph.Nodes.Where(n => NodeLevels.IsType(n) && !n.External && n.Location != null))
         {
             var files = new[] { node.Location! }.Concat(node.ExtraLocations ?? new List<SourceLocation>())
-                .Select(l => Path.GetFullPath(Path.Combine(root, l.File)))
-                .Distinct(StringComparer.Ordinal);
+                .Select(l => GitHistory.Key(l.File))
+                .Distinct(GitHistory.PathComparer);
 
             // Commits are counted once per type (one commit over 13 partial files is one), churn is the lines of all its files.
             var commits = new HashSet<int>();

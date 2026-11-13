@@ -15,9 +15,9 @@ public static class ChangeCouplingAnalysis
 
     public const int MaxPairs = 400;
 
-    public static void Compute(CodeGraph graph, GitHistory history, string root, int minShared = 0, double minStrength = 0.3)
+    public static void Compute(CodeGraph graph, GitHistory history, int minShared = 0, double minStrength = 0.3)
     {
-        var owners = FileOwners(graph, root);
+        var owners = FileOwners(graph);
         if (owners.Count == 0) return;
 
         var revisions = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -86,11 +86,10 @@ public static class ChangeCouplingAnalysis
     }
 
     /// <summary>Maps every source file to the largest top-level type declared in it.</summary>
-    private static Dictionary<string, (string Id, double Loc)> FileOwners(CodeGraph graph, string root)
+    private static Dictionary<string, (string Id, double Loc)> FileOwners(CodeGraph graph)
     {
-        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         var byId = graph.Nodes.ToDictionary(n => n.Id, StringComparer.Ordinal);
-        var owners = new Dictionary<string, (string Id, double Loc)>(comparer);
+        var owners = new Dictionary<string, (string Id, double Loc)>(GitHistory.PathComparer);
         foreach (var node in graph.Nodes)
         {
             if (!NodeLevels.IsType(node) || node.External || node.Location == null) continue;
@@ -99,7 +98,7 @@ public static class ChangeCouplingAnalysis
             var locations = new[] { node.Location }.Concat(node.ExtraLocations ?? new List<SourceLocation>());
             foreach (var location in locations)
             {
-                var file = Path.GetFullPath(Path.Combine(root, location.File));
+                var file = GitHistory.Key(location.File);
                 var size = location.EndLine - location.Line + 1;
                 if (!owners.TryGetValue(file, out var current) || size > current.Loc) owners[file] = (node.Id, size);
             }

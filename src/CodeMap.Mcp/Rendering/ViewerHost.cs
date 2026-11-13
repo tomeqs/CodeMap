@@ -39,6 +39,8 @@ internal sealed class ViewerHost : IAsyncDisposable
     /// <summary>Makes a page available and gives its address.</summary>
     public string Publish(string key, string html)
     {
+        // One map is shown at a time: the page before it (the whole viewer with its graph) is not kept.
+        _pages.Clear();
         _pages[key] = html;
         return $"{Origin}/t/{_token}/{key}";
     }

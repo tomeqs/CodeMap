@@ -89,6 +89,9 @@ public static class GraphPipeline
     /// </summary>
     public static CodeGraph Derive(RawGraph raw, DeriveOptions? options = null) => DeriveInPlace(raw, raw.Graph.Clone(), options ?? new DeriveOptions());
 
+    /// <summary>The same; <paramref name="inPlace"/> derives the raw graph itself, for a caller that owns it and needs it no more.</summary>
+    internal static CodeGraph Derive(RawGraph raw, DeriveOptions options, bool inPlace) => DeriveInPlace(raw, inPlace ? raw.Graph : raw.Graph.Clone(), options);
+
     private static CodeGraph DeriveInPlace(RawGraph raw, CodeGraph graph, DeriveOptions options)
     {
         var steps = options.Steps;

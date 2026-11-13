@@ -15,6 +15,39 @@ public class DiRulesTests
     }
 
     [Fact]
+    public void A_class_registered_twice_is_injected_as_the_last_registration_and_checked_as_the_longest_lived()
+    {
+        var graph = new CodeGraph { Nodes = { Class("IFoo", NodeKinds.Interface), Class("Foo"), Class("Consumer"), Class("Bar"), Class("ITwice", NodeKinds.Interface), Class("Twice") } };
+        graph.Analysis.Di = new DiAnalysis
+        {
+            Registrations =
+            {
+                new ServiceRegistration { Service = "IFoo", Implementation = "Foo", Lifetime = "singleton" },
+                new ServiceRegistration { Service = "IFoo", Implementation = "Foo", Lifetime = "scoped" }, // the last one is injected
+                new ServiceRegistration { Service = "Consumer", Lifetime = "singleton" },
+                new ServiceRegistration { Service = "Bar", Lifetime = "scoped" },
+                new ServiceRegistration { Service = "ITwice", Implementation = "Twice", Lifetime = "scoped" },
+                new ServiceRegistration { Service = "Twice", Lifetime = "singleton" },
+            },
+            Dependencies =
+            {
+                new DiDependency { Consumer = "Consumer", Service = "IFoo" },
+                new DiDependency { Consumer = "Twice", Service = "Bar" },
+            },
+        };
+
+        var di = Run(graph);
+
+        // The singleton Consumer gets the scoped IFoo (the first registration of Foo was a singleton: not the one injected).
+        Assert.Equal("scoped", di.Dependencies.Single(d => d.Consumer == "Consumer").Lifetime);
+        Assert.Contains(di.Issues, i => i.Kind == "captive" && i.Consumer == "Consumer" && i.Service == "IFoo");
+        // Twice is a singleton too, whichever registration comes first: it must not hold the scoped Bar.
+        Assert.Contains(di.Issues, i => i.Kind == "captive" && i.Consumer == "Twice" && i.Service == "Bar");
+        // Each registration shows its own lifetime.
+        Assert.All(di.Registrations, r => Assert.Null(r.Effective));
+    }
+
+    [Fact]
     public void Nest_request_scope_spreads_to_everything_that_depends_on_it()
     {
         var graph = new CodeGraph { Nodes = { Class("Ctx"), Class("Service"), Class("Controller"), Class("Other") } };

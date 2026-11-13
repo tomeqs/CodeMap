@@ -78,7 +78,13 @@ public static class Simulator
 
     public static readonly IReadOnlyList<string> Lifetimes = new[] { Tags.DiSingleton, Tags.DiScoped, Tags.DiTransient };
 
-    public static SimulationResult Run(RawGraph raw, IReadOnlyList<SimOp> operations, CodeGraph? gitFrom = null)
+    public static SimulationResult Run(RawGraph raw, IReadOnlyList<SimOp> operations, CodeGraph? gitFrom = null) => Run(raw, operations, gitFrom, keepRaw: true);
+
+    /// <summary>
+    /// The same; with <paramref name="keepRaw"/> false the changed graph is derived in place (one copy of the map less,
+    /// for callers that only read the result): <see cref="SimulationResult.Raw"/> is then no graph to simulate on.
+    /// </summary>
+    internal static SimulationResult Run(RawGraph raw, IReadOnlyList<SimOp> operations, CodeGraph? gitFrom, bool keepRaw)
     {
         if (operations.Count == 0) throw new SimulationException("No operations.");
         var graph = raw.Graph.Clone();
@@ -96,9 +102,9 @@ public static class Simulator
         }
 
         // Diagnostics of removed code go with it.
-        graph.Analysis.Diagnostics?.RemoveAll(d => d.Node != null && !state.Ids.Contains(d.Node));
+        graph.Analysis.Diagnostics?.RemoveAll(d => d.Node != null && !state.ById.ContainsKey(d.Node));
         var changed = raw.With(graph);
-        var derived = GraphPipeline.Derive(changed, new DeriveOptions { GitFrom = gitFrom });
+        var derived = GraphPipeline.Derive(changed, new DeriveOptions { GitFrom = gitFrom }, inPlace: !keepRaw);
         return new SimulationResult { Raw = changed, Graph = derived, Applied = state.Applied, PredictedIds = state.Predicted, Notes = state.Notes };
     }
 
@@ -115,14 +121,41 @@ public static class Simulator
         public CodeGraph Graph { get; }
         public RawGraph Raw { get; }
         public Dictionary<string, GraphNode> ById { get; }
-        public HashSet<string> Ids => ById.Keys.ToHashSet(StringComparer.Ordinal);
         public List<string> Applied { get; } = new();
         public List<string> Notes { get; } = new();
         public Dictionary<string, string> Predicted { get; } = new(StringComparer.Ordinal);
 
         public GraphNode Node(string id, string role) => ById.GetValueOrDefault(id) ?? throw new SimulationException($"no node '{id}' ({role}).");
 
-        public IEnumerable<GraphNode> Children(string id) => Graph.Nodes.Where(n => n.Parent == id);
+        /// <summary>
+        /// What is right inside a node, from an index of the tree made once and again after the tree changes
+        /// (<see cref="SetParent"/>, <see cref="Add"/>, <see cref="Remove"/>): looking through every node for each
+        /// node asked about made moving a project's worth of code cost its size times the whole map.
+        /// </summary>
+        public IReadOnlyList<GraphNode> Children(string id)
+        {
+            if (_children == null)
+            {
+                _children = new Dictionary<string, List<GraphNode>>(StringComparer.Ordinal);
+                foreach (var node in Graph.Nodes)
+                {
+                    if (node.Parent == null) continue;
+                    if (!_children.TryGetValue(node.Parent, out var list)) _children[node.Parent] = list = new List<GraphNode>();
+                    list.Add(node);
+                }
+            }
+
+            return _children.TryGetValue(id, out var children) ? children : Array.Empty<GraphNode>();
+        }
+
+        private Dictionary<string, List<GraphNode>>? _children;
+
+        /// <summary>Puts a node inside another one.</summary>
+        public void SetParent(GraphNode node, string parent)
+        {
+            node.Parent = parent;
+            _children = null;
+        }
 
         public IEnumerable<GraphNode> Descendants(string id)
         {
@@ -163,6 +196,7 @@ public static class Simulator
             node.AddTag(SimulatedTag);
             Graph.Nodes.Add(node);
             ById[id] = node;
+            _children = null;
             return node;
         }
 
@@ -171,6 +205,7 @@ public static class Simulator
             var set = ids.ToHashSet(StringComparer.Ordinal);
             Graph.Nodes.RemoveAll(n => set.Contains(n.Id));
             foreach (var id in set) ById.Remove(id);
+            _children = null;
             Graph.Edges.RemoveAll(e => set.Contains(e.Source) || set.Contains(e.Target));
             if (Graph.Analysis.Di is { } di)
             {
@@ -218,7 +253,7 @@ public static class Simulator
         if (type.Parent != null && s.ById.TryGetValue(type.Parent, out var parent) && NodeLevels.IsType(parent)) throw new SimulationException($"{type.Id} is nested in {parent.Id}: move the outer type.");
         SameLanguage(s, type, to);
         var from = type.Parent;
-        type.Parent = to.Id;
+        s.SetParent(type, to.Id);
         type.Namespace = to.Namespace ?? to.Name;
         s.Reproject(type, to.Project ?? to.Parent);
         type.AddTag(MovedTag);
@@ -233,7 +268,7 @@ public static class Simulator
         if (!NodeLevels.IsType(to) && !ClassMetrics.IsClass(to)) throw new SimulationException($"{to.Id} is not a type or class.");
         SameLanguage(s, member, to);
         var from = member.Parent;
-        member.Parent = to.Id;
+        s.SetParent(member, to.Id);
         s.Reproject(member, to.Project);
         member.AddTag(MovedTag);
         return $"moved {member.Name} from {from} to {to.Id}";
@@ -246,7 +281,7 @@ public static class Simulator
         if (ns.Kind != NodeKinds.Namespace) throw new SimulationException($"{ns.Id} is not a namespace.");
         if (project.Kind != NodeKinds.Project) throw new SimulationException($"{project.Id} is not a project.");
         SameLanguage(s, ns, project);
-        ns.Parent = project.Id;
+        s.SetParent(ns, project.Id);
         s.Reproject(ns, project.Id);
         ns.AddTag(MovedTag);
         return $"moved namespace {ns.Name} to project {project.Name}";
@@ -262,7 +297,7 @@ public static class Simulator
         var children = s.Children(from.Id).ToList();
         foreach (var child in children)
         {
-            child.Parent = into.Id;
+            s.SetParent(child, into.Id);
             if (NodeLevels.IsType(child)) child.Namespace = into.Namespace ?? into.Name;
             s.Reproject(child, into.Project ?? into.Parent);
             child.AddTag(MovedTag);
@@ -510,7 +545,7 @@ public static class Simulator
             if (predicted != null) s.Predicted[created.Id] = predicted;
             foreach (var member in moving)
             {
-                member.Parent = created.Id;
+                s.SetParent(member, created.Id);
                 member.AddTag(MovedTag);
             }
 

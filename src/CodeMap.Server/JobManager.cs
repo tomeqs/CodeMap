@@ -179,11 +179,16 @@ public sealed class JobManager : IDisposable
         }
         finally
         {
-            if (_rerunPending && ReferenceEquals(_current, job))
+            // Under the lock, as where the flag is set: a change that found this job still running is either seen here,
+            // or finds the job finished and starts the next analysis itself.
+            bool again;
+            lock (_gate)
             {
-                _rerunPending = false;
-                ScheduleRerun();
+                again = _rerunPending && ReferenceEquals(_current, job);
+                if (again) _rerunPending = false;
             }
+
+            if (again) ScheduleRerun();
         }
     }
 
