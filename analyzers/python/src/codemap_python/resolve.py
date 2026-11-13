@@ -207,10 +207,11 @@ class SuperVal(Value):
 class PackageStub:
     """A package that is only a folder (a namespace package, or an empty __init__.py the map leaves out)."""
 
-    def __init__(self, name: str, project) -> None:
+    def __init__(self, name: str, project, anchor=None) -> None:
         self.name = name
         self.names = [name]
         self.project = project
+        self.anchor = anchor  # a module of the project inside the package: its submodules are looked up as from there
         self.id = ""
         self.symbols = None
 
@@ -229,6 +230,7 @@ class ModuleIndex:
     def __init__(self, discovery) -> None:
         self.by_name: dict[str, list] = {}  # name → [(module, weak top folder or None)]
         self.stubs: dict[str, tuple] = {}  # package name → (stub, weak top folder or None)
+        self.project_stubs: dict[tuple, PackageStub] = {}  # (package name, project) → the project's own folder of that name
         self.by_file = discovery.by_file
         self.tops: dict[str, str | None] = {}  # top-level name → weak top folder, None once a strong name has it
         for module in discovery.modules:
@@ -239,9 +241,14 @@ class ModuleIndex:
                 self.tops[parts[0]] = weak if self.tops.get(parts[0], weak) is not None and weak is not None else None
                 for size in range(1, len(parts)):
                     prefix = ".".join(parts[:size])
+                    # Two projects may each have a folder app/ without __init__.py: one stub each, so that
+                    # app.models is the importing project's module.
+                    own = self.project_stubs.get((prefix, id(module.project)))
+                    if own is None:
+                        own = self.project_stubs[(prefix, id(module.project))] = PackageStub(prefix, module.project, module)
                     stub = self.stubs.get(prefix)
                     if stub is None:
-                        self.stubs[prefix] = (PackageStub(prefix, module.project), weak)
+                        self.stubs[prefix] = (own, weak)
                     elif stub[1] is not None and weak is None:
                         self.stubs[prefix] = (stub[0], None)
 
@@ -267,7 +274,10 @@ class ModuleIndex:
                     return same[0]
             return found[0]
         stub = self.stubs.get(name)
-        return stub[0] if stub is not None and self.plausible(stub[1], name, importer) else None
+        if stub is None or not self.plausible(stub[1], name, importer):
+            return None
+        own = self.project_stubs.get((name, id(importer.project))) if importer is not None else None
+        return own or stub[0]
 
     def near(self, importer, name: str):
         """A module next to a script (a folder that is not a package is on sys.path when its script runs)."""
@@ -315,7 +325,8 @@ class ClassScope(Scope):
 
     def lookup(self, name: str) -> Value | None:
         member = self.cls.members.get(name)
-        if member is not None:
+        # `self.list = …` in a method makes no name `list` in the class body: annotations there still mean the built-in.
+        if member is not None and (not isinstance(member, VarDecl) or member.class_level):
             return self.resolver.member_value(member, on_class=True)
         return self.parent.lookup(name)
 
@@ -334,7 +345,6 @@ class FunctionScope(Scope):
         self.globals: set[str] = set()
         self.nonlocals: set[str] = set()
         self.cache: dict[str, Value | None] = {}
-        self.active: set[str] = set()
 
     def lookup(self, name: str) -> Value | None:
         if self.entries is None:
@@ -342,17 +352,7 @@ class FunctionScope(Scope):
         if name in self.globals:
             return ModuleScope(self.resolver, self.module).lookup(name)
         if name in self.entries and name not in self.nonlocals:
-            if name in self.cache:
-                return self.cache[name]
-            if name in self.active:
-                return None
-            self.active.add(name)
-            try:
-                value = self._type_of(name)
-            finally:
-                self.active.discard(name)
-            self.cache[name] = value
-            return value
+            return self.resolver.memo(self.cache, name, ("local", self, name), lambda: self._type_of(name))
         return self.parent.lookup(name)
 
     def _add(self, name: str, entry) -> None:
@@ -525,12 +525,16 @@ class ComprehensionScope(Scope):
 
 # ---------------------------------------------------------------------------------------------- the resolver
 
+_NO_CUT = float("inf")
+
 
 class Resolver:
     def __init__(self, index: ModuleIndex) -> None:
         self.index = index
         self._attrs: dict = {}
-        self._active: set = set()
+        self._active: dict = {}  # what is being worked out, with its depth
+        self._cut = _NO_CUT  # the depth of the outermost look-up a cycle came back to
+        self._provisional: dict = {}  # answers found inside such a cycle: good until it closes
         self._var_types: dict = {}
         self._returns: dict = {}
         self._mro: dict = {}
@@ -541,6 +545,36 @@ class Resolver:
         self._yields: dict = {}
         # What a parameter without annotation is, when a framework says (pytest: the fixture it names); set by the frameworks.
         self.parameter_hook = None
+
+    def memo(self, cache: dict, key, guard, compute, cut=None):
+        """A look-up that may come back to itself (f returns g(), g returns f(); a imports * from b, b from a).
+
+        Coming back gives `cut` (nothing is known yet). Whatever was worked out between the two ends of such a cycle
+        missed that part, so it is not kept as the answer: it serves until the cycle closes (the work stays linear),
+        then is asked again, now with the outer answer known. So the answers do not depend on where a cycle is
+        entered."""
+        if key in cache:
+            return cache[key]
+        if guard in self._provisional:
+            return self._provisional[guard]
+        depth = self._active.get(guard)
+        if depth is not None:
+            self._cut = min(self._cut, depth)
+            return cut
+        depth = len(self._active)
+        self._active[guard] = depth
+        try:
+            value = compute()
+        finally:
+            del self._active[guard]
+        if self._cut < depth:
+            self._provisional[guard] = value
+        else:
+            cache[key] = value
+            if self._cut == depth:
+                self._cut = _NO_CUT
+                self._provisional.clear()
+        return value
 
     # ---------------------------------------------------------------- modules and imports
 
@@ -582,21 +616,11 @@ class Resolver:
 
     def module_attr(self, module, name: str) -> Value | None:
         key = (id(module), name)
-        if key in self._attrs:
-            return self._attrs[key]
-        if key in self._active:
-            return None
-        self._active.add(key)
-        try:
-            value = self._module_attr(module, name)
-        finally:
-            self._active.discard(key)
-        self._attrs[key] = value
-        return value
+        return self.memo(self._attrs, key, ("attr", key), lambda: self._module_attr(module, name))
 
     def _module_attr(self, module, name: str) -> Value | None:
         if isinstance(module, PackageStub):
-            sub = self.index.find(f"{module.name}.{name}", None)
+            sub = self.index.find(f"{module.name}.{name}", module.anchor)
             return ModuleVal(sub) if sub is not None else None
         table = symbols_of(module)
         binding = table.lookup(name)
@@ -929,18 +953,7 @@ class Resolver:
 
     def var_type(self, var: VarDecl) -> Value | None:
         key = id(var)
-        if key in self._var_types:
-            return self._var_types[key]
-        guard = ("var", key)
-        if guard in self._active:
-            return None
-        self._active.add(guard)
-        try:
-            value = self._var_type(var)
-        finally:
-            self._active.discard(guard)
-        self._var_types[key] = value
-        return value
+        return self.memo(self._var_types, key, ("var", key), lambda: self._var_type(var))
 
     def _var_type(self, var: VarDecl) -> Value | None:
         owner = var.owner
@@ -959,35 +972,17 @@ class Resolver:
 
     def return_type(self, func: FuncDecl) -> Value | None:
         key = id(func)
-        if key in self._returns:
-            return self._returns[key]
-        guard = ("return", key)
-        if guard in self._active:
-            return None
-        self._active.add(guard)
-        try:
-            value = self._return_type(func)
-        finally:
-            self._active.discard(guard)
-        self._returns[key] = value
-        return value
+        return self.memo(self._returns, key, ("return", key), lambda: self._return_type(func))
 
     def yield_type(self, func: FuncDecl) -> Value | None:
         """What a generator yields (a pytest fixture that yields its value, a @contextmanager)."""
         key = id(func)
-        if key in self._yields:
-            return self._yields[key]
-        guard = ("yield", key)
-        if guard in self._active:
-            return None
-        self._active.add(guard)
-        try:
+
+        def yielded():
             scope = self.function_scope(func, func.node)
-            value = agree([self.infer(n.value, scope) for n in _local_nodes(func.node) if isinstance(n, ast.Yield) and n.value is not None])
-        finally:
-            self._active.discard(guard)
-        self._yields[key] = value
-        return value
+            return agree([self.infer(n.value, scope) for n in _local_nodes(func.node) if isinstance(n, ast.Yield) and n.value is not None])
+
+        return self.memo(self._yields, key, ("yield", key), yielded)
 
     def _return_type(self, func: FuncDecl) -> Value | None:
         node = func.node
@@ -1006,13 +1001,8 @@ class Resolver:
     def bases(self, cls: ClassDecl) -> list[Value]:
         """The values a class' bases name, in order (classes of the analysis, external names, variables)."""
         key = id(cls)
-        if key in self._bases:
-            return self._bases[key]
-        guard = ("bases", key)
-        if guard in self._active:
-            return []
-        self._active.add(guard)
-        try:
+
+        def named():
             scope = self.definition_scope(cls)
             out = []
             for base in cls.node.bases:
@@ -1029,30 +1019,23 @@ class Resolver:
                         held = self.var_type(value.var)
                         if held is not None:
                             out.append(held)
-        finally:
-            self._active.discard(guard)
-        self._bases[key] = out
-        return out
+            return out
+
+        return self.memo(self._bases, key, ("bases", key), named, cut=[])
 
     def mro(self, cls: ClassDecl) -> list[ClassDecl]:
         key = id(cls)
-        if key in self._mro:
-            return self._mro[key]
-        guard = ("mro", key)
-        if guard in self._active:
-            return [cls]
-        self._active.add(guard)
-        try:
+
+        def linearised():
             parents = [b.cls for b in self.bases(cls) if isinstance(b, ClassVal) and b.cls is not cls]
             order = _c3([cls], [self.mro(p) for p in parents] + [parents])
             if order is None:  # an inconsistent hierarchy: depth first, each class once
                 order = [cls]
                 for parent in parents:
                     order.extend(c for c in self.mro(parent) if c not in order)
-        finally:
-            self._active.discard(guard)
-        self._mro[key] = order
-        return order
+            return order
+
+        return self.memo(self._mro, key, ("mro", key), linearised, cut=[cls])
 
     def member(self, cls: ClassDecl, name: str):
         for klass in self.mro(cls):

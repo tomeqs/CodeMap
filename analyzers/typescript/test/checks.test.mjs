@@ -38,7 +38,7 @@ test('logic: unreachable code, self assignment and comparison, duplicate cases, 
   assert.deepEqual(lines('self-assignment'), [32]);
   assert.deepEqual(lines('self-comparison'), [33]); // x !== x is the NaN check
   assert.deepEqual(lines('duplicate-case'), [38]);
-  assert.deepEqual(lines('constant-condition'), [41]); // while (true) loops on purpose
+  assert.deepEqual(lines('constant-condition'), [41]); // while (true) and while (1) loop on purpose
   assert.deepEqual(lines('loose-equality'), [43]); // == null is the null-or-undefined check
 });
 

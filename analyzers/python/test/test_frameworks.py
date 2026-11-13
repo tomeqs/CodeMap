@@ -537,6 +537,23 @@ class TestingTest(unittest.TestCase):
         self.assertTrue(r.has("tests/api/test_orders.py#order", "calls", "tests/conftest.py#db"))
         self.assertTrue(r.has("tests/conftest.py#make_client", "calls", "tests/conftest.py#db"))
 
+    def test_a_fixture_is_worked_out_once_and_only_its_own_yield_makes_it_a_generator(self):
+        from unittest import mock
+
+        from codemap_python.frameworks.testing import Testing
+
+        files = {
+            "app.py": "class Client:\n    def get(self, url): ...\n",
+            # A function defined inside may yield as it likes: the fixture itself returns a Client.
+            "tests/conftest.py": "import pytest\nfrom app import Client\n\n\n@pytest.fixture\ndef client():\n    def numbers():\n        yield 1\n    return Client()\n\n\n@pytest.fixture\ndef session():\n    yield Client()\n",
+            "tests/test_app.py": "".join(f"def test_{i}(client, session):\n    client.get('/')\n    session.get('/')\n\n\n" for i in range(30)),
+        }
+        given = Testing._given
+        with mock.patch.object(Testing, "_given", autospec=True, side_effect=given) as worked_out:
+            r = analyze(files)
+        self.assertEqual(r.edge("tests/test_app.py#test_7", "calls", "app.py#Client.get")["weight"], 2)
+        self.assertEqual(worked_out.call_count, 2, "once per fixture, not once per test")
+
     def test_test_cases_anywhere_are_tests(self):
         r = analyze({"pkg/checks.py": "import unittest\n\n\nclass PriceChecks(unittest.TestCase):\n    def test_price(self):\n        pass\n\n    def helper(self):\n        pass\n"})
         for name in ("pkg/checks.py#PriceChecks", "pkg/checks.py#PriceChecks.test_price", "pkg/checks.py#PriceChecks.helper"):

@@ -92,7 +92,78 @@ class ImportsTest(unittest.TestCase):
         self.assertIsNone(result.find("py:pypi:core"))
 
 
+    def test_a_relative_import_above_the_top_package_is_not_followed(self):
+        # pkg is the top package: `from ... import utils` in pkg/sub/mod.py leaves it, which Python refuses.
+        result = analyze({
+            "utils.py": "def helper(): ...\n",
+            "pkg/__init__.py": "",
+            "pkg/top.py": "def f(): ...\n",
+            "pkg/sub/__init__.py": "",
+            "pkg/sub/mod.py": "from .. import top\nfrom ... import utils\n\n\ndef run():\n    top.f()\n    utils.helper()\n",
+        })
+        self.assertEqual(result.targets("pkg/sub/mod.py", "imports"), ["pkg/top.py"])
+        self.assertEqual(result.targets("pkg/sub/mod.py#run", "calls"), ["pkg/top.py#f"])
+        self.assertTrue(any("pkg/sub/mod.py:2" in w for w in result.warnings), result.warnings)
+
+    def test_projects_with_a_folder_of_the_same_name_keep_their_own_modules(self):
+        # app/ has no __init__.py in either project: `app.models` is the importing project's.
+        files = {}
+        for project, how in (("svc1", "from app import models\n\n\ndef run():\n    models.helper()\n"), ("svc2", "import app.models\n\n\ndef run():\n    app.models.helper()\n")):
+            files[f"{project}/pyproject.toml"] = f'[project]\nname = "{project}"\n'
+            files[f"{project}/app/models.py"] = "def helper(): ...\n"
+            files[f"{project}/app/main.py"] = how
+        result = analyze(files)
+        for project in ("svc1", "svc2"):
+            self.assertEqual(result.out(f"py:{project}:app/main.py#run", "calls"), [("calls", f"py:{project}:app/models.py#helper")])
+
+
 class CallsTest(unittest.TestCase):
+    def test_a_cycle_gives_the_same_edges_wherever_it_is_entered(self):
+        # f returns g(), g returns f(): whichever is asked first, both give an Order.
+        code = "class Order:\n    def pay(self): ...\n\n\ndef f(x):\n    return Order() if x else g(x)\n\n\ndef g(x):\n    return f(x)\n\n\n"
+        users = {"f": "def use_f():\n    f(1).pay()\n", "g": "def use_g():\n    g(1).pay()\n"}
+        for order in ("fg", "gf"):
+            result = analyze({"m.py": code + "\n\n".join(users[name] for name in order)})
+            for name in order:
+                self.assertTrue(result.has(f"m.py#use_{name}", "calls", "m.py#Order.pay"), f"use_{name}, asked in the order {order}")
+        # Star imports in a circle: a takes b's and c's names, b takes a's.
+        files = {"a.py": "from b import *\nfrom c import *\n", "b.py": "from a import *\n\n\ndef use_b():\n    helper()\n", "c.py": "def helper(): ...\n"}
+        for first in ("a.py", "b.py"):
+            ordered = dict(sorted(files.items(), key=lambda item: item[0] != first))
+            self.assertTrue(analyze(ordered).has("b.py#use_b", "calls", "c.py#helper"), f"with {first} first")
+
+    def test_an_attribute_set_in_a_method_is_no_name_of_the_class_body(self):
+        # self.list = … makes no `list` in the class body: the annotations still mean the built-in.
+        result = analyze({"m.py": '''
+            class Line:
+                def total(self): ...
+
+
+            class Invoice:
+                def __init__(self, lines: list[Line]):
+                    self.list = lines
+
+                def lines(self) -> list[Line]:
+                    return self.list
+
+
+            def use(invoice: Invoice):
+                for line in invoice.lines():
+                    line.total()
+        '''})
+        self.assertEqual(result.targets("m.py#Invoice.__init__", "accepts"), ["m.py#Line"])
+        self.assertEqual(result.targets("m.py#Invoice.lines", "returns"), ["m.py#Line"])
+        self.assertTrue(result.has("m.py#Invoice.list", "holds", "m.py#Line"))
+        self.assertTrue(result.has("m.py#use", "calls", "m.py#Line.total"))
+
+    def test_a_call_unpacked_into_several_names_is_a_call(self):
+        result = analyze({"m.py": "def create():\n    return 1, 2\n\n\nclass Config:\n    host, port = create()\n\n\napp, worker = create()\nfirst, second = 1, create()\n"})
+        self.assertTrue(result.has("m.py#(top-level)", "calls", "m.py#create"))  # app, worker = create()
+        self.assertTrue(result.has("m.py#Config", "calls", "m.py#create"))
+        self.assertTrue(result.has("m.py#second", "calls", "m.py#create"))  # paired values stay with their names
+        for name in ("app", "worker", "Config.host", "Config.port", "first"):
+            self.assertIsNotNone(result.find(f"m.py#{name}"), name)
+
     def test_self_cls_super_and_the_method_resolution_order(self):
         result = analyze({"m.py": '''
             class Base:

@@ -148,6 +148,15 @@ class SymbolTable:
 # ---------------------------------------------------------------------------------------------- reading
 
 
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
+
+
+def source_lines(text: str) -> list[str]:
+    """The lines of a source text as the parser numbers them. (str.splitlines also breaks at form feeds, U+2028 and
+    others, which the line numbers of ast do not count: every line after one would be off by one.)"""
+    return _LINE_BREAK.split(text)
+
+
 def read_source(module) -> None:
     """Reads and parses a module's file once."""
     read_text(module)
@@ -356,10 +365,13 @@ class Builder:
                 last = self.variable(name, statement, annotation, value, kind)
             elif isinstance(target, (ast.Tuple, ast.List)) and all(_name(e) for e in target.elts):
                 table.barrel = False
-                values = value.elts if isinstance(value, (ast.Tuple, ast.List)) and len(value.elts) == len(target.elts) else [None] * len(target.elts)
+                paired = isinstance(value, (ast.Tuple, ast.List)) and len(value.elts) == len(target.elts)
+                values = value.elts if paired else [None] * len(target.elts)
                 for element, element_value in zip(target.elts, values):
                     if not _DUNDER.match(_name(element)):
                         self.variable(_name(element), statement, None, element_value, "variable")
+                if not paired and value is not None:
+                    self.add_top(value, statement)  # app, worker = create_app(): the call is the module's code
             else:
                 self.add_top(statement, statement)  # app.config["X"] = 1, obj.attr = value
                 return None
@@ -499,6 +511,8 @@ class Builder:
                     for element in target.elts:
                         if _name(element):
                             self.field(owner, _name(element), statement, None, None, None)
+                    if statement.value is not None:
+                        owner.code.append(statement.value)  # host, port = endpoint(): the call is the class' code
                 else:
                     owner.code.append(statement)
                 continue
@@ -572,7 +586,8 @@ def absolute_module(module, level: int, name: str | None) -> str | None:
         return name
     package = module.package
     parts = package.split(".") if package else []
-    if level - 1 > len(parts):
+    # `from .. import x` in pkg/mod.py leaves the top package: Python refuses it ("beyond top-level package").
+    if level - 1 > len(parts) or (level > 1 and level - 1 == len(parts)):
         return None
     if level > 1:
         parts = parts[: len(parts) - (level - 1)]
