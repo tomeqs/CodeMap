@@ -35,7 +35,7 @@ internal static partial class Tools
             List<Proposal> proposals;
             try
             {
-                proposals = await Task.Run(() => ProposalEngine.Propose(s.Raw, s.Graph, s.Findings, s.Index, request), ct).ConfigureAwait(false);
+                proposals = await Task.Run(() => ProposalEngine.Propose(s.Raw, s.Graph, s.Findings, s.Index, request, ct), ct).ConfigureAwait(false);
             }
             catch (ArgumentException ex)
             {

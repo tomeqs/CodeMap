@@ -73,7 +73,7 @@ public static class ProposalEngine
 {
     private const int CandidatesPerFinding = 6;
 
-    public static List<Proposal> Propose(RawGraph raw, CodeGraph derived, FindingsReport findings, GraphIndex index, ProposalRequest? request = null)
+    public static List<Proposal> Propose(RawGraph raw, CodeGraph derived, FindingsReport findings, GraphIndex index, ProposalRequest? request = null, CancellationToken ct = default)
     {
         request ??= new ProposalRequest();
         var clock = Stopwatch.StartNew();
@@ -87,32 +87,27 @@ public static class ProposalEngine
         var list = targets.ToList();
         if (request.Finding != null && list.Count == 0) throw new ArgumentException($"No finding {request.Finding}.");
 
+        var wanted = request.Kinds is { Count: > 0 } kinds ? kinds : null;
         var candidates = new List<Candidate>();
         foreach (var finding in list)
         {
+            ct.ThrowIfCancellationRequested();
             if (clock.Elapsed > request.Budget / 2) break;
-            var found = finding.Rule switch
-            {
-                "cycle.project" or "cycle.namespace" or "cycle.type" or "tangle" => BreakCycle(context, finding),
-                "layer.convention" or "sdp-violation" or "test-dependency" => InvertLayer(context, finding),
-                "feature-envy" => MoveMember(context, finding),
-                "god-class" or "large-type" or "hub" => SplitType(context, finding),
-                "tiny-namespace" or "tiny-project" => Merge(context, finding),
-                "dead-code" => RemoveDeadCode(context, finding),
-                "di.captive" or "di.captive-transient" or "di.unregistered" => FixDi(context, finding),
-                _ => Enumerable.Empty<Candidate>(),
-            };
-            candidates.AddRange(found.Where(c => request.Kinds is not { Count: > 0 } || request.Kinds.Contains(c.Kind)).Take(CandidatesPerFinding));
+            if (Generator(finding.Rule) is not { } generator) continue;
+            // Only the kinds that were asked for: a generator that cannot make one is not run at all.
+            if (wanted != null && !generator.Kinds.Any(wanted.Contains)) continue;
+            candidates.AddRange(generator.Make(context, finding).Where(c => wanted == null || wanted.Contains(c.Kind)).Take(CandidatesPerFinding));
         }
 
-        // The fast model first: how much tangle each structural candidate removes, against its cost.
-        foreach (var candidate in candidates)
+        // The fast model first: how much tangle each structural candidate removes, against its cost. The worst problems
+        // are scored first, and only while there is time: what was not scored is not proposed (it needs a gain).
+        foreach (var candidate in candidates.OrderByDescending(c => c.Priority))
         {
-            if (candidate.Change != null)
-            {
-                var after = model.Evaluate(candidate.Change);
-                candidate.Gain = baseline.Score - after.Score;
-            }
+            if (candidate.Change == null) continue;
+            ct.ThrowIfCancellationRequested();
+            if (clock.Elapsed > request.Budget * 0.75) break;
+            var after = model.Evaluate(candidate.Change);
+            candidate.Gain = baseline.Score - after.Score;
         }
 
         var ranked = candidates
@@ -130,12 +125,13 @@ public static class ProposalEngine
         foreach (var candidate in ranked)
         {
             if (result.Count >= request.Limit) break;
+            ct.ThrowIfCancellationRequested();
             var target = candidate.Targets.FirstOrDefault() ?? "";
             if (perTarget.GetValueOrDefault(target) >= 2) continue; // the best two ways per finding are enough
             var proposal = candidate.ToProposal();
             if (request.Verify && candidate.Ops.Count > 0 && clock.Elapsed < request.Budget)
             {
-                if (!Verify(raw, derived, findings, proposal)) continue;
+                if (!Verify(raw, derived, findings, index, proposal)) continue;
             }
             else if (candidate.Ops.Count > 0)
             {
@@ -151,20 +147,34 @@ public static class ProposalEngine
         return result.OrderByDescending(p => priorityOf[p.Id]).ThenByDescending(p => p.Confidence).ThenBy(p => p.Id, StringComparer.Ordinal).ToList();
     }
 
+    /// <summary>The generator of proposals for a rule's findings, with the kinds of proposals it can make.</summary>
+    private static (string[] Kinds, Func<Context, Finding, IEnumerable<Candidate>> Make)? Generator(string rule) => rule switch
+    {
+        "cycle.project" or "cycle.namespace" or "cycle.type" or "tangle" => (new[] { "break-cycle", "move-type" }, BreakCycle),
+        "layer.convention" or "sdp-violation" => (new[] { "invert-dependency" }, InvertLayer),
+        "test-dependency" => (new[] { "move-type" }, InvertLayer),
+        "feature-envy" => (new[] { "move-member" }, MoveMember),
+        "god-class" or "large-type" or "hub" => (new[] { "split-type" }, SplitType),
+        "tiny-namespace" or "tiny-project" => (new[] { "merge-namespaces" }, Merge),
+        "dead-code" => (new[] { "remove-dead-code" }, RemoveDeadCode),
+        "di.captive" or "di.captive-transient" or "di.unregistered" => (new[] { "fix-di" }, FixDi),
+        _ => null,
+    };
+
     /// <summary>Simulates a proposal: keeps it when it fixes what it targets without new cycles or errors.</summary>
-    private static bool Verify(RawGraph raw, CodeGraph derived, FindingsReport findings, Proposal proposal)
+    private static bool Verify(RawGraph raw, CodeGraph derived, FindingsReport findings, GraphIndex before, Proposal proposal)
     {
         SimulationResult simulated;
         try
         {
-            simulated = Simulator.Run(raw, proposal.Ops, gitFrom: derived);
+            // The simulation's own copy of the graph is derived in place: the raw result is not needed here.
+            simulated = Simulator.Run(raw, proposal.Ops, gitFrom: derived, keepRaw: false);
         }
         catch (SimulationException)
         {
             return false;
         }
 
-        var before = new GraphIndex(derived);
         var after = new GraphIndex(simulated.Graph);
         var afterFindings = FindingsAnalysis.Compute(simulated.Graph, null, after);
         var diff = GraphDiff.Compare(before, findings, after, afterFindings, NodeLevels.Namespace, maxItems: 200);
@@ -217,6 +227,11 @@ public static class ProposalEngine
         public QuickModel Model { get; } = model;
         public CodeGraph Graph { get; } = graph;
 
+        /// <summary>What may be unused, as a set (made once, not for every dead-code finding).</summary>
+        public HashSet<string> Unused => _unused ??= Graph.Analysis.UnusedCandidates.ToHashSet(StringComparer.Ordinal);
+
+        private HashSet<string>? _unused;
+
         public string Name(string id) => Index.Node(id) is { } n ? n.FullName ?? n.Name : id;
         public string Short(string id) => Index.Node(id)?.Name ?? id;
         public string? At(string id) => Index.Node(id)?.Location is { } l ? $"{l.File}:{l.Line}" : null;
@@ -235,10 +250,11 @@ public static class ProposalEngine
     private static IEnumerable<Candidate> BreakCycle(Context c, Finding finding)
     {
         var level = finding.Rule switch { "cycle.project" => NodeLevels.Project, "cycle.namespace" => NodeLevels.Namespace, _ => NodeLevels.Type };
-        var members = c.Graph.Analysis.Cycles.FirstOrDefault(x => x.Level == level && x.Nodes.Contains(finding.Nodes.Last()) && finding.Nodes.All(x.Nodes.Contains))?.Nodes
-                      ?? finding.Nodes.Where(id => c.Index.Node(id) is { } n && NodeLevels.Of(n) == level).ToList();
+        var cycle = c.Graph.Analysis.Cycles.FirstOrDefault(x => x.Level == level && x.Nodes.Contains(finding.Nodes.Last()) && finding.Nodes.All(x.Nodes.Contains));
+        var members = cycle?.Nodes ?? finding.Nodes.Where(id => c.Index.Node(id) is { } n && NodeLevels.Of(n) == level).ToList();
         var set = members.ToHashSet(StringComparer.Ordinal);
-        var inside = c.Index.Dependencies(level).Values.Where(d => set.Contains(d.Source) && set.Contains(d.Target)).ToList();
+        var inside = (cycle != null ? c.Index.Inside(cycle) : null)
+                     ?? c.Index.Dependencies(level).Values.Where(d => set.Contains(d.Source) && set.Contains(d.Target)).ToList();
         var cut = Layering.Compute(set, inside.Select(d => (d.Source, d.Target, d.Weight))).Upward
             .Select(u => c.Index.DependencyBetween(u.Source, u.Target, level)).Where(d => d != null).Select(d => d!)
             .OrderBy(d => d.Weight).ThenBy(d => d.Source, StringComparer.Ordinal).Take(4).ToList();
@@ -454,7 +470,7 @@ public static class ProposalEngine
         var (module, partner) = (finding.Nodes[0], finding.Nodes[1]);
         if (finding.Rule == "tiny-namespace")
         {
-            var types = c.Graph.Nodes.Where(n => NodeLevels.IsType(n) && c.Index.NamespaceOf(n.Id) == module).Select(n => n.Id).ToList();
+            var types = c.Index.TypesIn(module, NodeLevels.Namespace).Select(n => n.Id).ToList();
             var change = new QuickModel.Change();
             if (c.Model.Namespace(partner) is { } target)
             {
@@ -500,7 +516,7 @@ public static class ProposalEngine
     private static IEnumerable<Candidate> RemoveDeadCode(Context c, Finding finding)
     {
         var owner = finding.Nodes[0];
-        var unused = c.Graph.Analysis.UnusedCandidates.ToHashSet(StringComparer.Ordinal);
+        var unused = c.Unused;
         var nodes = unused.Contains(owner) ? new List<string> { owner } : finding.Nodes.Skip(1).ToList();
         if (nodes.Count == 0) yield break;
         var confidence = nodes.Select(id => c.Index.Node(id)?.Accessibility).All(a => a is "private") ? 0.8 : 0.6;

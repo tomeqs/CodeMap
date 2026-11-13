@@ -36,6 +36,38 @@ public class ChangeCouplingTests
     }
 
     [Fact]
+    public void Git_metrics_do_not_depend_on_how_the_path_to_the_code_is_spelled()
+    {
+        if (OperatingSystem.IsWindows()) return; // symbolic links need a privilege there; the paths compare without case instead
+        using var ws = new TestWorkspace().Project("App").Git("init", "-q");
+        string Version(string type, int v) => $"namespace App; public class {type} {{ public int V{v} => {v}; }}";
+        for (var v = 1; v <= 3; v++) ws.Commit($"change {v}", ("App/Price.cs", Version("Price", v)), ("App/Invoice.cs", Version("Invoice", v)));
+
+        // The same folder through a symbolic link: git answers with the real path, the map has the one it was given.
+        var link = ws.Root.TrimEnd(Path.DirectorySeparatorChar) + "-link";
+        Directory.CreateSymbolicLink(link, ws.Root);
+        try
+        {
+            var direct = ws.Analyze(options: new AnalyzerOptions());
+            var linked = ws.Analyze(link, new AnalyzerOptions());
+            foreach (var graph in new[] { direct, linked })
+            {
+                Assert.Equal(3, graph.Node("T:App.Price").Metric("commits"));
+                Assert.Equal(3, graph.Node("T:App.Invoice").Metric("commits"));
+                Assert.Contains(graph.Analysis.ChangeCoupling, c => (c.Source, c.Target) == ("T:App.Invoice", "T:App.Price") && c.SharedCommits == 3);
+            }
+
+            // A subfolder of the repository: paths are counted from the analyzed folder, as the map's own are.
+            var project = ws.Analyze(Path.Combine(ws.Root, "App"), new AnalyzerOptions());
+            Assert.Equal(3, project.Node("T:App.Price").Metric("commits"));
+        }
+        finally
+        {
+            Directory.Delete(link);
+        }
+    }
+
+    [Fact]
     public void Ignores_huge_commits()
     {
         using var ws = new TestWorkspace().Project("App").Git("init", "-q");

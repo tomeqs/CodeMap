@@ -78,6 +78,11 @@ public class RenderTests
         forged.Headers.Host = "evil.example";
         Assert.Equal(System.Net.HttpStatusCode.Forbidden, (await http.SendAsync(forged)).StatusCode);
         Assert.Equal(System.Net.HttpStatusCode.NotFound, (await http.GetAsync(new Uri(url, "b.html"))).StatusCode);
+
+        // One map at a time: the next page takes the place of the one before (a whole viewer with its graph each).
+        var next = new Uri(host.Publish("b.html", "<html>next</html>"));
+        Assert.Equal("<html>next</html>", await http.GetStringAsync(next));
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await http.GetAsync(url)).StatusCode);
     }
 
     [BrowserFact]

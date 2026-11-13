@@ -17,6 +17,10 @@ internal sealed class AnalysisJob
     public required Task<Snapshot> Task { get; init; }
     public required CancellationTokenSource Cancel { get; init; }
     public required List<string> Log { get; init; }
+
+    /// <summary>How many file changes the session had counted when the analysis started.</summary>
+    public int ChangesBefore { get; init; }
+
     public Stopwatch Clock { get; } = Stopwatch.StartNew();
 
     public string[] LastLines(int count)
@@ -44,7 +48,9 @@ internal sealed class CodeMapSession : IDisposable
     private readonly Dictionary<string, string> _spilled = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (DateTime Written, Snapshot Snapshot)> _files = new(StringComparer.Ordinal);
     private readonly List<FileSystemWatcher> _watchers = new();
-    private readonly List<string> _changed = new();
+    private readonly List<(string File, int At)> _changed = new(); // with the count of changes at its last change
+    private readonly List<string> _recent = new(); // baselines in memory, the one used longest ago first
+    private int _spillCount;
     private readonly string _spillFolder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "codemap-mcp", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
     private readonly List<(string Name, Snapshot Snapshot)> _simulations = new();
     private int _simulationCount;
@@ -125,7 +131,7 @@ internal sealed class CodeMapSession : IDisposable
                 Publish(job!, snapshot);
                 return snapshot;
             }, cancel.Token);
-            job = new AnalysisJob { Path = path, Log = log, Cancel = cancel, Task = task };
+            job = new AnalysisJob { Path = path, Log = log, Cancel = cancel, Task = task, ChangesBefore = _changeCount };
             _job = job;
             go.SetResult();
             return job;
@@ -206,8 +212,13 @@ internal sealed class CodeMapSession : IDisposable
             if (_job != job) return; // a newer analysis took its place
             if (Current != null && Current.Origin != "file") Previous = Current;
             Current = snapshot;
-            _changed.Clear();
-            _changeCount = 0;
+            // Files changed while the analysis ran may have been read before they changed: for the map of the same
+            // folder they stay "changed since the analysis". Everything before it is in the map.
+            var sameFolder = snapshot.Origin == "analysis" && _watchRoot != null && string.Equals(_watchRoot, snapshot.Graph.Source.Root, StringComparison.Ordinal);
+            var before = sameFolder ? job.ChangesBefore : int.MaxValue;
+            _changed.RemoveAll(c => c.At <= before);
+            for (var i = 0; i < _changed.Count; i++) _changed[i] = (_changed[i].File, _changed[i].At - before);
+            _changeCount = sameFolder ? Math.Max(0, _changeCount - before) : 0;
         }
 
         if (_options.Watch && snapshot.Origin == "analysis") Watch(snapshot.Graph.Source.Root);
@@ -270,17 +281,33 @@ internal sealed class CodeMapSession : IDisposable
         lock (_gate)
         {
             _baselineOrder.Remove(name);
-            _spilled.Remove(name);
+            if (_spilled.Remove(name, out var replaced)) TryDelete(replaced);
             _baselines[name] = snapshot;
             _baselineOrder.Add(name);
-            var inMemory = _baselineOrder.Where(_baselines.ContainsKey).ToList();
-            if (inMemory.Count <= BaselinesInMemory) return;
+            Used(name);
+            SpillBeyondLimit();
+        }
+    }
 
-            var oldest = inMemory[0];
+    /// <summary>A baseline in memory was saved or used just now.</summary>
+    private void Used(string name)
+    {
+        _recent.RemoveAll(n => n.Equals(name, StringComparison.OrdinalIgnoreCase));
+        _recent.Add(name);
+    }
+
+    /// <summary>Keeps <see cref="BaselinesInMemory"/> baselines in memory: the ones used longest ago go to disk.</summary>
+    private void SpillBeyondLimit()
+    {
+        while (_baselines.Count > BaselinesInMemory)
+        {
+            var oldest = _recent.FirstOrDefault(_baselines.ContainsKey) ?? _baselines.Keys.First();
             Directory.CreateDirectory(_spillFolder);
-            var file = System.IO.Path.Combine(_spillFolder, string.Concat(oldest.Select(c => char.IsLetterOrDigit(c) ? c : '_')) + ".codemap.json");
+            // Numbered, not named after the baseline: "v1.0" and "v1_0" would be one file.
+            var file = System.IO.Path.Combine(_spillFolder, $"baseline-{++_spillCount}.codemap.json");
             using (var stream = File.Create(file)) JsonExporter.Write(_baselines[oldest].Graph, stream);
             _baselines.Remove(oldest);
+            _recent.RemoveAll(n => n.Equals(oldest, StringComparison.OrdinalIgnoreCase));
             _spilled[oldest] = file;
         }
     }
@@ -291,6 +318,7 @@ internal sealed class CodeMapSession : IDisposable
         {
             var known = _baselineOrder.Remove(name);
             _baselines.Remove(name);
+            _recent.RemoveAll(n => n.Equals(name, StringComparison.OrdinalIgnoreCase));
             if (_spilled.Remove(name, out var file)) TryDelete(file);
             return known;
         }
@@ -298,11 +326,30 @@ internal sealed class CodeMapSession : IDisposable
 
     public Snapshot? Baseline(string name)
     {
+        string? file;
         lock (_gate)
         {
-            if (_baselines.TryGetValue(name, out var snapshot)) return snapshot;
-            if (!_spilled.TryGetValue(name, out var file)) return null;
-            var loaded = Load(file);
+            if (_baselines.TryGetValue(name, out var snapshot))
+            {
+                Used(name);
+                return snapshot;
+            }
+
+            if (!_spilled.TryGetValue(name, out file)) return null;
+        }
+
+        // Read back outside the lock (parsing and deriving a map takes seconds; the watchers and every tool's answer
+        // wait on it), and kept: the next use is as likely as this one. Another baseline goes to disk for it.
+        var loaded = Load(file);
+        lock (_gate)
+        {
+            if (_baselines.TryGetValue(name, out var meanwhile)) return meanwhile;
+            if (!_spilled.TryGetValue(name, out var still) || still != file) return loaded; // deleted or saved anew meanwhile
+            _spilled.Remove(name);
+            TryDelete(file);
+            _baselines[name] = loaded;
+            Used(name);
+            SpillBeyondLimit();
             return loaded;
         }
     }
@@ -318,7 +365,7 @@ internal sealed class CodeMapSession : IDisposable
     /// <summary>Files changed since the current analysis (relative to its root), and how many changes in all.</summary>
     public (IReadOnlyList<string> Files, int Count) Changes
     {
-        get { lock (_gate) return (_changed.ToList(), _changeCount); }
+        get { lock (_gate) return (_changed.Select(c => c.File).ToList(), _changeCount); }
     }
 
     private void Watch(string root)
@@ -348,8 +395,7 @@ internal sealed class CodeMapSession : IDisposable
         var relative = System.IO.Path.GetRelativePath(root, e.FullPath).Replace('\\', '/');
         lock (_gate)
         {
-            _changeCount++;
-            if (!_changed.Contains(relative) && _changed.Count < 20) _changed.Add(relative);
+            Changed(relative, limit: 20);
         }
     }
 
@@ -358,9 +404,17 @@ internal sealed class CodeMapSession : IDisposable
     {
         lock (_gate)
         {
-            _changeCount++;
-            if (!_changed.Contains(relativePath)) _changed.Add(relativePath);
+            Changed(relativePath, limit: int.MaxValue);
         }
+    }
+
+    /// <summary>Counts a change and remembers its file (up to a limit) with when it last changed.</summary>
+    private void Changed(string file, int limit)
+    {
+        _changeCount++;
+        var known = _changed.FindIndex(c => c.File == file);
+        if (known >= 0) _changed[known] = (file, _changeCount);
+        else if (_changed.Count < limit) _changed.Add((file, _changeCount));
     }
 
     private void StopWatching()

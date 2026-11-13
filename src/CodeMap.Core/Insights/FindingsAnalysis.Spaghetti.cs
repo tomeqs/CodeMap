@@ -30,7 +30,7 @@ public static partial class FindingsAnalysis
             };
 
             var members = nodes.ToHashSet(StringComparer.Ordinal);
-            var inside = c.Index.Dependencies(level).Values.Where(d => members.Contains(d.Source) && members.Contains(d.Target)).ToList();
+            var inside = c.Index.Inside(cycle) ?? c.Index.Dependencies(level).Values.Where(d => members.Contains(d.Source) && members.Contains(d.Target)).ToList();
             var cut = Layering.Compute(nodes, inside.Select(d => (d.Source, d.Target, d.Weight))).Upward
                 .Select(u => c.Index.DependencyBetween(u.Source, u.Target, level))
                 .Where(d => d != null).Select(d => d!)

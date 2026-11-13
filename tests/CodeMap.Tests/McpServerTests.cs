@@ -5,6 +5,7 @@ using CodeMap.Export;
 using CodeMap.Languages;
 using CodeMap.Mcp;
 using CodeMap.Model;
+using CodeMap.Pipeline;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -274,6 +275,78 @@ public sealed class McpServerTests
         Assert.Equal("done", refreshed.GetProperty("status").GetString());
         Assert.False(refreshed.GetProperty("meta").TryGetProperty("stale", out _));
         Assert.NotNull(c.Session.Previous);
+    }
+
+    /// <summary>A log that tells the test about every line (an analysis writes some while it runs).</summary>
+    private sealed class LineHook : StringWriter
+    {
+        public Action<string>? OnLine { get; set; }
+
+        public override void WriteLine(string? value)
+        {
+            base.WriteLine(value);
+            OnLine?.Invoke(value ?? "");
+        }
+    }
+
+    [Fact]
+    public async Task A_change_made_while_the_analysis_runs_again_is_still_a_change_afterwards()
+    {
+        using var ws = new TestWorkspace().Project("App");
+        ws.File("App/A.cs", "namespace App; public class A { }");
+        var log = new LineHook();
+        await using var c = await Connection.OpenAsync(new CodeMapMcpOptions { Analyzer = new AnalyzerOptions { Git = false }, Watch = true, Log = log, Registry = () => LanguageRegistry.BuiltIn });
+        await c.CallAsync("analyze", new { path = ws.Root });
+
+        // One file changed before the analysis is asked for again, another while it runs (it may have been read already).
+        c.Session.MarkChanged("App/Early.cs");
+        var during = 0;
+        log.OnLine = _ =>
+        {
+            if (Interlocked.Exchange(ref during, 1) == 0) c.Session.MarkChanged("App/Late.cs");
+        };
+        var (refreshed, _, _) = await c.CallAsync("analyze", new { refresh = true });
+        log.OnLine = null;
+        Assert.Equal("done", refreshed.GetProperty("status").GetString());
+        Assert.Equal(1, during);
+
+        var (overview, _, _) = await c.CallAsync("overview");
+        Assert.True(overview.GetProperty("meta").GetProperty("stale").GetBoolean());
+        Assert.Equal(new[] { "App/Late.cs" }, overview.GetProperty("meta").GetProperty("changedFiles").EnumerateArray().Select(f => f.GetString()));
+        Assert.Equal(new[] { "App/Late.cs" }, c.Session.Changes.Files);
+        Assert.Equal(1, c.Session.Changes.Count);
+
+        // Nothing changes during the next one: the map is fresh.
+        var (again, _, _) = await c.CallAsync("analyze", new { refresh = true });
+        Assert.False(again.GetProperty("meta").TryGetProperty("stale", out _));
+    }
+
+    [Fact]
+    public async Task Baselines_on_disk_keep_their_own_graphs_and_come_back_into_memory_when_used()
+    {
+        await using var c = await Connection.OpenAsync();
+        Snapshot Tiny(string project)
+        {
+            var graph = new CodeGraph { Source = new SourceInfo { Name = project, Root = Path.GetTempPath(), Path = Path.GetTempPath(), Kind = "directory" } };
+            graph.Nodes.Add(new GraphNode { Id = $"project:{project}", Kind = NodeKinds.Project, Name = project, Language = "csharp" });
+            var raw = RawGraph.FromDerived(graph, LanguageRegistry.BuiltIn);
+            return new Snapshot(project, "", raw, GraphPipeline.Derive(raw), "file", 0);
+        }
+
+        // More than are kept in memory: the first two go to disk. Their names differ only in punctuation.
+        var names = new[] { "v1.0", "v1_0", "a", "b", "c", "d" };
+        Assert.Equal(names.Length - 2, CodeMapSession.BaselinesInMemory);
+        for (var i = 0; i < names.Length; i++) c.Session.Save(names[i], Tiny($"P{i}"));
+        Assert.True(c.Session.IsSpilled("v1.0") && c.Session.IsSpilled("v1_0"));
+
+        Assert.Equal("P0", c.Session.Baseline("v1.0")!.Graph.Source.Name);
+        Assert.Equal("P1", c.Session.Baseline("v1_0")!.Graph.Source.Name);
+        // Used: they are in memory again (the same graph the next time), and the ones used longest ago are on disk.
+        Assert.False(c.Session.IsSpilled("v1.0") || c.Session.IsSpilled("v1_0"));
+        Assert.Same(c.Session.Baseline("v1.0"), c.Session.Baseline("v1.0"));
+        Assert.True(c.Session.IsSpilled("a") && c.Session.IsSpilled("b"));
+        Assert.Equal("P2", c.Session.Baseline("a")!.Graph.Source.Name);
+        Assert.Equal(names, c.Session.BaselineNames());
     }
 
     [Fact]

@@ -164,7 +164,7 @@ public static partial class FindingsAnalysis
                 var share = (double)weight / total;
                 if (share < o.TinyPartnerShare) continue;
 
-                var held = c.Graph.Nodes.Where(n => NodeLevels.IsType(n) && c.Index.ContainerOf(n.Id, level) == module.Id).Select(n => n.Id).ToList();
+                var held = c.Index.TypesIn(module.Id, level).Select(n => n.Id).ToList();
                 var rule = level == NodeLevels.Project ? "tiny-project" : "tiny-namespace";
                 var unit = level == NodeLevels.Project ? "project" : "namespace";
                 c.Add(rule, module.Id, FindingSeverity.Info, $"{module.Name} is a tiny {unit}",

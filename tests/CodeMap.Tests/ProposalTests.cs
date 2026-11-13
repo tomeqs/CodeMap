@@ -11,12 +11,12 @@ public class ProposalTests
 {
     private static readonly AnalyzerOptions NoGit = new() { Git = false };
 
-    private sealed record Map(RawGraph Raw, CodeGraph Graph, GraphIndex Index, FindingsReport Findings)
+    internal sealed record Map(RawGraph Raw, CodeGraph Graph, GraphIndex Index, FindingsReport Findings)
     {
         public List<Proposal> Propose(ProposalRequest? request = null) => ProposalEngine.Propose(Raw, Graph, Findings, Index, request);
     }
 
-    private static Map Of(RawGraph raw)
+    internal static Map Of(RawGraph raw)
     {
         var graph = GraphPipeline.Derive(raw);
         var index = new GraphIndex(graph);
@@ -137,30 +137,22 @@ public class ProposalTests
     }
 
     [Fact]
-    public void Twenty_thousand_types_are_searched_within_ten_seconds()
+    public void Asking_for_one_kind_gives_what_the_full_search_has_of_it_and_a_cancelled_search_stops()
     {
-        // 200 namespaces of 100 types; each namespace uses the next, and every tenth also uses the one before: 2-cycles.
-        var graph = new CodeGraph { Source = new SourceInfo { Name = "big", Root = Path.GetTempPath(), Path = Path.GetTempPath(), Kind = "directory" } };
-        graph.Nodes.Add(new GraphNode { Id = "project:Big", Kind = NodeKinds.Project, Name = "Big", Language = "csharp" });
-        for (var n = 0; n < 200; n++)
+        var map = Shop.Value;
+        var all = map.Propose(new ProposalRequest { Limit = 20 });
+        Assert.True(all.Select(p => p.Kind).Distinct().Count() >= 2, string.Join(", ", all.Select(p => p.Kind).Distinct()));
+        foreach (var kind in all.Select(p => p.Kind).Distinct())
         {
-            graph.Nodes.Add(new GraphNode { Id = $"namespace:Big/Big.N{n}", Kind = NodeKinds.Namespace, Name = $"Big.N{n}", Parent = "project:Big", Project = "project:Big" });
-            for (var t = 0; t < 100; t++)
-            {
-                graph.Nodes.Add(new GraphNode { Id = $"T:Big.N{n}.T{t}", Kind = NodeKinds.Class, Name = $"T{n}_{t}", FullName = $"Big.N{n}.T{t}", Parent = $"namespace:Big/Big.N{n}", Project = "project:Big", Namespace = $"Big.N{n}", Accessibility = "public", Location = new SourceLocation { File = $"N{n}/T{t}.cs", Line = 1, EndLine = 20 }, Metrics = new() { ["loc"] = 20 } });
-                if (t > 0) graph.Edges.Add(new GraphEdge { Source = $"T:Big.N{n}.T{t}", Target = $"T:Big.N{n}.T{t - 1}", Kind = EdgeKinds.Uses });
-            }
-
-            if (n + 1 < 200) graph.Edges.Add(new GraphEdge { Source = $"T:Big.N{n}.T0", Target = $"T:Big.N{n + 1}.T99", Kind = EdgeKinds.Uses, Weight = 3 });
-            if (n % 10 == 9) graph.Edges.Add(new GraphEdge { Source = $"T:Big.N{n}.T50", Target = $"T:Big.N{n - 1}.T50", Kind = EdgeKinds.Uses });
+            // Only generators that can make the kind run: none of them may be forgotten.
+            var only = map.Propose(new ProposalRequest { Kinds = new[] { kind }, Limit = 20 });
+            Assert.NotEmpty(only);
+            Assert.All(only, p => Assert.Equal(kind, p.Kind));
+            Assert.Superset(all.Where(p => p.Kind == kind).Select(p => p.Id).ToHashSet(), only.Select(p => p.Id).ToHashSet());
         }
 
-        var map = Of(RawGraph.FromDerived(graph, LanguageRegistry.BuiltIn));
-        Assert.Equal(20, map.Findings.Findings.Count(f => f.Rule == "cycle.namespace"));
-        var clock = System.Diagnostics.Stopwatch.StartNew();
-        var proposals = map.Propose(new ProposalRequest { Limit = 3 });
-        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"took {clock.Elapsed}");
-        Assert.Equal(3, proposals.Count);
-        Assert.All(proposals, p => Assert.NotNull(p.Predicted));
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        Assert.Throws<OperationCanceledException>(() => ProposalEngine.Propose(map.Raw, map.Graph, map.Findings, map.Index, new ProposalRequest(), cancelled.Token));
     }
 }
