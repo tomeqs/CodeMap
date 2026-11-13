@@ -401,7 +401,7 @@ export class ProjectsScreen {
     switch (event.type) {
       case 'started':
         if (event.live) {
-          app.setLiveStatus('Updating the map…');
+          if (app.showsProject(event.path)) app.setLiveStatus('Updating the map…');
         } else {
           if (!this.visible) await this.open();
           this.showJob({ id: event.jobId, path: event.path, status: 'running', log: [] });
@@ -412,6 +412,9 @@ export class ProjectsScreen {
         if (this.job?.id === event.jobId) this.appendLog(event.message);
         break;
       case 'done': {
+        // A live update of a project that is not the one on screen (another was opened meanwhile) is not shown.
+        if (event.live && app.model && !app.showsProject(event.path)) break;
+        const order = (this.doneOrder = (this.doneOrder ?? 0) + 1);
         let doc;
         try {
           doc = await this.client.get(`/api/jobs/${event.jobId}/graph`);
@@ -420,6 +423,7 @@ export class ProjectsScreen {
           break;
         }
 
+        if (order !== this.doneOrder) break; // a newer result arrived while this one was fetched
         const project = { path: event.path, settings: event.settings, key: event.key };
         if (event.live && app.model) {
           app.load(doc, { preserve: true });

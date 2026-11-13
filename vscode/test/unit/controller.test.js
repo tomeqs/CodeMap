@@ -84,11 +84,17 @@ test('opens the map, jumps between code and map, refreshes on save', { skip: !bu
     assert.deepEqual(log.clipboard, ['sequenceDiagram']);
     assert.equal(log.saved[0].file, path.join(shop, 'name.mmd'), 'only the file name is used');
 
-    // live: saving a C# file analyzes again and sends a "preserve" update
+    // live: saving a C# file analyzes again; a save that changed nothing the map shows leaves the map as it is…
     const loads = () => log.posted.filter((m) => m.type === 'load').length;
     const before = loads();
     saveEmitter.fire({ uri: Uri.file(orderFile) });
     saveEmitter.fire({ uri: Uri.file(path.join(shop, 'README.md')) }); // not code: ignored
+    await until(() => controller.output.lines.includes('The map is up to date.'));
+    assert.equal(loads(), before, 'the same graph is not loaded again');
+    assert.deepEqual(log.posted.at(-1), { type: 'status', text: null });
+    // …and when the graph is another one (here: the map shows an older one), it gets a "preserve" update
+    controller.docKey = 'an older graph';
+    saveEmitter.fire({ uri: Uri.file(orderFile) });
     await until(() => loads() === before + 1);
     assert.equal(log.posted.filter((m) => m.type === 'load').at(-1).preserve, true);
 
@@ -212,5 +218,146 @@ test('live updates follow Python sources and project files, not environments or 
 
   for (const file of ['app/__pycache__/main.py', '.venv/lib/x.py', 'venv/lib/site.py', 'lib/site-packages/x.py', 'pkg.egg-info/x.py', '.tox/py/x.py', 'poetry.lock', 'setup.py.orig']) {
     assert.ok(!isSourceFile(file), file);
+  }
+});
+
+// ------------------------------------------------------------------ with a stand-in analyzer
+
+/** The extension with an analyzer that returns what the test says (and counts how many run at once). */
+function withAnalyzer({ root, settings = {}, python } = {}) {
+  const mock = createMock({ workspaceRoot: root, settings: { gitHistory: false, ...settings }, files: [] });
+  const restore = installMock(mock.vscode);
+  const fakeExtension = fs.mkdtempSync(path.join(os.tmpdir(), 'codemap-ext-'));
+  fs.mkdirSync(path.join(fakeExtension, 'media'));
+  fs.copyFileSync(path.join(__dirname, 'fixtures', 'viewer.html'), path.join(fakeExtension, 'media', 'viewer.html'));
+  const runs = { count: 0, active: 0, most: 0, next: [], wait: null };
+  const analyzer = require('../../src/analyzer');
+  analyzer.resolveAnalyzer = () => ({ label: 'test analyzer' });
+  analyzer.runAnalyzer = async (_analyzer, target) => {
+    runs.count++;
+    runs.most = Math.max(runs.most, ++runs.active);
+    try {
+      if (runs.wait) await runs.wait;
+      const doc = runs.next.shift() ?? runs.doc;
+      return { ...doc, generatedAt: new Date(Date.now() + runs.count).toISOString(), source: { path: target, root, name: 'test', ...doc?.source } };
+    } finally {
+      runs.active--;
+    }
+  };
+  const { CodeMapController } = require('../../src/extension');
+  const context = fakeContext(fakeExtension);
+  const { controller } = require('../../src/extension').activate(context);
+  if (python) controller.python = python;
+  const done = () => {
+    restore();
+    fs.rmSync(fakeExtension, { recursive: true, force: true });
+  };
+  return { ...mock, controller, context, runs, done, CodeMapController };
+}
+
+const graph = (...files) => ({ format: 'codemap', nodes: files.map((file, i) => ({ id: `n${i}`, location: { file, line: 1 } })), edges: [] });
+
+test('one analysis at a time, also while the Python interpreter is still being found', { timeout: 30000 }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codemap-ws-'));
+  // The first look-up takes a while (the Python extension is starting); later ones answer at once.
+  let found;
+  const python = { current: () => (found ? Promise.resolve('/usr/bin/python3') : new Promise((resolve) => (found = resolve))), onDidChange: () => ({ dispose() {} }) };
+  const { controller, context, runs, log, done } = withAnalyzer({ root, python });
+  try {
+    await context.workspaceState.update('codemap.target', root);
+    controller.createPanel(1);
+    log.panels[0].receive({ type: 'ready' });
+    runs.doc = graph('a.py');
+    const first = controller.analyze();
+    const second = controller.analyze({ preserve: true }); // a save or Refresh while the interpreter is looked up
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(runs.count, 0, 'still looking for the interpreter');
+    found('/usr/bin/python3');
+    await Promise.all([first, second]);
+    await until(() => runs.count === 2 && !controller.running, 5000); // the second one waited for the first
+    assert.equal(runs.most, 1, 'never two analyzers at once');
+    assert.equal(log.posted.filter((m) => m.type === 'load').length, 1, 'and its (same) graph is not loaded twice');
+  } finally {
+    done();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a graph that arrives before the map is ready keeps its place before what was asked of the map', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codemap-ws-'));
+  const { controller, log, done } = withAnalyzer({ root });
+  try {
+    controller.createPanel(1);
+    controller.send({ type: 'load', doc: { n: 1 } }); // the cached map
+    controller.send({ type: 'status', text: 'Updating the map…' });
+    controller.send({ type: 'reveal', id: 'T:A' }); // Show in Code Map, before the webview has started
+    controller.send({ type: 'load', doc: { n: 2 } }); // the fresh analysis
+    assert.deepEqual(controller.queue.map((m) => m.type), ['load', 'status', 'reveal']);
+    assert.equal(controller.queue[0].doc.n, 2, 'the newest graph, where the first one was');
+    assert.equal(log.posted.length, 0);
+  } finally {
+    done();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('live updates follow folders and renames, and a save during the first analysis', { timeout: 30000 }, async () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codemap-ws-')));
+  const write = (file, text = '') => {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    fs.writeFileSync(path.join(root, file), text);
+  };
+  write('src/orders/order.py', 'class Order: ...\n');
+  write('docs/notes.md', 'notes\n');
+  write('node_modules/x/index.js', '');
+  fs.mkdirSync(path.join(root, 'empty'));
+  const { controller, context, runs, log, renameEmitter, saveEmitter, done } = withAnalyzer({ root });
+  try {
+    await context.workspaceState.update('codemap.target', root);
+    controller.createPanel(1);
+    log.panels[0].receive({ type: 'ready' });
+
+    // A save while the first analysis runs (it may have read the file already): another analysis follows.
+    let release;
+    runs.wait = new Promise((resolve) => (release = resolve));
+    runs.doc = graph('src/orders/order.py', 'src/billing/invoice.py');
+    const first = controller.analyze();
+    await until(() => runs.active === 1, 5000);
+    saveEmitter.fire({ uri: Uri.file(path.join(root, 'docs/notes.md')) }); // not code
+    assert.equal(controller.pending, false);
+    saveEmitter.fire({ uri: Uri.file(path.join(root, 'src/orders/order.py')) });
+    assert.equal(controller.pending, true);
+    runs.wait = null;
+    release();
+    await first;
+    await until(() => runs.count === 2 && !controller.running, 5000);
+
+    // Folders: one with sources in it, or one the map has code from (deleted or moved away).
+    const holds = (relative) => controller.holdsSources(relative, path.join(root, relative));
+    assert.equal(holds('src/orders'), true, 'a folder with a source file');
+    assert.equal(holds('src'), true, 'through its subfolders');
+    assert.equal(holds('empty'), false, 'an empty folder');
+    assert.equal(holds('docs'), false, 'a folder without code');
+    assert.equal(holds('node_modules'), false, 'dependencies');
+    assert.equal(holds('node_modules/x'), false);
+    assert.equal(holds('src/billing'), true, 'gone, and the map has code from it');
+    assert.equal(holds('src/bill'), false, 'gone, and only the start of a name the map knows');
+    assert.equal(holds('docs/notes.md'), false, 'a file that is not code');
+
+    // A folder renamed in the explorer: one event, for the folder.
+    const before = runs.count;
+    fs.renameSync(path.join(root, 'src/orders'), path.join(root, 'src/ordering'));
+    renameEmitter.fire({ files: [{ oldUri: Uri.file(path.join(root, 'src/orders')), newUri: Uri.file(path.join(root, 'src/ordering')) }] });
+    await until(() => runs.count === before + 1, 5000);
+
+    // Closing the map drops the save that was waiting.
+    saveEmitter.fire({ uri: Uri.file(path.join(root, 'src/ordering/order.py')) });
+    log.panels[0].dispose();
+    await new Promise((r) => setTimeout(r, 1100));
+    assert.equal(runs.count, before + 1, 'no analysis after the panel is gone');
+    assert.equal(context.subscriptions.filter((s) => s.panel).length, 0);
+  } finally {
+    done();
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

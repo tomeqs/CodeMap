@@ -343,8 +343,7 @@ internal sealed class CodeMapSession : IDisposable
     {
         var root = _watchRoot;
         if (root == null) return;
-        var relevant = SourceChangeFilter.IsRelevant(e.FullPath, Registry, root) || e is RenamedEventArgs r && SourceChangeFilter.IsRelevant(r.OldFullPath, Registry, root);
-        if (!relevant) return;
+        if (!SourceChangeFilter.IsRelevant(e, Registry, root)) return;
         var relative = System.IO.Path.GetRelativePath(root, e.FullPath).Replace('\\', '/');
         lock (_gate)
         {

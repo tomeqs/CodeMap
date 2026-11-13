@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Opening the map no longer leaves the camera inside it.** The map shows the last graph at once and the fresh analysis a moment later; when that second load came before the first layout had settled, the camera stayed in the small starting ball, with oversized, washed-out planets. The same happened when a file was saved during the first layout.
+- **A save that changes nothing leaves the map alone.** The same graph is not loaded again (also right after opening, when nothing changed since the last time), and a graph with the same units and links takes its new numbers in place: no new layout, no unfolding, the selection stays. Only a change of structure lays the map out again.
+- **Shortcuts are plain keys.** Ctrl/Cmd+C (copying a name from the details) switched to the City, Ctrl+1 changed the level, Cmd+Z toggled the semantic zoom; typing in a text area did the same.
+- **One analysis at a time.** A save or Refresh while the Python interpreter was still being looked up started a second analyzer next to the first, and the older result could win.
+- **Folders and renames refresh the map**: creating, deleting, moving or renaming a folder of sources, renaming a file, and a save during the first analysis (it was dropped). *Show in Code Map* and *Show Call Flow* asked while the map was starting are no longer lost when the fresh analysis arrives first.
+- **Lighter at rest and on hover.** Labels are laid out when the camera, the units or the selection change instead of on every frame; hovering reads the unit's own links, builds the tooltip once per unit, and the quiet flow of particles no longer jumps when the pointer leaves a unit.
+- In the browser app, a live update of one project no longer replaces another project that was opened meanwhile.
+
 ## 0.4.1
 
 - **Switching views no longer stalls.** Each view brought lights of its own, and the lights are part of the shaders, so every switch (also back to a view seen before, and between Types and Auto) compiled the shaders of the whole map again: up to a second or more without a frame, longer on Windows. One set of lights now serves every view, and the city, the matrix and the layers keep their meshes and materials from one build to the next. The first click on a planet no longer compiles the selection's halo either.
