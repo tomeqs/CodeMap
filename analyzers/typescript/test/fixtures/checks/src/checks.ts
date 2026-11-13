@@ -39,7 +39,7 @@ export function flow(x: number, s: string) {
   }
 
   if (true) return 7;
-  while (true) { break; }
+  while (true) { break; } while (1) { break; }
   if ((x as unknown) == '1') return 8;
   if (s == null) return 9;
   const n: number | null = Math.random() > 0.5 ? null : 1;

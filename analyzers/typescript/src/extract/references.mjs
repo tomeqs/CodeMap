@@ -15,6 +15,18 @@ export function collectReferences(ctx, sf, owners) {
     const node = owner.node;
     const codes = owner.code ? (Array.isArray(owner.code) ? owner.code : [owner.code]) : [];
     const fn = functionLike(ts, node);
+    // The types of a function's own signature are edges of their own (accepts, returns, the constraints of its type
+    // parameters): the walk of an arrow function, which is its own code, does not count them again as `uses`.
+    const signature = new Set();
+    if (fn) {
+      for (const parameter of fn.parameters ?? []) if (parameter.type) signature.add(parameter.type);
+      if (fn.type) signature.add(fn.type);
+      for (const parameter of fn.typeParameters ?? []) {
+        if (parameter.constraint) signature.add(parameter.constraint);
+        if (parameter.default) signature.add(parameter.default);
+      }
+    }
+
     if (fn) {
       typeParameterEdges(ctx, owner.id, fn.typeParameters);
       // const Badge: Renderer<BadgeProps> = (p) => …: the annotation is the function's type.
@@ -44,7 +56,7 @@ export function collectReferences(ctx, sf, owners) {
     }
 
     decorate(node, owner.id);
-    for (const code of codes) walk(code, owner.id);
+    for (const code of codes) walk(code, owner.id, signature);
   }
 
   /** `@Decorator(args)` on a declaration or parameter: an edge to the decorator, and its arguments are code of the owner. */
@@ -57,11 +69,12 @@ export function collectReferences(ctx, sf, owners) {
     }
   }
 
-  function walk(root, ownerId) {
+  function walk(root, ownerId, counted) {
     const edge = (target, kind, at) => {
       if (target) graph.addEdge(ownerId, target.id, kind, kind === 'calls' || kind === 'instantiates' ? lineOf(at) : 0);
     };
     const visit = (n) => {
+      if (counted?.has(n)) return;
       // Code a framework gave to someone else (the handlers of an Express route belong to the route).
       const claimedBy = ctx.claimed?.get(n);
       if (claimedBy && claimedBy !== ownerId) return;
@@ -154,9 +167,12 @@ function heritage(ctx, owner, node) {
       type.typeArguments?.forEach((t) => typeEdges(ctx, owner.id, t, 'uses'));
       if (ts.isInterfaceDeclaration(node)) continue;
 
+      // The base's instance side, and (a class it extends) its static side: a static member overrides a static one.
       let base;
+      let statics;
       try {
         base = checker.getTypeAtLocation(type);
+        if (!implementsClause) statics = checker.getTypeAtLocation(type.expression);
       } catch {
         continue;
       }
@@ -164,7 +180,8 @@ function heritage(ctx, owner, node) {
       for (const member of node.members) {
         if (ts.isConstructorDeclaration(member) || !member.name) continue;
         const memberId = declarationId(ctx, member);
-        const property = base?.getProperty?.(member.name.getText());
+        const isStatic = (ts.getCombinedModifierFlags(member) & ts.ModifierFlags.Static) !== 0;
+        const property = (isStatic ? statics : base)?.getProperty?.(memberName(ts, member.name));
         if (!memberId || !property) continue;
         for (const decl of property.declarations ?? []) {
           const id = declarationId(ctx, decl);
@@ -174,6 +191,11 @@ function heritage(ctx, owner, node) {
       }
     }
   }
+}
+
+/** A member's name as the checker knows it: `"kebab-name"() {}` is kebab-name, without the quotes it is written in. */
+function memberName(ts, name) {
+  return ts.isIdentifier(name) || ts.isPrivateIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name) ? name.text : name.getText();
 }
 
 /** `<T extends Constraint = Default>`: the constraints and defaults of type parameters are types the declaration uses. */

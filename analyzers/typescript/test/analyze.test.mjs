@@ -356,6 +356,53 @@ test('default values and decorators of the parameters of declared functions and 
   hasEdge(`${P}dec.ts#AController.constructor`, 'decoratedWith', `${P}dec.ts#CurrentUser`);
 });
 
+test('an arrow function accepts and returns its own types (not also uses them), and its body still uses types', () => {
+  const { graph, hasEdge, noEdge } = inline({
+    'src/a.ts': [
+      'export class Order { id = 1; }',
+      'export class Draft { id = 2; }',
+      'type Limit = number;',
+      'export const total = (o: Order): Order => o;',
+      'export function total2(o: Order): Order { return o; }',
+      'export const pick = <T extends Limit>(x: T, o: Order = new Order()) => { const d = {} as Draft; return [x, o, d]; };',
+      'export class Handlers { handle = (o: Order): void => {}; }',
+      '',
+    ].join('\n'),
+  });
+  for (const name of ['total', 'total2', 'Handlers.handle']) {
+    hasEdge(`${P}a.ts#${name}`, 'accepts', `${P}a.ts#Order`);
+    noEdge(`${P}a.ts#${name}`, 'uses', `${P}a.ts#Order`);
+  }
+
+  hasEdge(`${P}a.ts#total`, 'returns', `${P}a.ts#Order`);
+  // What is not its signature is still its code: a default value, a cast in the body; a constraint is used once.
+  hasEdge(`${P}a.ts#pick`, 'instantiates', `${P}a.ts#Order`);
+  hasEdge(`${P}a.ts#pick`, 'uses', `${P}a.ts#Draft`);
+  assert.equal(graph.edges.find((e) => e.source === `${P}a.ts#pick` && e.kind === 'uses' && e.target === `${P}a.ts#Limit`)?.weight ?? 1, 1);
+});
+
+test('overrides: static members override static ones, instance members instance ones, whatever their names are written in', () => {
+  const { hasEdge, noEdge } = inline({
+    'src/a.ts': [
+      'export interface Named { label(): string; }',
+      'export class Base { create(): number { return 1; } static make(): number { return 1; } "kebab-name"(): void {} run(): void {} }',
+      'export class Child extends Base implements Named {',
+      '  static create(): number { return 2; }',
+      '  static make(): number { return 2; }',
+      '  "kebab-name"(): void {}',
+      '  run(): void {}',
+      '  label(): string { return ""; }',
+      '}',
+      '',
+    ].join('\n'),
+  });
+  hasEdge(`${P}a.ts#Child.make`, 'overrides', `${P}a.ts#Base.make`);
+  hasEdge(`${P}a.ts#Child.run`, 'overrides', `${P}a.ts#Base.run`);
+  hasEdge(`${P}a.ts#Child.kebab-name`, 'overrides', `${P}a.ts#Base.kebab-name`);
+  hasEdge(`${P}a.ts#Child.label`, 'implements', `${P}a.ts#Named.label`);
+  noEdge(`${P}a.ts#Child.create`, 'overrides', `${P}a.ts#Base.create`); // a static create() is not the instance's
+});
+
 test('a relative import that finds a .d.ts leads to the analyzed file next to it', () => {
   const { hasEdge } = inline({
     'config/port.d.ts': 'export declare const PORT: number;\n',

@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import os
 
+from ..declarations import _is_generator
 from ..resolve import ContainerVal
 from ..symbols import ClassDecl, FuncDecl, decorator_name
 from . import Part
@@ -23,6 +24,7 @@ class Testing(Part):
         self.fixtures: dict[str, dict[str, FuncDecl]] = {}  # folder → fixture name → its function (module and conftest.py)
         self.module_fixtures: dict[str, dict[str, FuncDecl]] = {}  # module id → its own fixtures
         self.requests: list[tuple[FuncDecl, object]] = []  # tests and fixtures, with their module
+        self.values: dict = {}  # fixture → what it gives a test (asked once per fixture, not once per test)
         self.resolver.parameter_hook = self.fixture_value
 
     def declare(self, module, owners: list) -> None:
@@ -48,7 +50,11 @@ class Testing(Part):
         fixture = self.module_fixtures.get(module.id, {}).get(name) or self._conftest_fixture(name, module)
         if fixture is None or fixture.node is node:
             return None
-        if any(isinstance(n, (ast.Yield, ast.YieldFrom)) for n in ast.walk(fixture.node)):
+        return self.resolver.memo(self.values, id(fixture), ("fixture", id(fixture)), lambda: self._given(fixture))
+
+    def _given(self, fixture: FuncDecl):
+        # A fixture that yields gives what it yields (a function it only defines inside may yield as it likes).
+        if _is_generator(fixture.node):
             value = self.resolver.yield_type(fixture)
             if value is None:
                 declared = self.resolver.return_type(fixture)

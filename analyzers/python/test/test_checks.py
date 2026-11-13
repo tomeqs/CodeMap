@@ -86,6 +86,18 @@ class ExceptionsTest(unittest.TestCase):
                     cleanup = lambda: 1
         ''')
         self.assertEqual([f for f in found if f[0] == "return-in-finally"], [("return-in-finally", 6), ("return-in-finally", 13)])
+        # A try inside a finally: its own finally's return leaves both, and is reported once.
+        nested = check('''
+            def c():
+                try:
+                    pass
+                finally:
+                    try:
+                        pass
+                    finally:
+                        return 1
+        ''')
+        self.assertEqual(nested, [("return-in-finally", 9)])
 
     def test_raise_not_implemented_and_exceptions_not_raised(self):
         found = check('''
@@ -310,6 +322,13 @@ class DeadCodeTest(unittest.TestCase):
 
 
 class ScopeTest(unittest.TestCase):
+    def test_lines_are_counted_as_the_parser_counts_them(self):
+        # A form feed (a page break in old sources) and U+2028 in a string end no line for Python: `# noqa` and the
+        # comment in an except still belong to the lines they are written on.
+        for mark in ("\x0c", "x = '\u2028'"):
+            found = check(f"import os\n{mark}\n\ndef f(x):\n    try:\n        os.getcwd()\n    except Exception:  # we tried\n        pass\n    return x == None  # noqa\n")
+            self.assertEqual(found, [], repr(mark))
+
     def test_noqa_tests_and_generated_code_are_left_alone(self):
         self.assertEqual(rules("import json  # noqa: F401\nimport os  # NOQA\n"), [])
         self.assertEqual(rules("def test_x(a=[]):\n    pass\n", path="tests/test_x.py"), [])

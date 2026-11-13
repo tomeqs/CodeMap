@@ -10,7 +10,7 @@ import builtins
 import re
 
 from .resolve import TASK_CALLS, ClassVal, ComprehensionScope, ExtVal, FuncVal, FunctionScope
-from .symbols import ClassDecl, FuncDecl, decorator_name, symbols_of
+from .symbols import ClassDecl, FuncDecl, decorator_name, source_lines, symbols_of
 
 CATCH_ALL = {"Exception", "BaseException", "builtins.Exception", "builtins.BaseException"}
 LOGGING = re.compile(r"log|warn|error|report|trace|captur|notify|print|exception|sentry|alert|fail", re.I)
@@ -39,8 +39,9 @@ class Checker:
         self.resolver = ctx.resolver
         self.module = module
         self.table = symbols_of(module)
-        self.lines = module.text.splitlines()
+        self.lines = source_lines(module.text)
         self.out: list[dict] = []
+        self.in_finally: set[int] = set()  # statements already reported as leaving a finally
         self.in_class = False  # in a class body (not a method's): x = x copies the module's x into the class
         self.decls = {id(d.node): d for d in self.table.decls if isinstance(d, (FuncDecl, ClassDecl))}
         for decl in self.table.decls:
@@ -342,7 +343,10 @@ class Checker:
         stack = [(s, False) for s in body]
         while stack:
             statement, in_loop = stack.pop()
-            if isinstance(statement, ast.Return) or (isinstance(statement, (ast.Break, ast.Continue)) and not in_loop):
+            leaves = isinstance(statement, ast.Return) or (isinstance(statement, (ast.Break, ast.Continue)) and not in_loop)
+            # A try inside this finally has its own finally: the statement is found from both, and reported once.
+            if leaves and id(statement) not in self.in_finally:
+                self.in_finally.add(id(statement))
                 word = "return" if isinstance(statement, ast.Return) else "break" if isinstance(statement, ast.Break) else "continue"
                 self.report(statement, "return-in-finally", "warning", "exceptions", f"A {word} in finally discards the exception that may be leaving the try block.")
             if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):

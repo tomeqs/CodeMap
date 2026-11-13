@@ -16,6 +16,7 @@ from .symbols import (
     decorator_name,
     first_sentence,
     is_constant_name,
+    source_lines,
     symbols_of,
 )
 
@@ -65,7 +66,7 @@ def declare_module(ctx, module) -> list:
     base_tags = ["test"] if module.is_test else []
     if module.generated:
         base_tags.append("generated")
-    lines = module.text.splitlines()
+    lines = source_lines(module.text)
     owners = []
     for decl in table.decls:
         node = _decl_node(ctx, module, decl, project_id, package, lines)

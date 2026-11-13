@@ -27,6 +27,8 @@ class FastApiDi(Part):
         self.providers: dict[str, dict] = {}  # service → its registration
         self.uses: dict[str, list[bool]] = {}  # service → use_cache of each Depends asking for it
         self.dependencies: list[dict] = []
+        self.asked: set[tuple] = set()  # (consumer, service, external) of every dependency
+        self.consumers: set[str] = set()
         self.by_router: dict[str, list[dict]] = {}  # router key → providers its dependencies=[…] ask for
 
     # ---------------------------------------------------------------- parameters
@@ -117,7 +119,10 @@ class FastApiDi(Part):
         dependency = {"consumer": consumer, "service": service, "framework": "fastapi"}
         if provided.get("external"):
             dependency["external"] = True
-        if dependency not in self.dependencies:
+        key = (consumer, service, bool(provided.get("external")))
+        if key not in self.asked:
+            self.asked.add(key)
+            self.consumers.add(consumer)
             self.dependencies.append(dependency)
 
     # ---------------------------------------------------------------- routes and routers
@@ -160,7 +165,7 @@ class FastApiDi(Part):
             for provided in asked:
                 if provided is not None:
                     self._depend(endpoint, dict(provided))
-            if endpoint in {d["consumer"] for d in self.dependencies}:
+            if endpoint in self.consumers:
                 self.providers.setdefault(endpoint, {
                     "service": endpoint, "kind": "controller", "lifetime": "scoped", "registeredIn": router,
                     "location": location(scope.module, decorator),

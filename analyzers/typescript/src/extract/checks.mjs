@@ -96,7 +96,8 @@ export function collectDiagnostics(ctx, sf, info) {
     const e = strip(expr);
     if (!e) return;
     const literal = e.kind === ts.SyntaxKind.TrueKeyword || e.kind === ts.SyntaxKind.FalseKeyword || ts.isNumericLiteral(e) || ts.isStringLiteral(e);
-    const loopForever = ts.isWhileStatement(node) && e.kind === ts.SyntaxKind.TrueKeyword;
+    // while (true) and while (1) loop on purpose.
+    const loopForever = ts.isWhileStatement(node) && (e.kind === ts.SyntaxKind.TrueKeyword || (ts.isNumericLiteral(e) && Number(e.text) !== 0));
     const doOnce = ts.isDoStatement(node) && (e.kind === ts.SyntaxKind.FalseKeyword || (ts.isNumericLiteral(e) && e.text === '0'));
     if (literal && !loopForever && !doOnce) {
       at(e, 'constant-condition', 'codemap', 'info', 'correctness', `The condition '${e.getText(sf)}' never changes: a leftover from debugging, or a branch that never runs.`);
