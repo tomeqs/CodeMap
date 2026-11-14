@@ -268,15 +268,17 @@ try {
       });
       assert.ok(other, 'an unrelated node on screen, clear of the panels, the selection and its links');
       // Only the node counts: hide the HTML labels drawn over the canvas, and the sky behind it (a star in the
-      // measured pixels, or a nebula as bright as a dimmed node, would hide the change).
+      // measured pixels, or a nebula as bright as a dimmed node, would hide the change). Motion off: the selection
+      // draws only the frames the stage asks for itself (with motion, the wave of light keeps drawing frames for a
+      // while and would cover a frame that is missing).
       await page.evaluate(() => {
         document.getElementById('labels').style.visibility = 'hidden';
         window.codemap.stage.sky.visible = false;
-        window.codemap.stage.invalidate();
+        window.codemap.setMotion('off');
       });
       await drained(page);
       const before = await brightness(other);
-      // As if the user had been away: no ambient frames (pulsing halo) that would hide a missing frame.
+      // As if the user had been away: no ambient frames (pulsing halo) either.
       await page.evaluate((id) => {
         window.codemap.stage.lastInput = -1e9;
         window.codemap.select(id);
@@ -284,13 +286,23 @@ try {
       // Every frame the stage wanted to draw is drawn (software frames can be slow), then nothing more.
       await drained(page);
       const after = await brightness(other);
+      // One more frame, asked for by hand: if the dimming had waited for it, this is where it would show.
+      await page.evaluate(() => window.codemap.stage.invalidate());
+      await drained(page);
+      const later = await brightness(other);
       await page.evaluate(() => {
         window.codemap.select(null);
+        window.codemap.setMotion(null);
         document.getElementById('labels').style.visibility = '';
         window.codemap.stage.sky.visible = true;
         window.codemap.stage.invalidate();
       });
-      assert.ok(after < before * 0.7, `brightness of an unrelated node (${other.id}, selected ${other.selected}): ${before} before, ${after} after selecting`);
+      const measured = `brightness of an unrelated node (${other.id}, selected ${other.selected}): ${before} before, ${after} after selecting, ${later} one frame later`;
+      assert.ok(Math.abs(later - after) <= Math.max(4, after * 0.03), `the dimming waited for a further frame: ${measured}`);
+      // The node is dimmed to a tenth of its light, but tone mapping squeezes bright pixels: on screen it keeps about
+      // 0.2 to 0.75 of its brightness, more the more overexposed it was (a fixed 0.7 failed now and then). Not drawn
+      // at all, it would stay as it was.
+      assert.ok(after < before * 0.9, `the node did not dim: ${measured}`);
     });
 
     await test('a hover right after a recolour keeps the full colour upload', async () => {
