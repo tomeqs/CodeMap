@@ -215,6 +215,9 @@ try {
           return max;
         }, shot.toString('base64'));
       };
+      // The camera where it stays (a fit may still be flying after the layout settled): the node is picked by
+      // where it is on screen.
+      await drained(page);
       // The unrelated node measured: the biggest one on screen (a small one is barely brighter than what is
       // behind it), not under a panel (the screenshot would show the panel), and clear of everything that stays
       // bright when the selection is made: the selected node's halo, the highlighted nodes with their glow, and
@@ -268,14 +271,19 @@ try {
       });
       assert.ok(other, 'an unrelated node on screen, clear of the panels, the selection and its links');
       // Only the node counts: hide the HTML labels drawn over the canvas, and the sky behind it (a star in the
-      // measured pixels, or a nebula as bright as a dimmed node, would hide the change). Motion off: the selection
-      // draws only the frames the stage asks for itself (with motion, the wave of light keeps drawing frames for a
-      // while and would cover a frame that is missing).
-      await page.evaluate(() => {
-        document.getElementById('labels').style.visibility = 'hidden';
-        window.codemap.stage.sky.visible = false;
-        window.codemap.setMotion('off');
-      });
+      // measured pixels, or a nebula as bright as a dimmed node, would hide the change). Also what changes on every
+      // frame drawn, motion or not: the glow around the nodes breathes and particles move with the clock. Then two
+      // frames of the same map look the same. Motion off: the selection draws only the frames the stage asks for
+      // itself (with motion, the wave of light keeps drawing frames for a while and would cover a missing one).
+      const decoration = (shown) => page.evaluate((on) => {
+        const app = window.codemap;
+        document.getElementById('labels').style.visibility = on ? '' : 'hidden';
+        app.stage.sky.visible = on;
+        app.view.coronas.sprite.visible = on;
+        app.view.particles.points.visible = on;
+        app.setMotion(on ? null : 'off');
+      }, shown);
+      await decoration(false);
       await drained(page);
       const before = await brightness(other);
       // As if the user had been away: no ambient frames (pulsing halo) either.
@@ -290,13 +298,8 @@ try {
       await page.evaluate(() => window.codemap.stage.invalidate());
       await drained(page);
       const later = await brightness(other);
-      await page.evaluate(() => {
-        window.codemap.select(null);
-        window.codemap.setMotion(null);
-        document.getElementById('labels').style.visibility = '';
-        window.codemap.stage.sky.visible = true;
-        window.codemap.stage.invalidate();
-      });
+      await page.evaluate(() => window.codemap.select(null));
+      await decoration(true);
       const measured = `brightness of an unrelated node (${other.id}, selected ${other.selected}): ${before} before, ${after} after selecting, ${later} one frame later`;
       assert.ok(Math.abs(later - after) <= Math.max(4, after * 0.03), `the dimming waited for a further frame: ${measured}`);
       // The node is dimmed to a tenth of its light, but tone mapping squeezes bright pixels: on screen it keeps about
