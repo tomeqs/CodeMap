@@ -685,6 +685,16 @@ try {
       const later = await count();
       assert.ok(later.frames >= idle.frames + 4, 'frames are drawn');
       assert.equal(later.layouts - idle.layouts, 0, 'labels were laid out again although nothing they depend on changed');
+      // What OrbitControls does on a still map now and then: it moves the camera by rounding error. Not a move.
+      await p.evaluate(() => {
+        const { camera } = window.codemap.stage;
+        camera.position.x += 1e-12 * (1 + Math.abs(camera.position.x));
+        camera.quaternion.y += 1e-13;
+        window.codemap.stage.invalidate();
+      });
+      await frames(2);
+      const nudged = await count();
+      assert.equal(nudged.layouts - later.layouts, 0, 'labels were laid out again for a camera that moved by rounding error only');
 
       await p.evaluate(() => window.codemap.view.setHovered(window.codemap.view.units[3].id));
       await frames(2);
