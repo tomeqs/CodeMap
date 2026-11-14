@@ -776,7 +776,7 @@ export class GalaxyView {
       stage.width, stage.height, this.positionsVersion, this.highlight, this.hovered, this.labelOrder, this.labelText,
     ];
     const last = this.labelKey;
-    if (last && key.every((value, i) => value === last[i])) return false;
+    if (last && key.every((value, i) => (i < CAMERA_NUMBERS ? closeTo(value, last[i]) : value === last[i]))) return false;
     this.labelKey = key;
     return true;
   }
@@ -954,6 +954,17 @@ const RING_SECONDS = 1.1;
 /** A link's base colour (its kind, or red / amber for a problem), computed once. */
 export function linkColor(l) {
   return (l.color ??= new Color(l.violation ? VIOLATION_COLORS[l.violation] ?? VIOLATION_COLORS.error : EDGE_KINDS[l.kind]?.color ?? '#9fb3c8'));
+}
+
+/**
+ * The camera's position and rotation, the first numbers of a label key. On a still map OrbitControls moves the camera
+ * by rounding error now and then (1e-13 and the like; it does not count that as a change itself): the labels are
+ * laid out again only for a real move. Compared with the camera at the last layout, so a slow move still adds up.
+ */
+const CAMERA_NUMBERS = 7;
+
+function closeTo(a, b) {
+  return Math.abs(a - b) <= 1e-7 * (1 + Math.abs(a));
 }
 
 function labelRank(u) {
