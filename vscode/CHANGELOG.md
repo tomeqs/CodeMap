@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2
 
 - **Opening the map no longer leaves the camera inside it.** The map shows the last graph at once and the fresh analysis a moment later; when that second load came before the first layout had settled, the camera stayed in the small starting ball, with oversized, washed-out planets. The same happened when a file was saved during the first layout.
 - **A save that changes nothing leaves the map alone.** The same graph is not loaded again (also right after opening, when nothing changed since the last time), and a graph with the same units and links takes its new numbers in place: no new layout, no unfolding, the selection stays. Only a change of structure lays the map out again.
@@ -9,6 +9,14 @@
 - **Folders and renames refresh the map**: creating, deleting, moving or renaming a folder of sources, renaming a file, and a save during the first analysis (it was dropped). *Show in Code Map* and *Show Call Flow* asked while the map was starting are no longer lost when the fresh analysis arrives first.
 - **Lighter at rest and on hover.** Labels are laid out when the camera, the units or the selection change instead of on every frame; hovering reads the unit's own links, builds the tooltip once per unit, and the quiet flow of particles no longer jumps when the pointer leaves a unit.
 - In the browser app, a live update of one project no longer replaces another project that was opened meanwhile.
+- **Git history when the folder is reached by another path.** Churn, authors and hotspots were empty when the map's folder was opened through a symbolic link or, on Windows, with the drive letter in the other case. Change coupling reads the same history.
+- **Refactoring proposals and simulations are faster on large maps.** Candidates are scored worst problems first and only within the time budget, kinds that were not asked for are not searched, and an MCP client can cancel the search.
+- **MCP server**: files changed while an analysis runs again stay marked as changed (a stale map read as fresh); a baseline written to disk comes back when it is used, and `v1.0` and `v1_0` no longer share one file; `render_map` keeps one page instead of every map it ever rendered.
+- **DI lifetimes**: each registration keeps its own lifetime (the last registration of a service is the one injected), and a class registered more than once is checked as the longest-lived of them.
+- **Python projects with many tests are read faster.** What a pytest fixture gives a test is worked out once per fixture: 17.7 s became 0.66 s on 1000 tests.
+- **Python edges no longer depend on the order the modules are read in** when look-ups go in a circle: functions that return each other, modules that `import *` from each other, a base class in an import cycle.
+- **Python corrections**: a folder without `__init__.py` is a package of its own in each project; `self.x = …` no longer hides a name in the class body (`self.list = lines` turned `list[Line]` into the field); `a, b = f()` at module or class level counts as a call to `f`; a relative import that leaves the top package is refused, as Python refuses it; `# noqa` and signatures after a form feed are found on the right line; a `return` in nested `finally` blocks is reported once.
+- **TypeScript corrections**: an arrow function's parameter and return types are no longer counted again as `uses`; `overrides` matches static members against the base's static side and handles quoted names; `while (1)` is not reported as a constant condition.
 
 ## 0.4.1
 
