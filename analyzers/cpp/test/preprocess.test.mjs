@@ -11,6 +11,13 @@ test('each #if chain keeps its first branch, so braces stay balanced; lines stay
   assert.doesNotMatch(text, /#/);
 });
 
+test('directives are read in files with Windows line ends', () => {
+  const guard = '#ifdef __cplusplus\r\nextern "C" {\r\n#endif\r\nint f(void);\r\n#ifdef __cplusplus\r\n}\r\n#endif\r\n';
+  const c = flatten(guard, false);
+  assert.doesNotMatch(c, /extern|\}|#/);
+  assert.equal(c.split('\n').length, guard.split('\n').length);
+});
+
 test('#if 0 is skipped (its #else is read), and __cplusplus is defined for C++ only', () => {
   assert.match(flatten('#if 0\nold();\n#else\nnew_();\n#endif\n', true), /new_\(\)/);
   assert.doesNotMatch(flatten('#if 0\nold();\n#else\nnew_();\n#endif\n', true), /old/);
