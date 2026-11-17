@@ -5,13 +5,19 @@ import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'no
  * A small reader of CMakeLists.txt (not an interpreter): targets (add_library, add_executable and Qt's
  * qt_add_*), their sources (lists, target_sources, file(GLOB)), include directories, the libraries they link,
  * and which are tests. It follows add_subdirectory and include(), expands simple variables (set, list(APPEND),
- * the CMAKE_*_DIR ones) and reads every branch of if(); functions and macros are not run.
+ * the CMAKE_*_DIR ones), reads every branch of if() and the body of a foreach for each of its items, and reads the
+ * project's own functions and macros where they are called, with the arguments of the call.
  */
 
 const LIBRARY_KINDS = new Set(['STATIC', 'SHARED', 'MODULE', 'OBJECT', 'INTERFACE', 'UNKNOWN']);
 const SCOPES = new Set(['PUBLIC', 'PRIVATE', 'INTERFACE']);
 const TEST_LIBRARIES = /^(GTest::|gtest|gmock|Catch2::|Catch2?$|doctest|Boost::unit_test_framework|Boost::unit_test|Qt\d?::Test$|Qt\d?Test$)/i;
 const MAX_FILES = 200;
+/** How many items a foreach is read for, and how many loop bodies in all (loops inside loops). */
+const MAX_LOOP = 64;
+const MAX_STEPS = 5000;
+/** How deep the project's functions may call each other. */
+const MAX_DEPTH = 16;
 const UNKNOWN = '\u0000';
 /** Folder listings for file(GLOB): a project globs the same folders from many CMakeLists.txt. */
 const LISTINGS = new Map();
@@ -23,7 +29,7 @@ const LISTINGS = new Map();
  */
 export function readCMake(rootDir) {
   LISTINGS.clear();
-  const state = { targets: new Map(), aliases: new Map(), tests: new Set(), visited: new Set(), files: 0, projectName: null };
+  const state = { targets: new Map(), aliases: new Map(), tests: new Set(), functions: new Map(), visited: new Set(), files: 0, steps: 0, projectName: null };
   const vars = new Map([
     ['CMAKE_SOURCE_DIR', rootDir],
     ['PROJECT_SOURCE_DIR', rootDir],
@@ -54,103 +60,199 @@ function readList(file, dir, vars, includeDirs, state) {
   }
 
   let directoryIncludes = [...includeDirs];
-  const defined = new Set();
-  for (const { name, args: rawArgs, line } of commands(text)) {
-    const command = name.toLowerCase();
-    if (command === 'function' || command === 'macro') {
-      defined.add((rawArgs[0]?.value ?? '').toLowerCase());
-      continue;
-    }
+  let depth = 0;
+  let callLine = null; // the line of the call being read, for what its function makes
+  const run = (list, from, to) => {
+    for (let index = from; index < to; index++) {
+      const { name, args: rawArgs, line } = list[index];
+      const command = name.toLowerCase();
+      // A function or a macro is kept, not read: its body names targets and paths by its parameters. It is read
+      // where it is called, with the arguments of the call (googletest's cxx_library(gtest …)).
+      if (command === 'function' || command === 'macro') {
+        const end = blockEnd(list, index, command, to);
+        const defined = (rawArgs[0]?.value ?? '').toLowerCase();
+        if (defined) state.functions.set(defined, { params: rawArgs.slice(1).map((a) => a.value), list, from: index + 1, to: end });
+        index = end;
+        continue;
+      }
 
-    const args = expand(rawArgs, vars);
-    switch (command) {
-      case 'project':
-        if (args[0]) {
-          vars.set('PROJECT_NAME', args[0]);
-          vars.set('PROJECT_SOURCE_DIR', dir);
-          vars.set(`${args[0]}_SOURCE_DIR`, dir);
-          state.projectName ??= args[0];
+      if (command === 'foreach') {
+        const end = blockEnd(list, index, 'foreach', to);
+        const [variable, ...rest] = expand(rawArgs, vars);
+        const items = loopItems(rest, vars);
+        const before = variable ? vars.get(variable) : undefined;
+        // Over items that are known the body is read once for each (`add_executable(${name}_test …)` for a list
+        // of names); otherwise once, with the variable unknown.
+        for (const item of items ?? [UNKNOWN]) {
+          if (++state.steps > MAX_STEPS) break;
+          if (variable) vars.set(variable, item);
+          run(list, index + 1, end);
         }
-        break;
-      case 'set':
-        if (args.length) vars.set(args[0], args.slice(1).filter((a) => !['CACHE', 'PARENT_SCOPE', 'FORCE', 'INTERNAL', 'STRING', 'PATH', 'FILEPATH', 'BOOL'].includes(a)).join(';'));
-        break;
-      case 'list':
-        if ((args[0] === 'APPEND' || args[0] === 'PREPEND') && args[1]) {
-          const current = vars.get(args[1]);
-          const added = args.slice(2).join(';');
-          vars.set(args[1], args[0] === 'APPEND' ? [current, added].filter(Boolean).join(';') : [added, current].filter(Boolean).join(';'));
+
+        if (variable && before === undefined) vars.delete(variable);
+        else if (variable) vars.set(variable, before);
+        index = end;
+        continue;
+      }
+
+      const args = expand(rawArgs, vars);
+      switch (command) {
+        case 'project':
+          if (args[0]) {
+            vars.set('PROJECT_NAME', args[0]);
+            vars.set('PROJECT_SOURCE_DIR', dir);
+            vars.set(`${args[0]}_SOURCE_DIR`, dir);
+            state.projectName ??= args[0];
+          }
+          break;
+        case 'set':
+          if (args.length) vars.set(args[0], args.slice(1).filter((a) => !['CACHE', 'PARENT_SCOPE', 'FORCE', 'INTERNAL', 'STRING', 'PATH', 'FILEPATH', 'BOOL'].includes(a)).join(';'));
+          break;
+        case 'list':
+          if ((args[0] === 'APPEND' || args[0] === 'PREPEND') && args[1]) {
+            const current = vars.get(args[1]);
+            const added = args.slice(2).join(';');
+            vars.set(args[1], args[0] === 'APPEND' ? [current, added].filter(Boolean).join(';') : [added, current].filter(Boolean).join(';'));
+          }
+          break;
+        case 'file':
+          if ((args[0] === 'GLOB' || args[0] === 'GLOB_RECURSE') && args[1]) vars.set(args[1], glob(args, dir, vars.get('CMAKE_SOURCE_DIR')).join(';'));
+          break;
+        case 'include_directories':
+          directoryIncludes = [...directoryIncludes, ...paths(args.filter((a) => !['BEFORE', 'AFTER', 'SYSTEM'].includes(a)), dir)];
+          break;
+        case 'add_subdirectory':
+          if (args[0] && !args[0].includes(UNKNOWN)) {
+            const child = resolve(dir, args[0]);
+            const childVars = new Map(vars);
+            childVars.set('CMAKE_CURRENT_SOURCE_DIR', child);
+            childVars.set('CMAKE_CURRENT_LIST_DIR', child);
+            readList(join(child, 'CMakeLists.txt'), child, childVars, directoryIncludes, state);
+          }
+          break;
+        case 'include':
+          if (args[0] && /\.cmake$/i.test(args[0])) {
+            const included = resolve(dir, args[0]);
+            if (included.startsWith(vars.get('CMAKE_SOURCE_DIR'))) {
+              // It is read in this scope, but its CMAKE_CURRENT_LIST_DIR is its own folder.
+              const listDir = vars.get('CMAKE_CURRENT_LIST_DIR');
+              vars.set('CMAKE_CURRENT_LIST_DIR', dirname(included));
+              directoryIncludes = readList(included, dir, vars, directoryIncludes, state);
+              vars.set('CMAKE_CURRENT_LIST_DIR', listDir);
+            }
+          }
+          break;
+        case 'add_library':
+        case 'add_executable':
+        case 'qt_add_executable':
+        case 'qt5_add_executable':
+        case 'qt6_add_executable':
+        case 'qt_add_library':
+        case 'qt6_add_library':
+        case 'qt_add_qml_module':
+          addTarget(command, args, dir, file, callLine ?? line, directoryIncludes, state);
+          break;
+        case 'target_sources': {
+          const target = state.targets.get(args[0]);
+          if (target) target.sources.push(...paths(args.slice(1).filter((a) => !SCOPES.has(a) && !['FILE_SET', 'TYPE', 'HEADERS', 'BASE_DIRS', 'FILES', 'CXX_MODULES'].includes(a)), dir));
+          break;
         }
-        break;
-      case 'file':
-        if ((args[0] === 'GLOB' || args[0] === 'GLOB_RECURSE') && args[1]) vars.set(args[1], glob(args, dir, vars.get('CMAKE_SOURCE_DIR')).join(';'));
-        break;
-      case 'include_directories':
-        directoryIncludes = [...directoryIncludes, ...paths(args.filter((a) => !['BEFORE', 'AFTER', 'SYSTEM'].includes(a)), dir)];
-        break;
-      case 'add_subdirectory':
-        if (args[0] && !args[0].includes(UNKNOWN)) {
-          const child = resolve(dir, args[0]);
-          const childVars = new Map(vars);
-          childVars.set('CMAKE_CURRENT_SOURCE_DIR', child);
-          childVars.set('CMAKE_CURRENT_LIST_DIR', child);
-          readList(join(child, 'CMakeLists.txt'), child, childVars, directoryIncludes, state);
+        case 'target_include_directories': {
+          const target = state.targets.get(args[0]);
+          if (target) target.includeDirs.push(...paths(args.slice(1).filter((a) => !SCOPES.has(a) && !['SYSTEM', 'BEFORE', 'AFTER'].includes(a)), dir));
+          break;
         }
-        break;
-      case 'include':
-        if (args[0] && /\.cmake$/i.test(args[0])) {
-          const included = resolve(dir, args[0]);
-          if (included.startsWith(vars.get('CMAKE_SOURCE_DIR'))) directoryIncludes = readList(included, dir, vars, directoryIncludes, state);
+        case 'target_link_libraries': {
+          const target = state.targets.get(args[0]);
+          if (target) target.links.push(...args.slice(1).filter((a) => !SCOPES.has(a) && !a.includes(UNKNOWN) && !a.startsWith('$<') && !['LINK_PUBLIC', 'LINK_PRIVATE', 'LINK_INTERFACE_LIBRARIES', 'debug', 'optimized', 'general'].includes(a) && !a.startsWith('-')));
+          break;
         }
-        break;
-      case 'add_library':
-      case 'add_executable':
-      case 'qt_add_executable':
-      case 'qt5_add_executable':
-      case 'qt6_add_executable':
-      case 'qt_add_library':
-      case 'qt6_add_library':
-      case 'qt_add_qml_module':
-        addTarget(command, args, dir, file, line, directoryIncludes, state);
-        break;
-      case 'target_sources': {
-        const target = state.targets.get(args[0]);
-        if (target) target.sources.push(...paths(args.slice(1).filter((a) => !SCOPES.has(a) && !['FILE_SET', 'TYPE', 'HEADERS', 'BASE_DIRS', 'FILES', 'CXX_MODULES'].includes(a)), dir));
-        break;
+        case 'add_test': {
+          const command = args.indexOf('COMMAND');
+          if (command >= 0 && args[command + 1]) state.tests.add(args[command + 1]);
+          else if (args[1]) state.tests.add(args[1]);
+          break;
+        }
+        case 'gtest_discover_tests':
+        case 'gtest_add_tests':
+        case 'catch_discover_tests':
+        case 'doctest_discover_tests':
+          if (args[0]) state.tests.add(args[0]);
+          break;
+        default: {
+          const fn = state.functions.get(command);
+          if (!fn || depth >= MAX_DEPTH || ++state.steps > MAX_STEPS) break;
+          // The parameters, ARGN and ARGV stand for the arguments while the body is read, then are what they were.
+          const saved = new Map();
+          const bind = (variable, value) => {
+            if (!saved.has(variable)) saved.set(variable, vars.get(variable));
+            vars.set(variable, value);
+          };
+          fn.params.forEach((param, i) => bind(param, args[i] ?? ''));
+          bind('ARGN', args.slice(fn.params.length).join(';'));
+          bind('ARGV', args.join(';'));
+          bind('ARGC', String(args.length));
+          args.forEach((arg, i) => bind(`ARGV${i}`, arg));
+          const outer = callLine;
+          callLine ??= line;
+          depth++;
+          run(fn.list, fn.from, fn.to);
+          depth--;
+          callLine = outer;
+          for (const [variable, value] of saved) {
+            if (value === undefined) vars.delete(variable);
+            else vars.set(variable, value);
+          }
+
+          break;
+        }
       }
-      case 'target_include_directories': {
-        const target = state.targets.get(args[0]);
-        if (target) target.includeDirs.push(...paths(args.slice(1).filter((a) => !SCOPES.has(a) && !['SYSTEM', 'BEFORE', 'AFTER'].includes(a)), dir));
-        break;
-      }
-      case 'target_link_libraries': {
-        const target = state.targets.get(args[0]);
-        if (target) target.links.push(...args.slice(1).filter((a) => !SCOPES.has(a) && !a.includes(UNKNOWN) && !a.startsWith('$<') && !['LINK_PUBLIC', 'LINK_PRIVATE', 'LINK_INTERFACE_LIBRARIES', 'debug', 'optimized', 'general'].includes(a) && !a.startsWith('-')));
-        break;
-      }
-      case 'add_test': {
-        const command = args.indexOf('COMMAND');
-        if (command >= 0 && args[command + 1]) state.tests.add(args[command + 1]);
-        else if (args[1]) state.tests.add(args[1]);
-        break;
-      }
-      case 'gtest_discover_tests':
-      case 'gtest_add_tests':
-      case 'catch_discover_tests':
-      case 'doctest_discover_tests':
-        if (args[0]) state.tests.add(args[0]);
-        break;
-      default:
-        break;
+    }
+  };
+
+  const list = commands(text);
+  run(list, 0, list.length);
+  return directoryIncludes;
+}
+
+/** The index of the command that closes the block opened at `start` (endforeach, endfunction, endmacro). */
+function blockEnd(list, start, kind, limit) {
+  let depth = 0;
+  for (let i = start; i < limit; i++) {
+    const name = list[i].name.toLowerCase();
+    if (name === kind) depth++;
+    else if (name === 'end' + kind && --depth === 0) return i;
+  }
+
+  return limit - 1;
+}
+
+/**
+ * The items a foreach runs over when they are written out (`foreach(t a b)`, `IN ITEMS a b`) or held by lists that
+ * are known (`${NAMES}`, `IN LISTS NAMES`); null for a RANGE or anything unknown.
+ */
+function loopItems(rest, vars) {
+  let items = rest;
+  if (rest[0] === 'RANGE') return null;
+  if (rest[0] === 'IN') {
+    items = [];
+    let mode = null;
+    for (const word of rest.slice(1)) {
+      if (word === 'ITEMS' || word === 'LISTS') mode = word;
+      else if (mode === 'ITEMS') items.push(word);
+      else if (mode === 'LISTS' && vars.has(word)) items.push(...vars.get(word).split(';').filter(Boolean));
+      else return null;
     }
   }
 
-  return directoryIncludes;
+  return items.length > MAX_LOOP || items.some((item) => item.includes(UNKNOWN)) ? null : items;
 }
 
 function addTarget(command, args, dir, file, line, includeDirs, state) {
   const name = args[0];
-  if (!name || state.targets.has(name)) return;
+  // A name made with a variable that is not known (a function's parameter, a list read from a file) is no target:
+  // it would be a project named by the mark of the unknown.
+  if (!name || name.includes(UNKNOWN) || name.includes('$') || state.targets.has(name)) return;
   const rest = args.slice(1);
   if (rest.includes('IMPORTED')) return;
   const alias = rest.indexOf('ALIAS');
@@ -289,7 +391,8 @@ export function commands(text) {
         if (d === '\n') {
           line++;
           i++;
-        } else if (d === ' ' || d === '\t' || d === '\r') {
+        } else if (d === ' ' || d === '\t' || d === '\r' || /\s/.test(d)) {
+          // Any white space: a no-break space or a form feed here once kept the reader on the spot for ever.
           i++;
         } else if (d === '#') {
           const bracket = /^#\[(=*)\[/.exec(text.slice(i, i + 20));
@@ -331,6 +434,7 @@ export function commands(text) {
           i = stop + eq.length + 2;
           args.push({ value, quoted: true });
         } else {
+          const start = i;
           let value = '';
           while (i < n && !/[\s()#"]/.test(text[i])) {
             if (text[i] === '\\' && i + 1 < n) {
@@ -349,7 +453,8 @@ export function commands(text) {
             }
           }
 
-          args.push({ value, quoted: false });
+          if (i === start) i++; // a character no rule takes: never stand still
+          else args.push({ value, quoted: false });
         }
       }
 

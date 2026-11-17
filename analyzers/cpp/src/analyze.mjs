@@ -28,7 +28,7 @@ export function analyze(parser, request, log = () => {}) {
   const timing = new Timing(process.env.CODEMAP_CPP_STATS ? log : null);
   const found = discover(request.target);
   timing.mark('discover');
-  const { projects, fileProject, explicit } = buildProjects(found, found.files);
+  const { projects, fileProject, explicit, outside } = buildProjects(found, found.files);
   timing.mark('projects');
   const warnings = [];
   const counts = { generated: 0, tests: 0, large: 0, failed: [], unreadable: [] };
@@ -127,6 +127,14 @@ export function analyze(parser, request, log = () => {}) {
     if (d.rule === 'unsafe-c-function' && own.has(/^(\w+)\(\)/.exec(d.message)?.[1])) diagnostics.splice(i, 1);
   }
   timing.mark('references');
+
+  if (outside.length) {
+    // The folder that holds the solution and the files it lists: the nearest above both.
+    let common = found.scanDir;
+    for (const file of outside) while (!isUnder(file, common) && dirname(common) !== common) common = dirname(common);
+    const name = basename(found.solution ?? request.target);
+    warnings.push(`${name} lists ${outside.length} file(s) outside its folder, which are not read (${toPosix(relative(found.scanDir, outside[0]))}${outside.length > 1 ? ', …' : ''}). Analyze the folder that holds them and ${name} to map them: ${toPosix(relative(found.scanDir, common))}`);
+  }
 
   if (counts.generated) warnings.push(`${counts.generated} generated file(s) were skipped.`);
   if (counts.tests) warnings.push(`${counts.tests} test file(s) were left out.`);

@@ -14,6 +14,8 @@ export function readBuildCs(file) {
     return null;
   }
 
+  // Without its comments: the engine's template lists modules to add in commented-out lines.
+  text = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/.*$/gm, '');
   const dependencies = [];
   const re = /(Public|Private)DependencyModuleNames\s*\.\s*(AddRange\s*\(\s*new\s+string\s*\[\s*\]\s*\{([^}]*)\}|Add\s*\(\s*"([^"]+)"\s*\))/g;
   let m;

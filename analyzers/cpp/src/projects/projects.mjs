@@ -114,7 +114,13 @@ export function buildProjects(found, files) {
   }
 
   const folderDirs = [...new Set(folderMarkers.map(dirname))].sort((a, b) => depth(a) - depth(b));
-  const topFolders = folderDirs.filter((d, i) => !folderDirs.slice(0, i).some((other) => isUnder(d, other)));
+  const topFolders = [];
+  const top = new Set();
+  for (const dir of folderDirs) {
+    if (ancestors(dirname(dir)).some((above) => top.has(keyOf(above)))) continue;
+    top.add(keyOf(dir));
+    topFolders.push(dir);
+  }
   for (const dir of topFolders) {
     if (projects.some((p) => p.kind !== 'cmake' && p.dir === dir)) continue;
     const marker = folderMarkers.filter((f) => dirname(f) === dir).sort()[0];
@@ -132,14 +138,17 @@ export function buildProjects(found, files) {
     });
   }
 
-  // Every file to its project.
+  // Every file to its project. The projects are looked up by the folders above the file (a repository of
+  // hundreds of targets and tens of thousands of files compared every pair before).
+  const index = folderIndex(projects);
   const fileProject = new Map();
   let fallback = null;
   for (const file of files) {
+    const above = ancestors(dirname(file));
     let project = explicit.get(file) ?? null;
-    if (!project) project = containingModule(projects, file);
-    if (!project && isHeaderFile(file)) project = byIncludeDirectory(projects, file);
-    if (!project) project = nearestFolder(projects, file);
+    if (!project) project = containingModule(index, above);
+    if (!project && isHeaderFile(file)) project = byIncludeDirectory(index, above);
+    if (!project) project = nearestFolder(index, above);
     if (!project && found.solution) continue; // a solution maps its own projects only
     if (!project) {
       fallback ??= add({
@@ -161,14 +170,23 @@ export function buildProjects(found, files) {
   }
 
   // The projects that hold files, named uniquely, with their references.
-  const used = projects.filter((p) => [...fileProject.values()].includes(p));
+  const filesOf = new Map();
+  for (const file of files) {
+    const project = fileProject.get(file);
+    if (!project) continue;
+    if (!filesOf.has(project)) filesOf.set(project, []);
+    filesOf.get(project).push(file);
+  }
+
+  const used = projects.filter((p) => filesOf.has(p));
+  const usedSet = new Set(used);
   const names = new Set();
   for (const project of used) {
     let name = project.name;
     for (let i = 2; names.has(name); i++) name = `${project.name}~${i}`;
     names.add(name);
     project.id = name;
-    project.files = files.filter((f) => fileProject.get(f) === project);
+    project.files = filesOf.get(project);
     project.test ||= project.files.every((f) => isTestFile(toPosix(relative(found.scanDir, f))));
   }
 
@@ -188,31 +206,82 @@ export function buildProjects(found, files) {
       if (other && other !== project) references.add(other);
     }
 
-    project.references = [...references].filter((p) => used.includes(p));
+    project.references = [...references].filter((p) => usedSet.has(p));
     project.libraries = [...libraries].sort();
   }
 
-  return { projects: used, fileProject, explicit: new Set([...explicit.keys()].filter((f) => fileProject.has(f))) };
+  return { projects: used, fileProject, explicit: new Set([...explicit.keys()].filter((f) => fileProject.has(f))), outside: outsideFiles(found, projects, files) };
 }
 
-function containingModule(projects, file) {
-  let best = null;
-  for (const p of projects) if (p.contains && isUnder(file, p.dir) && (!best || p.dir.length > best.dir.length)) best = p;
-  return best;
+/**
+ * The files a solution's or a project file's projects list outside the folder analyzed (a solution kept apart from
+ * the code: contrib/vs/zlib.sln naming ..\..\src\*.c). They are not read: CodeMap shows no place outside the
+ * folder analyzed, so the caller says which folder holds them.
+ */
+function outsideFiles(found, projects, files) {
+  if (!found.solution && !found.targetProject) return [];
+  const read = new Set(files);
+  const out = [];
+  for (const project of projects) {
+    if (project.kind !== 'msbuild') continue;
+    for (const file of project.listed) if (!read.has(file) && !isUnder(file, found.scanDir) && existsSync(file)) out.push(file);
+  }
+
+  return out;
+}
+
+/** A folder as a key: its path without a separator at the end, and without case where the file system has none. */
+const keyOf = process.platform === 'win32' ? (dir) => normalize(dir).replace(/[\\/]+$/, '').toLowerCase() : (dir) => (dir.length > 1 ? dir.replace(/\/+$/, '') : dir);
+
+/** A folder and the folders above it, nearest first. */
+function ancestors(dir) {
+  const out = [];
+  for (let d = dir, parent = dirname(d); ; d = parent, parent = dirname(d)) {
+    out.push(d);
+    if (parent === d) return out;
+  }
+}
+
+/** The projects by their folder and by their include directories, in the order they were made. */
+function folderIndex(projects) {
+  const byDir = new Map();
+  const byInclude = new Map();
+  const put = (map, dir, entry) => {
+    if (!dir) return;
+    const key = keyOf(dir);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(entry);
+  };
+  let order = 0;
+  for (const project of projects) {
+    put(byDir, project.dir, project);
+    for (const dir of project.includeDirs) put(byInclude, dir, { project, dir, order: order++ });
+  }
+
+  return { byDir, byInclude };
+}
+
+/** The Unreal module whose folder is the nearest above the file. */
+function containingModule(index, above) {
+  for (const dir of above) {
+    const module = index.byDir.get(keyOf(dir))?.find((p) => p.contains);
+    if (module) return module;
+  }
+
+  return null;
 }
 
 /** A header not listed anywhere: the project whose include directory holds it (the deepest one). */
-function byIncludeDirectory(projects, file) {
+function byIncludeDirectory(index, above) {
+  const candidates = above.flatMap((dir) => index.byInclude.get(keyOf(dir)) ?? []).sort((a, b) => a.order - b.order);
   let best = null;
   let bestLength = -1;
-  for (const p of projects) {
-    for (const dir of p.includeDirs) {
-      if (dir.length > bestLength && isUnder(file, dir) && (p.kind !== 'cmake' || !p.interface || !best)) {
-        best = p;
-        bestLength = dir.length;
-      } else if (dir.length === bestLength && best && isUnder(file, dir) && rank(p) < rank(best)) {
-        best = p;
-      }
+  for (const { project: p, dir } of candidates) {
+    if (dir.length > bestLength && (p.kind !== 'cmake' || !p.interface || !best)) {
+      best = p;
+      bestLength = dir.length;
+    } else if (dir.length === bestLength && best && rank(p) < rank(best)) {
+      best = p;
     }
   }
 
@@ -220,14 +289,13 @@ function byIncludeDirectory(projects, file) {
 }
 
 /** The project whose folder is the nearest above the file; of several in one folder, a library before a program or test. */
-function nearestFolder(projects, file) {
-  let best = null;
-  for (const p of projects) {
-    if (!isUnder(file, p.dir)) continue;
-    if (!best || p.dir.length > best.dir.length || (p.dir.length === best.dir.length && rank(p) < rank(best))) best = p;
+function nearestFolder(index, above) {
+  for (const dir of above) {
+    const here = index.byDir.get(keyOf(dir));
+    if (here) return here.reduce((best, p) => (rank(p) < rank(best) ? p : best));
   }
 
-  return best;
+  return null;
 }
 
 function rank(project) {

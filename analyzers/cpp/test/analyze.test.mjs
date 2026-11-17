@@ -189,6 +189,35 @@ test('a byte order mark does not hide the first line of a file', () => {
   }
 });
 
+test('an Unreal project file as the target maps its folder', () => {
+  // `codemap Game.uproject` gave an empty map with no warning: no branch read the file's folder.
+  const byFile = run(join(fixtures, 'unreal', 'ShopGame.uproject'));
+  const byFolder = run('unreal');
+  assert.ok(byFile.nodes.length > 10);
+  assert.deepEqual(byFile.nodes.map((n) => n.id), byFolder.nodes.map((n) => n.id));
+});
+
+test('a solution kept apart from the code says which folder to analyze', () => {
+  // contrib/vs/zlib.sln naming ..\..\src\*.c: no node and no word of why. CodeMap shows no place outside the
+  // folder analyzed, so the files are not read; the warning names the folder that holds them.
+  const { dir, dispose } = scratch({
+    'contrib/vs/zlib.sln': 'Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "zlib", "zlib.vcxproj", "{11111111-1111-1111-1111-111111111111}"\nEndProject\n',
+    'contrib/vs/zlib.vcxproj': '<Project><ItemGroup><ClCompile Include="..\\..\\src\\zutil.c" /><ClCompile Include="..\\..\\src\\gone.c" /></ItemGroup></Project>',
+    'src/zutil.c': 'int zutil(void) { return 1; }\n',
+  });
+  try {
+    const solution = run(join(dir, 'contrib', 'vs', 'zlib.sln'));
+    assert.equal(solution.nodes.length, 0);
+    assert.deepEqual(solution.analysis.warnings, ['zlib.sln lists 1 file(s) outside its folder, which are not read (../../src/zutil.c). Analyze the folder that holds them and zlib.sln to map them: ../..']);
+    // The folder has the project and its file, and nothing to warn about.
+    const folder = run(dir);
+    assert.equal(folder.node('cpp:zlib:file:src/zutil#(global)::zutil()').kind, 'function');
+    assert.deepEqual(folder.analysis.warnings, []);
+  } finally {
+    dispose();
+  }
+});
+
 test('ids do not depend on the folder analyzed', () => {
   const whole = run('mini');
   const part = run(join(fixtures, 'mini', 'src'), { root: join(fixtures, 'mini') });
