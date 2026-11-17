@@ -92,6 +92,86 @@ test('C: a struct, its typedef, and a file-local function', () => {
   assert.equal(map.node('cpp:legacy:file:legacy/ledger#(global)::clamp(long)').accessibility, 'private');
 });
 
+test('C: a function returning a function pointer is a function; a function pointer is a variable', () => {
+  // SQLite's ftsCompareFunction was missing, so the comparers it returns looked unused.
+  const { dir, dispose } = scratch({
+    'hash.c': [
+      'static int binCompare(const void* a, int n) { return n; }',
+      'static int (*compareFor(int key))(const void*, int) { return &binCompare; }',
+      'int (*current)(const void*, int);',
+    ].join('\n'),
+  });
+  try {
+    const map = run(dir);
+    const name = dir.split(/[\\/]/).pop();
+    const fn = map.node(`cpp:${name}:file:hash#(global)::compareFor(int)`);
+    assert.equal(fn.kind, 'function');
+    assert.ok(map.hasEdge(fn.id, 'uses', `cpp:${name}:file:hash#(global)::binCompare(const void*,int)`));
+    assert.equal(map.node(`cpp:${name}:file:hash#(global)::current`).kind, 'variable');
+  } finally {
+    dispose();
+  }
+});
+
+test('a class in an anonymous namespace gets its methods defined out of line in the same file', () => {
+  // leveldb's DBIter: 41 definitions were left off the map, so its private methods looked unused.
+  const { dir, dispose } = scratch({
+    'iter.cc': [
+      'namespace db {',
+      'namespace {',
+      'class Iter {',
+      ' public:',
+      '  void Next();',
+      ' private:',
+      '  void FindNext();',
+      '};',
+      'void Iter::Next() { FindNext(); }',
+      'void Iter::FindNext() {}',
+      '}  // namespace',
+      '}  // namespace db',
+    ].join('\n'),
+  });
+  try {
+    const map = run(dir);
+    const name = dir.split(/[\\/]/).pop();
+    const iter = `cpp:${name}:db::Iter@iter.cc`;
+    assert.deepEqual(map.node(`${iter}::FindNext()`).location, { file: 'iter.cc', line: 10, endLine: 10 });
+    assert.ok(map.hasEdge(`${iter}::Next()`, 'calls', `${iter}::FindNext()`));
+  } finally {
+    dispose();
+  }
+});
+
+test('conversion operators are methods: defined in the class, or declared there and defined out of it', () => {
+  // gmock's `template <typename F> operator Action<F>() const { return Action<F>(new MonomorphicImpl<F>(…)); }`.
+  const { dir, dispose } = scratch({
+    'flag.h': 'class Impl {};\nclass Flag {\n public:\n  operator Impl*() const { return new Impl(); }\n  explicit operator bool() const;\n  bool ok() const;\n};',
+    'flag.cpp': '#include "flag.h"\nFlag::operator bool() const { return ok(); }\nbool Flag::ok() const { return true; }',
+  });
+  try {
+    const map = run(dir);
+    const name = dir.split(/[\\/]/).pop();
+    const flag = `cpp:${name}:Flag`;
+    assert.ok(map.hasEdge(`${flag}::operator Impl*()`, 'instantiates', `cpp:${name}:Impl`));
+    assert.deepEqual(map.node(`${flag}::operator bool()`).location, { file: 'flag.cpp', line: 2, endLine: 2 });
+    assert.ok(map.hasEdge(`${flag}::operator bool()`, 'calls', `${flag}::ok()`));
+  } finally {
+    dispose();
+  }
+});
+
+test('the name of a parameter pack is not part of the function id', () => {
+  // spdlog's create(std::string,SinkArgs&&...sink_args) changed id whenever the pack was renamed.
+  const { dir, dispose } = scratch({ 'log.h': 'template <typename... Args>\nvoid log(const char* fmt, Args&&... args) {}' });
+  try {
+    const map = run(dir);
+    const name = dir.split(/[\\/]/).pop();
+    assert.equal(map.node(`cpp:${name}:file:log#(global)::log(const char*,Args&&...)`).kind, 'function');
+  } finally {
+    dispose();
+  }
+});
+
 test('ids do not depend on the folder analyzed', () => {
   const whole = run('mini');
   const part = run(join(fixtures, 'mini', 'src'), { root: join(fixtures, 'mini') });
@@ -150,6 +230,7 @@ test('build trees, vendored code and dot folders are not read', () => {
     'out-of-tree/CMakeCache.txt': '',
     'out-of-tree/x.cpp': 'int x() { return 1; }',
     'third_party/lib/lib.cpp': 'int lib() { return 1; }',
+    'deps/jemalloc/je.c': 'int je() { return 1; }', // redis vendors its libraries in deps/
     '.cache/y.cpp': 'int y() { return 1; }',
   }, 'loose');
   try {

@@ -186,8 +186,9 @@ function check(node, scope, at, file) {
     }
 
     case 'using_declaration':
-      // At global scope: inside a namespace of its own (an ADL helper) it does not reach the includer.
-      if (!scope && file.header && /^using\s+namespace\b/.test(node.text) && !inFunction(node) && !inNamespace(node)) {
+      // At global scope: inside a namespace of its own (an ADL helper) it does not reach the includer. Literal
+      // namespaces (std::chrono_literals, Qt::Literals::StringLiterals) exist to be used this way.
+      if (!scope && file.header && /^using\s+namespace\b/.test(node.text) && !/literals\s*;?\s*$/i.test(node.text) && !inFunction(node) && !inNamespace(node)) {
         at('using-namespace-in-header', node, `${node.text.replace(/\s+/g, ' ').replace(/;$/, '')} in a header applies to every file that includes it.`);
       }
 
@@ -256,7 +257,7 @@ function check(node, scope, at, file) {
       if ((op === '==' || op === '!=') && scope) {
         const integral = /\((int|long|unsigned|short|i64|u64|i32|u32|int64_t|int32_t|sqlite3_int64|size_t)\)|static_cast<\s*(int|long|unsigned|size_t|int64_t|int32_t)/;
         if ((isFloat(left, scope) || isFloat(right, scope)) && !same(left, right) && !integral.test(left.text + ' ' + right.text)) {
-          if (!isWholeNumber(left) && !isWholeNumber(right)) at('float-equality', node, 'Floating-point values compared with ' + op + ': rounding makes equal values differ; compare with a tolerance.');
+          if (!isWholeNumber(left) && !isWholeNumber(right) && !exactOnPurpose(left) && !exactOnPurpose(right)) at('float-equality', node, 'Floating-point values compared with ' + op + ': rounding makes equal values differ; compare with a tolerance.');
         }
 
         const literal = left.type === 'string_literal' ? right : right.type === 'string_literal' ? left : null;
@@ -428,6 +429,22 @@ function assertionLike(node) {
 }
 
 /** Whether control cannot go on after a statement. */
+/** `while (true)`, `while (1)`, `for (;;)`, `do … while (true)`. */
+function endless(loop) {
+  if (loop.type === 'for_statement') return !loop.childForFieldName('condition');
+  const condition = loop.childForFieldName('condition')?.text.replace(/[()\s]/g, '');
+  return condition === 'true' || condition === '1';
+}
+
+/** A break that leaves this statement: not one of a loop or switch inside it, nor of a lambda. */
+function breaksOut(node) {
+  if (!node) return false;
+  if (node.type === 'break_statement') return true;
+  if (/^(while|for|for_range_loop|do|switch)_statement$/.test(node.type) || node.type === 'lambda_expression') return false;
+  for (let i = 0; i < node.namedChildCount; i++) if (breaksOut(node.namedChild(i))) return true;
+  return false;
+}
+
 function terminates(node) {
   if (!node) return false;
   if (EXITS.has(node.type)) return true;
@@ -440,6 +457,17 @@ function terminates(node) {
 
   if (node.type === 'labeled_statement') return terminates(node.namedChildren[node.namedChildren.length - 1]);
 
+  // `while (true) { … return …; }` with no break out of it (nlohmann's lexer: a case that loops until it returns).
+  if (node.type === 'while_statement' || node.type === 'for_statement' || node.type === 'do_statement') return endless(node) && !breaksOut(node.childForFieldName('body'));
+
+  // A switch with a default whose last case does not complete, and no break out of it: every way leaves.
+  if (node.type === 'switch_statement') {
+    const cases = node.childForFieldName('body')?.namedChildren.filter((c) => c.type === 'case_statement') ?? [];
+    if (!cases.some((c) => !c.childForFieldName('value')) || breaksOut(node.childForFieldName('body'))) return false;
+    const statements = cases[cases.length - 1].namedChildren.filter((c) => c !== cases[cases.length - 1].childForFieldName('value') && c.type !== 'comment');
+    return statements.length > 0 && terminates(statements[statements.length - 1]);
+  }
+
   if (node.type === 'if_statement') {
     const alternative = node.childForFieldName('alternative');
     return Boolean(alternative) && terminates(node.childForFieldName('consequence')) && terminates(alternative.type === 'else_clause' ? alternative.namedChild(0) : alternative);
@@ -448,6 +476,8 @@ function terminates(node) {
   if (node.type === 'expression_statement') {
     const e = node.namedChild(0);
     if (e?.type === 'call_expression' && NORETURN.test(e.childForFieldName('function')?.text ?? '')) return true;
+    // JSON_THROW(…), FMT_THROW(…): a throw, or an abort with exceptions off; stays a call (see preprocess).
+    if (e?.type === 'call_expression' && /^(?:[A-Z][A-Z0-9_]*_)?THROW$/.test(e.childForFieldName('function')?.text ?? '')) return true;
     // assert(0) / assert(false) / assert(!"unreachable"): it stops the program.
     if (e?.type === 'call_expression' && /^(assert|ASSERT|DCHECK|CHECK|ALWAYS|NEVER|Q_ASSERT|check|ensure|verify)$/.test(e.childForFieldName('function')?.text ?? '') && /^\(\s*(0|false|!\s*"[^"]*")\s*\)$/.test(e.childForFieldName('arguments')?.text ?? '')) return true;
     if (/fall[\s_-]*thr(ough|u)/i.test(node.text)) return true;
@@ -507,6 +537,26 @@ function isFloat(node, scope) {
   return false;
 }
 
+const ROUNDING = /^(?:std::)?(?:floor|ceil|trunc|round|rint|nearbyint)[fl]?$|^FMath::(?:Floor|Ceil|Round|Trunc)To(?:Float|Double)$/;
+
+/**
+ * A side compared exactly on purpose: a rounded value (`floor(k) == k`: is k whole?), a conversion (`d == (double)f`:
+ * does the value survive it?) or a constant macro (`d == HUGE_VAL`, `x != -INFINITY`).
+ */
+function exactOnPurpose(node) {
+  let n = node;
+  while (n && (n.type === 'parenthesized_expression' || n.type === 'unary_expression' && /^[-+]$/.test(n.childForFieldName('operator')?.text ?? ''))) {
+    n = n.type === 'parenthesized_expression' ? n.namedChild(0) : n.childForFieldName('argument');
+  }
+
+  if (!n) return false;
+  if (n.type === 'identifier') return /^[A-Z][A-Z0-9_]*$/.test(n.text);
+  if (n.type === 'cast_expression') return true;
+  if (n.type !== 'call_expression') return false;
+  const callee = n.childForFieldName('function')?.text.replace(/\s+/g, '') ?? '';
+  return ROUNDING.test(callee) || /^static_cast<(?:double|float|longdouble)>$/.test(callee);
+}
+
 function isWholeNumber(node) {
   return node.type === 'number_literal' && /^[+-]?\d+(\.0*)?[fFlL]?$/.test(node.text);
 }
@@ -559,7 +609,9 @@ export function classChecks(facts, file) {
     const virtuals = type.members.filter((m) => m.kind === 'method' && (m.modifiers ?? []).some((x) => x === 'virtual' || x === 'abstract'));
     const destructor = type.members.find((m) => m.kind === 'destructor');
     const sealed = (type.modifiers ?? []).includes('sealed');
-    if (virtuals.length && !sealed && !type.bases.length && (!destructor || destructor.access === 'public' && !(destructor.modifiers ?? []).includes('virtual'))) {
+    // An Unreal interface (UINTERFACE's I-class): objects are collected, never deleted through it.
+    const unrealInterface = /^I[A-Z]/.test(type.name) && facts.types.some((t) => t.name === 'U' + type.name.slice(1) && t.attributes?.some((a) => a.startsWith('UINTERFACE')));
+    if (virtuals.length && !sealed && !unrealInterface && !type.bases.length && (!destructor || destructor.access === 'public' && !(destructor.modifiers ?? []).includes('virtual'))) {
       const [severity, category] = RULES['missing-virtual-destructor'];
       const line = destructor ? destructor.line : type.line;
       out.push({ rule: 'missing-virtual-destructor', source: 'codemap', severity, category, message: `${type.name} has virtual functions but its destructor is not virtual: deleting a derived object through ${type.name}* leaks its part.`, location: { file: file.rel, line, endLine: line }, column: 1 });

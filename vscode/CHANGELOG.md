@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 - **C and C++**, as a fourth language, with nothing to install: the analyzer reads them with tree-sitter on VS Code's own Node.js, so code maps without its compiler, its dependencies or a configured build.
   - Projects from CMake targets (with their links), Visual Studio projects and solutions, Unreal Engine modules, and folders with other build files (Makefile, meson, Bazel).
@@ -9,6 +9,7 @@
   - GoogleTest, Catch2, doctest, Boost.Test and Qt Test; Qt's signals, slots, `connect` and `Q_PROPERTY`; Unreal's `UCLASS`, `UFUNCTION` called from Blueprints and `UINTERFACE`.
   - Checks inside functions (`--checks`): a case falling through, a missing virtual destructor, `delete` against `new[]`, a lock that unlocks at once, returning the address of a local, and more.
   - *Show in Code Map* and *Show Call Flow* work in C and C++ files, the map follows changes to sources, headers and build files, and the keyboard shortcut now works in Python files too.
+  - Tested on real repositories: fmt, spdlog, nlohmann/json, GoogleTest, Catch2, LevelDB, Redis, the SQLite amalgamation (250,000 lines in one file, mapped in under 8 s), qBittorrent (Qt) and an Unreal Engine game. Each maps in 1–12 s; 75–99% of the calls to their own functions are resolved (a third in nlohmann/json, whose calls mostly go through template parameters). Macros the projects define for namespaces, templates, `try` / `catch` and attributes are read, functions only macros name are not reported as dead, and private members that template code may reach are tagged *maybe used*.
 
 ## 0.4.2
 

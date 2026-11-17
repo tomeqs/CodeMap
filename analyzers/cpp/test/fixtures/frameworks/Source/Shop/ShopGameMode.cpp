@@ -11,3 +11,5 @@ bool AShopGameMode::ServerBuy_Validate(int32 Amount) { return Amount > 0; }
 void AShopGameMode::Buy(int32 Amount) {}
 
 void AShopGameMode::Restock() {}
+
+static TAutoConsoleVariable<bool> CVarShopDebug(TEXT("shop.debug"), false, TEXT("Draws the shop's debug shapes."), ECVF_Cheat);

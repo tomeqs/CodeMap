@@ -89,6 +89,7 @@ export function analyze(parser, request, log = () => {}) {
         totalBytes += pre.text.length;
         if (pre.text.length > 2000 && errors > pre.text.length / 2) counts.unreadable.push(file.rel);
         file.facts = extractFile(tree, { annotations: pre.annotations, sections: pre.sections });
+        file.facts.macroArguments.push(...pre.macroArguments);
         // Problems inside the code (--checks): not in tests, nor in headers outside the folder analyzed.
         if (options.checks && !file.test && !file.context) {
           file.checked = true;
@@ -116,7 +117,8 @@ export function analyze(parser, request, log = () => {}) {
   const stats = { errorBytes, totalBytes };
   const model = buildModel({ files, projects, root, graph, stats });
   timing.mark('model');
-  const resolved = resolveReferences(model, graph, { log, stats: Boolean(process.env.CODEMAP_CPP_STATS), unresolvedFile: process.env.CODEMAP_CPP_UNRESOLVED || null });
+  for (const file of files) for (const word of file.facts.macroArguments) macros.words.add(word);
+  const resolved = resolveReferences(model, graph, { log, stats: Boolean(process.env.CODEMAP_CPP_STATS), unresolvedFile: process.env.CODEMAP_CPP_UNRESOLVED || null, macroWords: macros.words });
   diagnostics.push(...resolved.diagnostics);
   // fmt::sprintf is not the C library's: names the code declares itself are its own functions.
   const own = new Set(model.functions.filter((f) => f.kind === 'function').map((f) => f.name));
@@ -364,7 +366,7 @@ function sortDiagnostics(list) {
 }
 
 function emptyFacts() {
-  return { namespaces: [], types: [], functions: [], variables: [], aliases: [], usingNamespaces: [], usingNames: [], namespaceAliases: [] };
+  return { namespaces: [], types: [], functions: [], variables: [], aliases: [], usingNamespaces: [], usingNames: [], namespaceAliases: [], macroArguments: [] };
 }
 
 function rank(node) {

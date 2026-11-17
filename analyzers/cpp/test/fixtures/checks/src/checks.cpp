@@ -127,3 +127,45 @@ void memory() {
     int* table = new int[4];
     delete table;
 }
+
+#define CHECKS_TRY try
+#define CHECKS_CATCH(exception) catch(exception)
+#define CHECKS_THROW(exception) throw exception
+
+int macros(int kind) {
+    CHECKS_TRY {
+        switch (kind) {
+        case 1:
+            CHECKS_THROW(std::runtime_error("one"));
+        case 2:
+            return 2;
+        }
+    }
+    CHECKS_CATCH(...) {}
+    return 0;
+}
+
+bool exact(double k, float f, double d) {
+    return floor(k) == k || d == (double)f || d == HUGE_VAL || d != -INFINITY;
+}
+
+int lexer(int c, int mode) {
+    switch (c) {
+    case 1:
+        while (true) {
+            if (mode) return 1;
+        }
+    case 2:
+        switch (mode) {
+        case 0: return 2;
+        default: return 3;
+        }
+    case 3:
+        while (true) {
+            if (mode) break;
+        }
+    case 4:
+        return 4;
+    }
+    return 0;
+}

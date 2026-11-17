@@ -117,12 +117,17 @@ class Model {
     return sameTypes.length === 1 ? sameTypes[0] : null;
   }
 
-  /** Classes of the project (and the projects it uses) by qualified name, looked up from a namespace outward. */
-  findType(project, scope, qualifiers, usings = []) {
+  /**
+   * Classes of the project (and the projects it uses) by qualified name, looked up from a namespace outward; in
+   * `file`, its own file-local classes first (leveldb's DBIter, defined in an anonymous namespace with its methods).
+   */
+  findType(project, scope, qualifiers, usings = [], file = null) {
     const name = qualifiers.join('::');
-    const tables = [this.types.get(project.id), ...project.references.map((p) => this.types.get(p.id)).filter(Boolean)];
+    const own = this.types.get(project.id);
+    const tables = [own, ...project.references.map((p) => this.types.get(p.id)).filter(Boolean)];
     for (let i = scope.length; i >= 0; i--) {
       const key = [...scope.slice(0, i), name].filter(Boolean).join('::');
+      if (file && own.has(`${key}@${file.rel}`)) return own.get(`${key}@${file.rel}`);
       for (const table of tables) if (table.has(key)) return table.get(key);
     }
 
@@ -154,7 +159,7 @@ class Model {
     const usings = file.facts.usingNamespaces.map((u) => u.target);
     for (const fn of file.facts.functions) {
       if (fn.qualifiers.length) {
-        const owner = this.findType(file.project, fn.scope, fn.qualifiers, usings);
+        const owner = this.findType(file.project, fn.scope, fn.qualifiers, usings, file);
         if (owner) {
           // Unreal: the body of a BlueprintNativeEvent or an RPC is Name_Implementation, declared as Name.
           const native = /_Implementation$/.exec(fn.name);
@@ -183,7 +188,7 @@ class Model {
       if (variable.extern) continue; // a declaration of a global defined elsewhere
       if (variable.qualifiers.length) {
         // A static member defined out of the class: `int Order::count = 0;`
-        const owner = this.findType(file.project, variable.scope, variable.qualifiers, usings);
+        const owner = this.findType(file.project, variable.scope, variable.qualifiers, usings, file);
         if (owner) {
           const field = owner.members.find((m) => m.kind === 'field' && m.name === variable.name);
           if (field) field.places.push({ file, member: { ...variable, kind: 'field' }, defined: true });
@@ -253,9 +258,16 @@ class Model {
   /**
    * A file-local function or variable (static, anonymous namespace) in a source file that defines members of
    * exactly one class is that class's implementation detail: a private static member of it, so the class and
-   * its helpers are not a cycle of two types.
+   * its helpers are not a cycle of two types. Not when the file also defines functions of its own: they use the
+   * helpers too (qBittorrent's parseCommandLine and DAEMON_OPTION), and could not reach a class's private member.
    */
   moveFileLocalHelpers(files) {
+    const withFunctions = new Set();
+    for (const fn of this.functions) {
+      if (fn.kind !== 'function' || fn.internal) continue;
+      for (const place of fn.places) if (place.member.definition && !place.member.test) withFunctions.add(place.file);
+    }
+
     const owners = new Map();
     for (const table of this.types.values()) {
       for (const entry of table.values()) {
@@ -269,7 +281,7 @@ class Model {
     this.functions = this.functions.filter((fn) => {
       if (!fn.internal || fn.kind === 'typeAlias') return true;
       const file = fn.places[0].file;
-      if (file.header) return true;
+      if (file.header || withFunctions.has(file)) return true;
       const classes = owners.get(file);
       if (!classes || classes.size !== 1) return true;
       const [owner] = classes;

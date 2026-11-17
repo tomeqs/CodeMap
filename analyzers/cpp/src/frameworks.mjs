@@ -4,12 +4,14 @@
  * - tests: GoogleTest, Catch2 / doctest and Boost.Test macros (extract), Qt Test classes (QTEST_MAIN);
  * - Qt: slots are handlers, Q_INVOKABLE members are called from QML (maybe used), widgets are components;
  * - Unreal Engine: functions Blueprints or the network call (UFUNCTION(BlueprintCallable…), RPCs) and game modes
- *   are entry points, UINTERFACE's I-class is an interface.
+ *   are entry points, and so are console variables and commands; UINTERFACE's I-class is an interface.
  */
 
 const MAINS = new Set(['main', 'wmain', 'WinMain', 'wWinMain', '_tmain', '_tWinMain', 'DllMain', 'LLVMFuzzerTestOneInput', 'android_main']);
 const QT_COMPONENTS = new Set(['QWidget', 'QDialog', 'QMainWindow', 'QFrame', 'QAbstractButton', 'QQuickItem', 'QQuickPaintedItem', 'QGraphicsItem', 'QGraphicsWidget', 'QGraphicsView', 'QWindow', 'QOpenGLWidget', 'QWizard', 'QWizardPage', 'QDockWidget', 'QToolBar', 'QMenu']);
 const UNREAL_ENTRIES = new Set(['AGameModeBase', 'AGameMode', 'UGameInstance', 'AGameStateBase', 'AGameState', 'APlayerController', 'UGameInstanceSubsystem', 'UWorldSubsystem', 'UEngineSubsystem']);
+/** Unreal's console variables and commands: the engine console reaches them by name (`r.ShowDebug 1`). */
+const CONSOLE = /^(?:static\s+)?(?:const\s+)?(?:TAutoConsoleVariable|FAutoConsoleVariable|FAutoConsoleVariableRef|FAutoConsoleCommand|FAutoConsoleCommandWithWorld|FAutoConsoleCommandWithWorldAndArgs|FAutoConsoleCommandWithArgsAndOutputDevice|FAutoConsoleCommandWithOutputDevice|FAutoConsoleVariableSink)\b/;
 const BLUEPRINT = /\b(BlueprintCallable|BlueprintImplementableEvent|BlueprintNativeEvent|BlueprintPure|BlueprintGetter|BlueprintSetter|BlueprintAuthorityOnly|Exec|Server|Client|NetMulticast|CallInEditor)\b/;
 
 export class Frameworks {
@@ -68,6 +70,7 @@ export class Frameworks {
     const tags = [];
     const places = member.places.map((p) => p.member);
     const attributes = places.flatMap((p) => p.attributes ?? []);
+    if (member.helper && places.some((p) => CONSOLE.test(p.type ?? ''))) tags.push('entrypoint'); // a file's CVar moved into its class
     if (places.some((p) => p.section === 'slots') || attributes.includes('Q_SLOT')) tags.push(this.qtestClasses.has(entry.name) && member.places.some((p) => p.member.access === 'private') ? 'test' : 'handler');
     if (attributes.includes('Q_INVOKABLE') || attributes.includes('Q_SCRIPTABLE')) tags.push('maybe-used');
     if (attributes.some((a) => a.startsWith('UFUNCTION') && BLUEPRINT.test(a)) || /_Validate$/.test(member.name)) tags.push('entrypoint');
@@ -77,6 +80,7 @@ export class Frameworks {
   functionTags(fn) {
     const tags = [];
     if (fn.kind === 'function' && !fn.namespace && MAINS.has(fn.name)) tags.push('entrypoint');
+    if (fn.kind === 'variable' && fn.places.some((p) => CONSOLE.test(p.member.type ?? ''))) tags.push('entrypoint');
     if (fn.places.some((p) => p.member.test)) tags.push('test');
     return tags;
   }

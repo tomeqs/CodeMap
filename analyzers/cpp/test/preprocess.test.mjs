@@ -28,6 +28,16 @@ test('#if 0 is skipped (its #else is read), and __cplusplus is defined for C++ o
   assert.doesNotMatch(flatten('#if !defined(__cplusplus)\nc_only();\n#endif\n', true), /c_only/);
 });
 
+test('a switch that turns a feature off is not defined: its #else, the code a normal build has, is read', () => {
+  // SQLite: #ifdef SQLITE_OMIT_FLOATING_POINT kept the stub, and the printf code calling et_getdigit was dropped.
+  const omit = '#ifdef SQLITE_OMIT_FLOATING_POINT\nstub();\n#else\nfloats();\n#endif\n';
+  assert.match(flatten(omit, false), /floats\(\)/);
+  assert.doesNotMatch(flatten(omit, false), /stub/);
+  assert.doesNotMatch(flatten('#if defined(FMT_NO_LOCALE)\nnone();\n#endif\n', true), /none/);
+  assert.match(flatten('#ifdef SQLITE_ENABLE_FTS5\nfts5();\n#endif\n', false), /fts5/);
+  assert.match(flatten('#ifdef NOMINMAX\nkept();\n#endif\n', true), /kept/);
+});
+
 test('decoration macros of the project are blanked, a keyword they stand for is put back', () => {
   const macros = collectMacros(['#define SQLITE_API\n#define SQLITE_PRIVATE static\n#define FMT_BEGIN_NAMESPACE namespace fmt { inline namespace v10 {\n#define FMT_END_NAMESPACE } }\n#define VERSION "3"\n']);
   assert.deepEqual([...macros.decorations.keys()].sort(), ['SQLITE_API', 'SQLITE_PRIVATE']);
@@ -37,6 +47,82 @@ test('decoration macros of the project are blanked, a keyword they stand for is 
   assert.match(lines[1], /^static\s+int helper/);
   assert.equal(lines[2].trim(), 'namespace fmt { inline namespace v10 {');
   assert.equal(lines[4].trim(), '} }');
+});
+
+test('a namespace macro naming its inline namespace with another macro, or opening extern "C", still opens it', () => {
+  // nlohmann/json: without the opening macro, the closing one left an extra brace and the file fell apart.
+  const macros = collectMacros([
+    '#define NLOHMANN_JSON_NAMESPACE_BEGIN namespace nlohmann { \\\n  inline namespace NLOHMANN_JSON_NAMESPACE_CONCAT( \\\n    NLOHMANN_JSON_ABI_TAGS, NLOHMANN_JSON_NAMESPACE_VERSION) \\\n  {\n#define NLOHMANN_JSON_NAMESPACE_END } } // namespace nlohmann\n',
+    '#if defined(__cplusplus)\n#define BEGIN_C_DECLS extern "C" {\n#define END_C_DECLS }\n#else\n#define BEGIN_C_DECLS\n#define END_C_DECLS\n#endif\n#define COMPUTED namespace NAME(x) {\n',
+  ]);
+  assert.equal(macros.namespaces.get('NLOHMANN_JSON_NAMESPACE_BEGIN'), 'namespace nlohmann { inline namespace NLOHMANN_JSON_NAMESPACE_CONCAT {');
+  assert.equal(macros.namespaces.get('NLOHMANN_JSON_NAMESPACE_END'), '} }');
+  assert.equal(macros.namespaces.get('BEGIN_C_DECLS'), 'extern "C" {');
+  assert.equal(macros.namespaces.get('END_C_DECLS'), '}');
+  assert.ok(!macros.namespaces.has('COMPUTED') && !macros.decorations.has('BEGIN_C_DECLS'));
+});
+
+test('a macro naming a namespace is that name everywhere: in the namespace macro and in qualified names', () => {
+  // spdlog: `#define SPDLOG_NAMESPACE_BEGIN namespace SPDLOG_NAMESPACE {`; calls say spdlog::info.
+  const macros = collectMacros(['#ifndef SPDLOG_NAMESPACE\n#define SPDLOG_NAMESPACE spdlog\n#endif\n#define SPDLOG_NAMESPACE_BEGIN namespace SPDLOG_NAMESPACE {\n#define SPDLOG_NAMESPACE_END }\n#define LEVEL 3\n']);
+  assert.equal(macros.namespaces.get('SPDLOG_NAMESPACE_BEGIN'), 'namespace spdlog {');
+  assert.equal(macros.namespaces.get('SPDLOG_NAMESPACE'), 'spdlog'.padEnd(16));
+  assert.ok(!macros.namespaces.has('LEVEL'));
+  const { text } = preprocess('SPDLOG_NAMESPACE_BEGIN\nvoid f() { SPDLOG_NAMESPACE::info(); }\nSPDLOG_NAMESPACE_END\n', { macros });
+  assert.equal(text.split('\n')[1], 'void f() { spdlog          ::info(); }');
+});
+
+test('a macro standing for a template header is expanded, so the class after it stays a class', () => {
+  // nlohmann/json: basic_json, the library's main class, was missing from the map.
+  const macros = collectMacros(['#define TPL_DECLARATION \\\n  template<template<typename, typename...> class ObjectType, \\\n           class StringType>\n#define TPL_WITH_REST template<class T> int\n']);
+  assert.equal(macros.namespaces.get('TPL_DECLARATION'), 'template<template<typename, typename...> class ObjectType, class StringType>');
+  assert.ok(!macros.namespaces.has('TPL_WITH_REST'));
+  const { text } = preprocess('namespace n {\nTPL_DECLARATION\nclass basic_json {\n};\n}\n', { macros });
+  assert.equal(text.split('\n')[1].trim(), 'template<template<typename, typename...> class ObjectType, class StringType>');
+});
+
+test('try and catch macros read as the keywords, so a class using them stays whole; throw macros stay calls', () => {
+  // nlohmann/json, fmt, spdlog and Catch2 all spell try / catch with macros; the first branch (exceptions on) wins.
+  const macros = collectMacros([
+    '#if EXCEPTIONS\n#define JSON_TRY try\n#define JSON_CATCH(exception) catch(exception)\n#define JSON_THROW(exception) throw exception\n#define CATCH_ALL catch (...)\n#else\n#define JSON_TRY if(true)\n#define JSON_CATCH(exception) if(false)\n#endif\n#define NOT_A_CATCH(x) catch(y)\n',
+  ]);
+  assert.equal(macros.namespaces.get('JSON_TRY'), 'try     ');
+  assert.equal(macros.namespaces.get('JSON_CATCH'), 'catch     ');
+  assert.ok(!macros.namespaces.has('JSON_THROW'));
+  assert.equal(macros.namespaces.get('CATCH_ALL'), 'catch (...)');
+  assert.ok(!macros.namespaces.has('NOT_A_CATCH'));
+  assert.equal(collectMacros(['#define JSON_PRIVATE_UNLESS_TESTED public\n']).namespaces.get('JSON_PRIVATE_UNLESS_TESTED'), 'public'.padEnd(26));
+  const { text } = preprocess('void f() {\n  JSON_TRY { g(); }\n  JSON_CATCH(std::exception& e) { JSON_THROW(e); }\n}\n', { macros });
+  assert.equal(text.split('\n')[1], '  try      { g(); }');
+  assert.equal(text.split('\n')[2], '  catch     (std::exception& e) { JSON_THROW(e); }');
+});
+
+test('function-like macros that only stand for attributes are blanked where they are used', () => {
+  // leveldb: `void Compact() EXCLUSIVE_LOCKS_REQUIRED(mutex_);` became a method named EXCLUSIVE_LOCKS_REQUIRED.
+  const macros = collectMacros([
+    '#if defined(__clang__)\n#define THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))\n#else\n#define THREAD_ANNOTATION_ATTRIBUTE__(x)  // no-op\n#endif\n#define GUARDED_BY(x) THREAD_ANNOTATION_ATTRIBUTE__(guarded_by(x))\n#define EXCLUSIVE_LOCKS_REQUIRED(...) THREAD_ANNOTATION_ATTRIBUTE__(exclusive_locks_required(__VA_ARGS__))\n#define DCHECK(x)\n#define MAX(a, b) ((a) > (b) ? (a) : (b))\n',
+  ]);
+  assert.deepEqual(macros.attributes.sort(), ['EXCLUSIVE_LOCKS_REQUIRED', 'GUARDED_BY', 'THREAD_ANNOTATION_ATTRIBUTE__']);
+  const { text } = preprocess('class Db {\n  void Compact() EXCLUSIVE_LOCKS_REQUIRED(mutex_);\n  int count_ GUARDED_BY(mutex_);\n};\n', { macros });
+  assert.match(text.split('\n')[1], /^  void Compact\(\)\s+;$/);
+  assert.match(text.split('\n')[2], /^  int count_\s+;$/);
+});
+
+test('a macro made of other decoration macros is a decoration; one made of code is not', () => {
+  const macros = collectMacros([
+    '#define HEDLEY_INLINE inline\n#define HEDLEY_ALWAYS_INLINE __attribute__((__always_inline__)) HEDLEY_INLINE\n#define OUTER HEDLEY_ALWAYS_INLINE\n#define JSON_TRY try\n#define JSON_THROW throw\n',
+  ]);
+  assert.equal(macros.decorations.get('HEDLEY_ALWAYS_INLINE'), 'inline');
+  assert.equal(macros.decorations.get('OUTER'), 'inline');
+  assert.ok(!macros.decorations.has('JSON_TRY') && !macros.decorations.has('JSON_THROW'));
+});
+
+test('a multi-line #define is blanked, a comment inside it included', () => {
+  // The grammar ends the macro at the comment and read the rest as code: the class around it fell apart.
+  const source = '#define ENUM_MACRO(T)  \\\n    /* comment */  \\\n    inline void to_json(T& j) { j = 1; }\nint after;\n';
+  const lines = flatten(source, true).split('\n');
+  assert.deepEqual(lines.slice(0, 3).map((l) => l.trim()), ['', '', '']);
+  assert.equal(lines[3], 'int after;');
 });
 
 test('a macro defined two ways (export or import) is blanked', () => {

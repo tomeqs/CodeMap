@@ -21,6 +21,8 @@ export function extractFile(tree, { annotations = [], sections = [], lines }) {
     usingNamespaces: [],
     usingNames: [],
     namespaceAliases: [],
+    // Names passed to macros called at file level (SQLite's IOMETHODS(…, afpClose, …), BENCHMARK(BM_Parse)).
+    macroArguments: [],
   };
   const pending = { annotations: annotations.map((a) => ({ ...a, claimed: false })), sections };
   const context = { facts, pending, lines };
@@ -174,10 +176,16 @@ function visitDeclaration(node, scope, context, template) {
       typeSpecifier(node, scope, context, null, template, null);
       return;
 
-    case 'expression_statement':
+    case 'expression_statement': {
+      // A macro called at file level: the functions it names are used by the code it expands to.
+      const call = node.namedChild(0);
+      if (call?.type === 'call_expression') identifiersIn(call.childForFieldName('arguments'), context.facts.macroArguments);
+      return;
+    }
+
     case 'ERROR':
       // Code the grammar could not place (macros at file level): what it holds may still be declarations.
-      if (node.type === 'ERROR') visitScope(node, scope, context);
+      visitScope(node, scope, context);
       return;
 
     default:
@@ -224,7 +232,9 @@ function typeSpecifier(node, scope, context, owner, template, access) {
   }
 
   if (kind === 'enum') {
-    type.enumerators = body.namedChildren.filter((c) => c.type === 'enumerator').length;
+    const enumerators = body.namedChildren.filter((c) => c.type === 'enumerator');
+    type.enumerators = enumerators.length;
+    type.values = enumerators.map((e) => e.childForFieldName('name')?.text).filter(Boolean);
   } else {
     type.path = [...(owner ? owner.path : []), type.name ?? `(anonymous@${type.line})`];
     classBody(body, type, scope, context);
@@ -389,7 +399,8 @@ function fieldLike(node, type, context, access) {
 function functionDefinition(node, scope, context, template) {
   const declarator = functionDeclaratorOf(node);
   if (!declarator) return;
-  const nameNode = declarator.childForFieldName('declarator');
+  // A conversion operator's name is the operator_cast (or Foo::operator_cast) around its declarator.
+  const nameNode = declarator.type === 'abstract_function_declarator' ? node.childForFieldName('declarator') : declarator.childForFieldName('declarator');
   const qualified = qualifiedName(nameNode);
   if (!qualified) return;
   const body = node.childForFieldName('body');
@@ -548,11 +559,42 @@ function bases(clause) {
 
 function functionDeclaratorOf(node) {
   for (const declarator of node.childrenForFieldName('declarator')) {
-    const fn = functionDeclarator(declarator);
+    const fn = functionDeclarator(declarator) ?? castDeclarator(castOf(declarator));
     if (fn) return fn;
   }
 
   return null;
+}
+
+/**
+ * A conversion operator's declarator (`operator bool() const`, `Foo::operator bool() const`): the grammar gives it
+ * no function declarator, only an operator_cast whose own declarator holds the parameters. Without this, gmock's
+ * `operator Matcher<T>() const` was not on the map, nor were the classes only it creates.
+ */
+function castOf(declarator) {
+  let d = declarator;
+  while (d?.type === 'qualified_identifier') d = d.childForFieldName('name');
+  return d?.type === 'operator_cast' ? d : null;
+}
+
+/** The function declarator of a conversion operator, under `*` / `&` (`operator Impl*()`, `operator const T&()`). */
+function castDeclarator(cast) {
+  let d = cast?.childForFieldName('declarator');
+  while (d && (d.type === 'abstract_pointer_declarator' || d.type === 'abstract_reference_declarator')) d = d.childForFieldName('declarator') ?? d.namedChildren.find((c) => c.type.startsWith('abstract_'));
+  return d?.type === 'abstract_function_declarator' ? d : null;
+}
+
+/** `operator Impl*`, `operator const std::string&`: the operator_cast's text up to its parameters. */
+function castName(cast) {
+  const params = castDeclarator(cast)?.childForFieldName('parameters');
+  const text = params ? cast.text.slice(0, params.startIndex - cast.startIndex) : 'operator ' + (cast.childForFieldName('type')?.text ?? '');
+  return oneLine(text).replace(/^operator\s*/, 'operator ').replace(/\s+([*&])/g, '$1');
+}
+
+function identifiersIn(node, out) {
+  if (!node) return;
+  if (node.type === 'identifier') out.push(node.text);
+  for (let i = 0; i < node.namedChildCount; i++) identifiersIn(node.namedChild(i), out);
 }
 
 /** The function_declarator under pointer / reference declarators (`const T& get()` → get()). */
@@ -560,9 +602,18 @@ function functionDeclarator(declarator) {
   let d = declarator;
   while (d) {
     if (d.type === 'function_declarator') {
-      // `int (*fp)(int)` declares a pointer, not a function.
+      // `int (*fp)(int)` declares a pointer, not a function; `int (*compareFor(int key))(const void*)` is a
+      // function returning one (SQLite's ftsCompareFunction): the function is the declarator inside.
       const inner = d.childForFieldName('declarator');
-      if (inner?.type === 'parenthesized_declarator') return null;
+      if (inner?.type === 'parenthesized_declarator') {
+        let e = inner.namedChild(0);
+        while (e && (e.type === 'pointer_declarator' || e.type === 'reference_declarator' || e.type === 'parenthesized_declarator')) {
+          e = e.type === 'parenthesized_declarator' ? e.namedChild(0) : e.childForFieldName('declarator');
+        }
+
+        return e?.type === 'function_declarator' ? functionDeclarator(e) : null;
+      }
+
       return d;
     }
 
@@ -612,7 +663,7 @@ function declaratorName(declarator) {
 function functionName(nameNode, declaration) {
   if (!nameNode) {
     const cast = declaration.namedChildren.find((c) => c.type === 'operator_cast');
-    return cast ? 'operator ' + oneLine(cast.childForFieldName('type')?.text ?? '') : null;
+    return cast ? castName(cast) : null;
   }
 
   switch (nameNode.type) {
@@ -629,7 +680,7 @@ function functionName(nameNode, declaration) {
     case 'qualified_identifier':
       return qualifiedName(nameNode)?.name ?? null;
     case 'operator_cast':
-      return 'operator ' + oneLine(nameNode.childForFieldName('type')?.text ?? '');
+      return castName(nameNode);
     default:
       return null;
   }
@@ -723,7 +774,8 @@ function innermostIdentifier(declarator) {
   let d = declarator;
   for (let guard = 0; d && guard < 20; guard++) {
     if (d.type === 'identifier' || d.type === 'field_identifier') return d;
-    const wrapper = ['parenthesized_declarator', 'pointer_declarator', 'reference_declarator', 'array_declarator', 'attributed_declarator', 'init_declarator'].includes(d.type);
+    // variadic_declarator: `Args&&... args` (the pack's name is not part of its type, nor of the function's id).
+    const wrapper = ['parenthesized_declarator', 'pointer_declarator', 'reference_declarator', 'array_declarator', 'attributed_declarator', 'init_declarator', 'variadic_declarator'].includes(d.type);
     const next = d.childForFieldName('declarator') ?? (wrapper ? d.namedChildren.find((c) => c.type.endsWith('declarator') || c.type === 'identifier') : null);
     if (!next) return null;
     d = next;

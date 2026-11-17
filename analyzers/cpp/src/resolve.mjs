@@ -22,9 +22,11 @@ const MAPS = /^(?:std::)?(?:map|unordered_map|multimap|unordered_multimap|flat_m
 const CONTAINERS = /^(?:std::)?(?:vector|list|deque|set|unordered_set|multiset|unordered_multiset|array|span|initializer_list|forward_list|queue|stack|priority_queue|flat_set)$|^(?:QList|QVector|QSet|QStringList|QQueue|QStack|TArray|TSet|TArrayView)$/;
 const MAKERS = new Set(['make_unique', 'make_shared', 'make_unique_for_overwrite', 'allocate_shared', 'MakeShared', 'MakeUnique', 'MakeShareable', 'NewObject', 'CreateDefaultSubobject', 'SpawnActor']);
 
-export function resolveReferences(model, graph, { log = () => {}, stats = false, unresolvedFile = null } = {}) {
+export function resolveReferences(model, graph, { log = () => {}, stats = false, unresolvedFile = null, macroWords = null } = {}) {
   const resolver = new Resolver(model, graph);
   resolver.run();
+  for (const word of macroWords ?? []) resolver.unknownNames.add(word);
+  resolver.markMaybeUsed();
   if (stats) {
     const s = resolver.counts;
     const pct = (a, b) => (b ? ((100 * a) / b).toFixed(1) : '0.0');
@@ -42,10 +44,14 @@ class Resolver {
     this.counts = { calls: 0, resolved: 0, candidates: 0, candidateResolved: 0, ambiguous: 0 };
     this.diagnostics = [];
     this.unresolved = [];
+    // Names called or read on something the resolver could not type (template code: `t.helper()`, `x.m_value`).
+    this.unknownNames = new Set();
     this.visible = new Map();
     this.byName = new Map(); // simple type name → [entries], every project
     this.free = new Map(); // project id → Map(namespace → Map(name → [function entries]))
     this.declaredNames = new Set();
+    // Values of unscoped enums by name: `COL_COUNT` names its enum as `Columns::COL_COUNT` would.
+    this.enumValues = new Map();
     for (const project of model.projects) {
       const seen = new Set([project]);
       const queue = [project];
@@ -60,6 +66,13 @@ class Resolver {
         if (!this.byName.has(entry.name)) this.byName.set(entry.name, []);
         this.byName.get(entry.name).push(entry);
         for (const m of entry.members) this.declaredNames.add(m.name);
+        for (const { decl } of entry.decls) {
+          if (decl.kind !== 'enum' || decl.scoped) continue;
+          for (const value of decl.values ?? []) {
+            if (!this.enumValues.has(value)) this.enumValues.set(value, new Set());
+            this.enumValues.get(value).add(entry);
+          }
+        }
       }
     }
 
@@ -84,6 +97,39 @@ class Resolver {
     }
 
     for (const fn of this.model.functions) if (fn.id) this.functionEdges(fn);
+  }
+
+  /**
+   * The unscoped enum a bare value names: one nested in the class or its outer classes, else the one of the
+   * file's own or of the visible projects (when exactly one fits).
+   */
+  enumOfValue(name, ctx) {
+    const all = [...(this.enumValues.get(name) ?? [])].filter((en) => en.id && (!en.local || en.decls.some((d) => d.file === ctx.file)));
+    if (!all.length) return null;
+    for (let cls = ctx.cls; cls; cls = cls.outer) {
+      const nested = all.find((en) => en.outer === cls);
+      if (nested) return nested;
+    }
+
+    const visible = this.visible.get(ctx.project.id) ?? [ctx.project];
+    const fits = all.filter((en) => !en.outer && visible.includes(en.project));
+    return fits.length === 1 ? fits[0] : null;
+  }
+
+  /**
+   * A private member whose name is called or read on something the resolver could not type, or used in a macro's
+   * body, is tagged maybe-used, so it is not reported as unused on no evidence (as the Python plugin does): in
+   * template code most calls go through a type parameter (`j.template get<T>()`, `m_data.m_value`), and a C++
+   * resolver cannot see through them, nor into macros.
+   */
+  markMaybeUsed() {
+    const mark = (id, name) => {
+      const node = id && this.unknownNames.has(name) ? this.graph.get(id) : null;
+      if (!node || node.accessibility !== 'private' || node.tags?.includes('maybe-used')) return;
+      node.tags = [...(node.tags ?? []), 'maybe-used'].sort();
+    };
+    for (const table of this.model.types.values()) for (const entry of table.values()) for (const m of entry.members) mark(m.id, m.name);
+    for (const fn of this.model.functions) mark(fn.id, fn.name);
   }
 
   // ------------------------------------------------------------------------------------- contexts
@@ -258,7 +304,8 @@ class Resolver {
       const out = [];
       for (const p of projects) {
         const list = this.free.get(p.id)?.get(ns)?.get(name);
-        if (list) for (const fn of list) if ((!kind || fn.kind === kind) && (!fn.internal || fn.places.some((pl) => pl.file === ctx.file))) out.push(fn);
+        // File-local (static, anonymous namespace) is seen in its file, or by every includer when in a header.
+        if (list) for (const fn of list) if ((!kind || fn.kind === kind) && (!fn.internal || fn.places.some((pl) => pl.file === ctx.file || pl.file.header))) out.push(fn);
       }
 
       return out;
@@ -628,6 +675,7 @@ class Resolver {
           if (!target && site.argx) this.connect(source, site.argx, scope);
           if (!target) {
             if (candidate) this.unresolved.push([file.rel, site.line, describe(site.f), receiverType(site.f, scope, this)]);
+            if (name && !external && !std) this.unknownNames.add(name);
             break;
           }
 
@@ -728,6 +776,13 @@ class Resolver {
         return;
       }
 
+      const enumeration = this.enumOfValue(e.n, scope.ctx);
+      if (enumeration) {
+        add(enumeration.id, 'uses', line);
+        return;
+      }
+
+      this.unknownNames.add(e.n);
       return;
     }
 
@@ -735,6 +790,7 @@ class Resolver {
       const owner = this.classOf(this.typeOf(e.b, scope));
       const member = owner ? this.membersNamed(owner, e.n)[0] : null;
       if (member) add(member.member.id, member.member.kind === 'field' ? 'accesses' : 'uses', line);
+      else if (!owner) this.unknownNames.add(e.n);
       return;
     }
 
@@ -749,8 +805,11 @@ class Resolver {
       const owner = e.p.length > 1 ? this.lookupType(e.p.slice(0, -1).join('::'), scope.ctx) : null;
       if (owner) {
         const member = this.membersNamed(owner, e.p[e.p.length - 1])[0];
+        // An enumerator: Status::Paid, or Dialog::TAB_UI of an unscoped enum nested in Dialog.
+        const nested = member ? null : [...(this.enumValues.get(e.p[e.p.length - 1]) ?? [])].find((en) => en.outer === owner);
         if (member) add(member.member.id, member.member.kind === 'field' ? 'accesses' : 'uses', line);
-        else if (owner !== scope.ctx.cls) add(owner.id, 'uses', line); // an enumerator: Status::Paid
+        else if (nested) add(nested.id, 'uses', line);
+        else if (owner !== scope.ctx.cls) add(owner.id, 'uses', line);
         return;
       }
 
