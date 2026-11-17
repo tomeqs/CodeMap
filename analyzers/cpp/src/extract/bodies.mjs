@@ -15,6 +15,7 @@ const SKIP_CALLS = new Set(['sizeof', 'alignof', 'decltype', 'typeid', 'noexcept
 export function collectBody(body, extra = [], params = []) {
   const out = { locals: [], sites: [] };
   const localNames = new Set(params.map((p) => p.name).filter(Boolean));
+  let lambdas = 0; // how many lambdas the walk is inside: their code runs later, when they are called
   const walk = (node) => {
     switch (node.type) {
       case 'declaration':
@@ -40,7 +41,9 @@ export function collectBody(body, extra = [], params = []) {
         const param = parameters?.namedChildren.find((c) => c.type === 'parameter_declaration');
         if (param) {
           const type = param.childForFieldName('type');
-          if (type) out.sites.push({ k: 'type', ty: oneLine(type.text), rel: 'catches', line: row(param) });
+          const declarator = param.childForFieldName('declarator');
+          const byValue = !declarator || declarator.type !== 'reference_declarator' && declarator.type !== 'pointer_declarator' && declarator.type !== 'abstract_reference_declarator' && declarator.type !== 'abstract_pointer_declarator';
+          if (type) out.sites.push({ k: 'type', ty: oneLine(type.text), rel: 'catches', line: row(param), ...(byValue ? { byValue: param.startPosition.column + 1 } : {}) });
           const name = declaratorName(param.childForFieldName('declarator'));
           if (name && type) {
             localNames.add(name);
@@ -63,7 +66,10 @@ export function collectBody(body, extra = [], params = []) {
           }
         }
 
-        break;
+        lambdas++;
+        for (let i = 0; i < node.namedChildCount; i++) walk(node.namedChild(i));
+        lambdas--;
+        return;
       }
 
       case 'call_expression': {
@@ -82,6 +88,7 @@ export function collectBody(body, extra = [], params = []) {
           const list = args ? args.namedChildren.filter((c) => c.type !== 'comment') : [];
           const site = { k: 'call', f: e, argc: list.length, args: list.map(argType), line: row(node) };
           if (node.parent?.type === 'expression_statement') site.stmt = true;
+          if (lambdas) site.deferred = true;
           // Qt's connect(sender, &Sender::signal, receiver, &Receiver::slot): the arguments themselves matter.
           const last = e.t === 'id' ? e.n : e.t === 'q' ? e.p[e.p.length - 1] : e.t === 'fld' ? e.n : null;
           if (last === 'connect') site.argx = list.map(expr);
@@ -123,7 +130,7 @@ export function collectBody(body, extra = [], params = []) {
         const parent = node.parent?.type;
         if (localNames.has(node.text) || !parent) break;
         if (parent === 'call_expression' && node.parent.childForFieldName('function')?.id === node.id) break;
-        if (/declarator$/.test(parent) || parent === 'goto_statement' || parent === 'labeled_statement' || parent === 'field_designator') break;
+        if (declaredBy(node) || parent === 'goto_statement' || parent === 'labeled_statement' || parent === 'field_designator') break;
         out.sites.push({ k: 'access', e: { t: 'id', n: node.text }, line: row(node) });
         break;
       }
@@ -131,7 +138,8 @@ export function collectBody(body, extra = [], params = []) {
       case 'qualified_identifier': {
         const parent = node.parent;
         if (parent?.type === 'call_expression' && parent.childForFieldName('function')?.id === node.id) break;
-        if (parent && (/declarator$/.test(parent.type) || parent.type === 'qualified_identifier')) break;
+        if (declaredBy(node)) return;
+        if (parent?.type === 'qualified_identifier') break;
         out.sites.push({ k: 'access', e: expr(node), line: row(node) });
         return; // its parts are not references of their own
       }
@@ -179,6 +187,18 @@ export function collectBody(body, extra = [], params = []) {
   for (const node of extra) if (node) walk(node);
   if (body) walk(body);
   return out;
+}
+
+/**
+ * Whether a name is the one its declarator declares (`sum` in `int sum = base_;`), not what the declaration reads:
+ * the value it starts with (`base_`, `Config::kMax`) or the size of its array (`int buf[kSize]`).
+ */
+function declaredBy(node) {
+  const parent = node.parent;
+  if (!parent || !/declarator$/.test(parent.type)) return false;
+  if (parent.type === 'init_declarator') return parent.childForFieldName('value')?.id !== node.id;
+  if (parent.type === 'array_declarator') return parent.childForFieldName('size')?.id !== node.id;
+  return true;
 }
 
 /** Locals declared, the type they name (uses), and objects constructed (`Order o(1);`, `Order o{…}`). */

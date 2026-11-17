@@ -408,7 +408,8 @@ function functionDefinition(node, scope, context, template) {
   const tail = declaratorTail(declarator);
   if (tail.const) modifiers.push('const');
   const parameters = params(declarator.childForFieldName('parameters'));
-  const macro = !node.childForFieldName('type') && !qualified.qualifiers.length ? FUNCTION_TESTS[qualified.name] : undefined;
+  // An own entry of the table (a function named toString or constructor is none, though every object has them).
+  const macro = !node.childForFieldName('type') && !qualified.qualifiers.length && Object.hasOwn(FUNCTION_TESTS, qualified.name) ? FUNCTION_TESTS[qualified.name] : undefined;
   if (macro !== undefined) {
     if (!macro) return; // FRIEND_TEST and the like declare nothing of their own
     const args = parameters.map((p) => p.type);
