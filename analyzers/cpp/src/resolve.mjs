@@ -22,9 +22,10 @@ const MAPS = /^(?:std::)?(?:map|unordered_map|multimap|unordered_multimap|flat_m
 const CONTAINERS = /^(?:std::)?(?:vector|list|deque|set|unordered_set|multiset|unordered_multiset|array|span|initializer_list|forward_list|queue|stack|priority_queue|flat_set)$|^(?:QList|QVector|QSet|QStringList|QQueue|QStack|TArray|TSet|TArrayView)$/;
 const MAKERS = new Set(['make_unique', 'make_shared', 'make_unique_for_overwrite', 'allocate_shared', 'MakeShared', 'MakeUnique', 'MakeShareable', 'NewObject', 'CreateDefaultSubobject', 'SpawnActor']);
 
-export function resolveReferences(model, graph, { log = () => {}, stats = false, unresolvedFile = null } = {}) {
+export function resolveReferences(model, graph, { log = () => {}, stats = false, unresolvedFile = null, macroWords = null } = {}) {
   const resolver = new Resolver(model, graph);
   resolver.run();
+  for (const word of macroWords ?? []) resolver.unknownNames.add(word);
   resolver.markMaybeUsed();
   if (stats) {
     const s = resolver.counts;
@@ -90,9 +91,10 @@ class Resolver {
   }
 
   /**
-   * A private member whose name is called or read on something the resolver could not type is tagged maybe-used,
-   * so it is not reported as unused on no evidence (as the Python plugin does): in template code most calls go
-   * through a type parameter (`j.template get<T>()`, `m_data.m_value`), and a C++ resolver cannot see through them.
+   * A private member whose name is called or read on something the resolver could not type, or used in a macro's
+   * body, is tagged maybe-used, so it is not reported as unused on no evidence (as the Python plugin does): in
+   * template code most calls go through a type parameter (`j.template get<T>()`, `m_data.m_value`), and a C++
+   * resolver cannot see through them, nor into macros.
    */
   markMaybeUsed() {
     const mark = (id, name) => {
@@ -276,7 +278,8 @@ class Resolver {
       const out = [];
       for (const p of projects) {
         const list = this.free.get(p.id)?.get(ns)?.get(name);
-        if (list) for (const fn of list) if ((!kind || fn.kind === kind) && (!fn.internal || fn.places.some((pl) => pl.file === ctx.file))) out.push(fn);
+        // File-local (static, anonymous namespace) is seen in its file, or by every includer when in a header.
+        if (list) for (const fn of list) if ((!kind || fn.kind === kind) && (!fn.internal || fn.places.some((pl) => pl.file === ctx.file || pl.file.header))) out.push(fn);
       }
 
       return out;

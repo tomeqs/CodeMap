@@ -4,7 +4,7 @@
  * and columns where possible, stay where they were):
  *
  * - every `#if` / `#ifdef` chain keeps one branch (the first; `#if 0` is skipped, `__cplusplus` is defined for
- *   C++ and not for C). Reading every branch leaves unbalanced braces (`#ifdef X` `void f(int a) {` `#else` …).
+ *   C++ and not for C, switches that turn a feature off, `#ifdef SQLITE_OMIT_…`, are not defined). Reading every branch leaves unbalanced braces (`#ifdef X` `void f(int a) {` `#else` …).
  * - `#define` and `#undef`, with their continuation lines: the grammar ends a macro's body at a comment inside
  *   it, and reads the lines after as code (nlohmann/json's enum macros became functions of the file).
  * - macros that only decorate a declaration: export macros (`class SHOP_API Order`, `SHOP_EXPORT void f()`),
@@ -112,7 +112,22 @@ export function collectMacros(texts) {
 
   // A namespace macro is not a decoration, whatever another branch defines it as.
   for (const name of namespaces.keys()) decorations.delete(name);
-  return { decorations, namespaces };
+  return { decorations, namespaces, words: macroWords(texts) };
+}
+
+/**
+ * Every name a `#define` body uses. Macros are not read as code, so a function only a macro names (redis's config
+ * table: `createBoolConfig(…)` expands to `boolConfigGet, boolConfigSet…`) would otherwise look unused.
+ */
+function macroWords(texts) {
+  const words = new Set();
+  const re = /^[ \t]*#[ \t]*define[ \t]+[A-Za-z_]\w*(?:\([^)\n]*\))?((?:[^\n\\]|\\\r?\n)*)$/gm;
+  for (const text of texts) {
+    let m;
+    while ((m = re.exec(text))) for (const w of m[1].match(/\b[A-Za-z_]\w*\b/g) ?? []) words.add(w);
+  }
+
+  return words;
 }
 
 /**
@@ -165,8 +180,8 @@ function namespaceExpansion(body) {
 }
 
 /**
- * @returns {{ text: string, annotations: {line:number, name:string, args:string}[], sections: {line:number, kind:string, access:string}[] }}
- *   lines are 1-based.
+ * @returns {{ text: string, annotations: {line:number, name:string, args:string}[], sections: {line:number, kind:string, access:string}[], macroArguments: string[] }}
+ *   lines are 1-based; macroArguments are the names given to the macros blanked as statements.
  */
 export function preprocess(source, { cplusplus = true, macros = null } = {}) {
   let text = flatten(source, cplusplus);
@@ -203,8 +218,9 @@ export function preprocess(source, { cplusplus = true, macros = null } = {}) {
   text = replaceOutsideDirectives(text, EXPORT_MACRO, (word) => ' '.repeat(word.length));
 
   if (macros) text = applyMacros(text, macros);
-  text = blankStatementMacros(text);
-  return { text, annotations: annotations.sort((a, b) => a.line - b.line), sections };
+  const macroArguments = [];
+  text = blankStatementMacros(text, macroArguments);
+  return { text, annotations: annotations.sort((a, b) => a.line - b.line), sections, macroArguments };
 }
 
 /**
@@ -212,7 +228,7 @@ export function preprocess(source, { cplusplus = true, macros = null } = {}) {
  * `Q_DECLARE_METATYPE(Order)`, `DECLARE_LOG_CATEGORY(Shop)` on a line of its own): the grammar takes it for a
  * call missing its `;` and loses what follows. A macro that opens a body (`TEST(A, B) {`) is left alone.
  */
-function blankStatementMacros(text) {
+function blankStatementMacros(text, names) {
   const re = /^([ \t]*)([A-Z][A-Z0-9_]{2,})[ \t]*\(/gm;
   let out = '';
   let last = 0;
@@ -235,6 +251,8 @@ function blankStatementMacros(text) {
     const next = /^\s*(\S)/.exec(text.slice(end + 1, end + 400));
     if (next && (next[1] === '{' || next[1] === ':' || next[1] === ',' || next[1] === '.' || next[1] === '-' || next[1] === '+' || next[1] === '=')) continue;
     out += text.slice(last, m.index + m[1].length) + blank(text.slice(m.index + m[1].length, end + 1));
+    // The names it is given are used by the code it expands to (SQLite's IOMETHODS(…, afpClose, …)).
+    for (const w of text.slice(open + 1, end).replace(/"(?:\\.|[^"\\])*"/g, '').match(/\b[A-Za-z_]\w*\b/g) ?? []) names.push(w);
     last = end + 1;
     re.lastIndex = end + 1;
   }
@@ -304,6 +322,10 @@ function wanted(keyword, condition, cplusplus) {
   }
 
   if (keyword === 'if' && /^(0|false)\b/.test(condition)) return false;
+  // A switch that turns a feature off (`#ifdef SQLITE_OMIT_FLOATING_POINT`): its first branch is the stub, so the
+  // code a normal build has is in the #else.
+  const name = keyword === 'ifdef' ? condition : keyword === 'if' ? /^defined\s*\(?\s*(\w+)\s*\)?$/.exec(condition)?.[1] : null;
+  if (name && /(?:^|_)(?:OMIT|DISABLE|DISABLED|NO|WITHOUT|EXCLUDE)(?:_|$)/.test(name)) return false;
   return true;
 }
 

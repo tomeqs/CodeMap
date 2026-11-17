@@ -21,6 +21,8 @@ export function extractFile(tree, { annotations = [], sections = [], lines }) {
     usingNamespaces: [],
     usingNames: [],
     namespaceAliases: [],
+    // Names passed to macros called at file level (SQLite's IOMETHODS(…, afpClose, …), BENCHMARK(BM_Parse)).
+    macroArguments: [],
   };
   const pending = { annotations: annotations.map((a) => ({ ...a, claimed: false })), sections };
   const context = { facts, pending, lines };
@@ -174,10 +176,16 @@ function visitDeclaration(node, scope, context, template) {
       typeSpecifier(node, scope, context, null, template, null);
       return;
 
-    case 'expression_statement':
+    case 'expression_statement': {
+      // A macro called at file level: the functions it names are used by the code it expands to.
+      const call = node.namedChild(0);
+      if (call?.type === 'call_expression') identifiersIn(call.childForFieldName('arguments'), context.facts.macroArguments);
+      return;
+    }
+
     case 'ERROR':
       // Code the grammar could not place (macros at file level): what it holds may still be declarations.
-      if (node.type === 'ERROR') visitScope(node, scope, context);
+      visitScope(node, scope, context);
       return;
 
     default:
@@ -555,14 +563,29 @@ function functionDeclaratorOf(node) {
   return null;
 }
 
+function identifiersIn(node, out) {
+  if (!node) return;
+  if (node.type === 'identifier') out.push(node.text);
+  for (let i = 0; i < node.namedChildCount; i++) identifiersIn(node.namedChild(i), out);
+}
+
 /** The function_declarator under pointer / reference declarators (`const T& get()` → get()). */
 function functionDeclarator(declarator) {
   let d = declarator;
   while (d) {
     if (d.type === 'function_declarator') {
-      // `int (*fp)(int)` declares a pointer, not a function.
+      // `int (*fp)(int)` declares a pointer, not a function; `int (*compareFor(int key))(const void*)` is a
+      // function returning one (SQLite's ftsCompareFunction): the function is the declarator inside.
       const inner = d.childForFieldName('declarator');
-      if (inner?.type === 'parenthesized_declarator') return null;
+      if (inner?.type === 'parenthesized_declarator') {
+        let e = inner.namedChild(0);
+        while (e && (e.type === 'pointer_declarator' || e.type === 'reference_declarator' || e.type === 'parenthesized_declarator')) {
+          e = e.type === 'parenthesized_declarator' ? e.namedChild(0) : e.childForFieldName('declarator');
+        }
+
+        return e?.type === 'function_declarator' ? functionDeclarator(e) : null;
+      }
+
       return d;
     }
 

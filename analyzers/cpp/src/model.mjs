@@ -253,9 +253,16 @@ class Model {
   /**
    * A file-local function or variable (static, anonymous namespace) in a source file that defines members of
    * exactly one class is that class's implementation detail: a private static member of it, so the class and
-   * its helpers are not a cycle of two types.
+   * its helpers are not a cycle of two types. Not when the file also defines functions of its own: they use the
+   * helpers too (qBittorrent's parseCommandLine and DAEMON_OPTION), and could not reach a class's private member.
    */
   moveFileLocalHelpers(files) {
+    const withFunctions = new Set();
+    for (const fn of this.functions) {
+      if (fn.kind !== 'function' || fn.internal) continue;
+      for (const place of fn.places) if (place.member.definition && !place.member.test) withFunctions.add(place.file);
+    }
+
     const owners = new Map();
     for (const table of this.types.values()) {
       for (const entry of table.values()) {
@@ -269,7 +276,7 @@ class Model {
     this.functions = this.functions.filter((fn) => {
       if (!fn.internal || fn.kind === 'typeAlias') return true;
       const file = fn.places[0].file;
-      if (file.header) return true;
+      if (file.header || withFunctions.has(file)) return true;
       const classes = owners.get(file);
       if (!classes || classes.size !== 1) return true;
       const [owner] = classes;

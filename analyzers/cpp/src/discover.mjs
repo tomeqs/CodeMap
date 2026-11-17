@@ -13,7 +13,7 @@ const IGNORED_PATTERNS = manifest.detect.ignoreDirs.filter((d) => d.includes('*'
 const IGNORED_MARKERS = manifest.detect.ignoreMarkers ?? [];
 const EXCLUDED_FILES = manifest.detect.excludeFiles.map((p) => new RegExp('^' + p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$', 'i'));
 /** Copies of other projects' code, kept beside the project's own: their headers are a library's. */
-const VENDORED = new Set(['third_party', 'third-party', 'thirdparty', '3rdparty', '3rd_party', 'external', 'externals', 'extern', 'vendor', 'vendored']);
+const VENDORED = new Set(['third_party', 'third-party', 'thirdparty', '3rdparty', '3rd_party', 'external', 'externals', 'extern', 'vendor', 'vendored', 'deps']);
 /** Folders of build output that hold no code of the project. */
 const OUTPUT = new Set(['x64', 'x86', 'Debug', 'Release', 'RelWithDebInfo', 'MinSizeRel', 'out', 'ipch']);
 

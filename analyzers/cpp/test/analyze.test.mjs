@@ -92,6 +92,27 @@ test('C: a struct, its typedef, and a file-local function', () => {
   assert.equal(map.node('cpp:legacy:file:legacy/ledger#(global)::clamp(long)').accessibility, 'private');
 });
 
+test('C: a function returning a function pointer is a function; a function pointer is a variable', () => {
+  // SQLite's ftsCompareFunction was missing, so the comparers it returns looked unused.
+  const { dir, dispose } = scratch({
+    'hash.c': [
+      'static int binCompare(const void* a, int n) { return n; }',
+      'static int (*compareFor(int key))(const void*, int) { return &binCompare; }',
+      'int (*current)(const void*, int);',
+    ].join('\n'),
+  });
+  try {
+    const map = run(dir);
+    const name = dir.split(/[\\/]/).pop();
+    const fn = map.node(`cpp:${name}:file:hash#(global)::compareFor(int)`);
+    assert.equal(fn.kind, 'function');
+    assert.ok(map.hasEdge(fn.id, 'uses', `cpp:${name}:file:hash#(global)::binCompare(const void*,int)`));
+    assert.equal(map.node(`cpp:${name}:file:hash#(global)::current`).kind, 'variable');
+  } finally {
+    dispose();
+  }
+});
+
 test('ids do not depend on the folder analyzed', () => {
   const whole = run('mini');
   const part = run(join(fixtures, 'mini', 'src'), { root: join(fixtures, 'mini') });
@@ -150,6 +171,7 @@ test('build trees, vendored code and dot folders are not read', () => {
     'out-of-tree/CMakeCache.txt': '',
     'out-of-tree/x.cpp': 'int x() { return 1; }',
     'third_party/lib/lib.cpp': 'int lib() { return 1; }',
+    'deps/jemalloc/je.c': 'int je() { return 1; }', // redis vendors its libraries in deps/
     '.cache/y.cpp': 'int y() { return 1; }',
   }, 'loose');
   try {

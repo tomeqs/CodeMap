@@ -37,3 +37,16 @@ private:
     int* buffer_;
     int* single_;
 };
+
+using namespace std::chrono_literals;
+
+UINTERFACE(MinimalAPI)
+class UShopper : public UInterface {
+    GENERATED_BODY()
+};
+
+class IShopper {
+    GENERATED_BODY()
+public:
+    virtual void Buy();
+};

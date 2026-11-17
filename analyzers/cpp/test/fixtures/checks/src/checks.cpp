@@ -144,3 +144,7 @@ int macros(int kind) {
     CHECKS_CATCH(...) {}
     return 0;
 }
+
+bool exact(double k, float f, double d) {
+    return floor(k) == k || d == (double)f || d == HUGE_VAL || d != -INFINITY;
+}

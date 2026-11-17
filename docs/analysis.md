@@ -165,7 +165,7 @@ compiler, its dependencies or a configured build (no `compile_commands.json` nee
   * a project per folder with another build file (Makefile, meson, Bazel, autotools, vcpkg, Conan), and the folder's
     name for code outside any.
 * **Left out:** build trees (`build`, `cmake-build-*`, any folder with a `CMakeCache.txt`), Unreal's `Intermediate` and
-  `Binaries`, vendored code (`third_party`, `3rdparty`, `external`, `vendor`…), generated files (`moc_*`, `ui_*.h`,
+  `Binaries`, vendored code (`third_party`, `3rdparty`, `external`, `vendor`, `deps`…), generated files (`moc_*`, `ui_*.h`,
   `*.generated.h`, `*.pb.cc`…) unless asked for.
 * **C or C++:** `.c` files are C, `.cpp` / `.cc` / `.cxx` C++; a `.h` is read as what includes it.
 

@@ -112,6 +112,55 @@ test('a private member named by a call or read on something of unknown type is m
   }
 });
 
+test('a static function only a macro names, or a macro called at file level, is maybe-used: macros are not read as code', () => {
+  // redis: config.c's table is built by createBoolConfig(…), which names boolConfigGet and the rest.
+  const { dir, dispose } = scratch({
+    'config.c': [
+      'static int boolGet(void) { return 1; }',
+      'static int lonely(void) { return 2; }',
+      '#define CREATE_BOOL(name) { name, boolGet }',
+      'struct config { const char* name; int (*get)(void); };',
+      'struct config table[] = { CREATE_BOOL("x") };',
+      // SQLite: IOMETHODS(finder, methods, 1, afpClose, …) at file level defines the table naming afpClose.
+      'static int afpClose(void) { return 0; }',
+      'IOMETHODS(afpIoFinder, afpIoMethods, 1, afpClose)',
+    ].join('\n'),
+  });
+  try {
+    const m = run(dir);
+    const name = basename(dir);
+    assert.ok(m.node(`cpp:${name}:file:config#(global)::boolGet()`).tags?.includes('maybe-used'));
+    assert.ok(m.node(`cpp:${name}:file:config#(global)::afpClose()`).tags?.includes('maybe-used'));
+    assert.ok(!m.node(`cpp:${name}:file:config#(global)::lonely()`).tags?.includes('maybe-used'));
+  } finally {
+    dispose();
+  }
+});
+
+test('a static constant of a header is read by the files including it; their own helpers stay theirs', () => {
+  // ActionRoguelike: Animation::NAME_Foot_Plant_L; qBittorrent: parseCommandLine and DAEMON_OPTION in one file.
+  const { dir, dispose } = scratch({
+    'names.h': 'namespace Animation { static const int NAME_Foot = 1; }',
+    'params.h': 'struct Params { Params(); int daemon; };\nParams parse();',
+    'params.cpp': [
+      '#include "names.h"',
+      '#include "params.h"',
+      'namespace { const int DAEMON_OPTION = 2; }',
+      'Params::Params() : daemon(DAEMON_OPTION) {}',
+      'Params parse() { Params p; p.daemon = DAEMON_OPTION + Animation::NAME_Foot; return p; }',
+    ].join('\n'),
+  });
+  try {
+    const m = run(dir);
+    const name = basename(dir);
+    const parse = `cpp:${name}:file:params#(global)::parse()`;
+    assert.ok(m.hasEdge(parse, 'accesses', `cpp:${name}:file:names#Animation::NAME_Foot`), m.edgesFrom(parse, 'accesses').join(', '));
+    assert.ok(m.hasEdge(parse, 'accesses', `cpp:${name}:file:params#(global)::DAEMON_OPTION`), m.edgesFrom(parse, 'accesses').join(', '));
+  } finally {
+    dispose();
+  }
+});
+
 test('names are looked up through namespaces, using declarations and directives, and across projects', () => {
   const m = run('mini');
   assert.ok(m.hasEdge('cpp:shop_domain:shop::Order::total()', 'calls', 'cpp:shop_domain:file:include/shop/money#shop::add(long,long)'));

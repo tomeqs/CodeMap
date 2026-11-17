@@ -73,4 +73,6 @@ test('Unreal: Blueprint and network functions and game modes are entry points; _
   edge(`${U}AShopGameMode`, 'implements', `${U}IShopper`);
   edge(`${U}AShopGameMode::Buy(int32)`, 'implements', `${U}IShopper::Buy(int32)`);
   assert.ok(map.node(`${U}AShopGameMode::Restock()`).accessibility === 'private' && map.hasEdge(`${U}AShopGameMode::OpenShop()`, 'calls', `${U}AShopGameMode::Restock()`));
+  // A console variable: the engine console reads it by name (ActionRoguelike's CVarDrawDebug_…).
+  assert.deepEqual(tags(`${U}AShopGameMode::CVarShopDebug`), ['entrypoint']);
 });

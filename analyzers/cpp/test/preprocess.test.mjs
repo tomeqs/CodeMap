@@ -28,6 +28,16 @@ test('#if 0 is skipped (its #else is read), and __cplusplus is defined for C++ o
   assert.doesNotMatch(flatten('#if !defined(__cplusplus)\nc_only();\n#endif\n', true), /c_only/);
 });
 
+test('a switch that turns a feature off is not defined: its #else, the code a normal build has, is read', () => {
+  // SQLite: #ifdef SQLITE_OMIT_FLOATING_POINT kept the stub, and the printf code calling et_getdigit was dropped.
+  const omit = '#ifdef SQLITE_OMIT_FLOATING_POINT\nstub();\n#else\nfloats();\n#endif\n';
+  assert.match(flatten(omit, false), /floats\(\)/);
+  assert.doesNotMatch(flatten(omit, false), /stub/);
+  assert.doesNotMatch(flatten('#if defined(FMT_NO_LOCALE)\nnone();\n#endif\n', true), /none/);
+  assert.match(flatten('#ifdef SQLITE_ENABLE_FTS5\nfts5();\n#endif\n', false), /fts5/);
+  assert.match(flatten('#ifdef NOMINMAX\nkept();\n#endif\n', true), /kept/);
+});
+
 test('decoration macros of the project are blanked, a keyword they stand for is put back', () => {
   const macros = collectMacros(['#define SQLITE_API\n#define SQLITE_PRIVATE static\n#define FMT_BEGIN_NAMESPACE namespace fmt { inline namespace v10 {\n#define FMT_END_NAMESPACE } }\n#define VERSION "3"\n']);
   assert.deepEqual([...macros.decorations.keys()].sort(), ['SQLITE_API', 'SQLITE_PRIVATE']);
