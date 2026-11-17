@@ -41,14 +41,20 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
 
     private static readonly string[] Watched = { ".cs", ".csproj", ".sln", ".slnx", ".props", ".targets" };
 
-    public bool CanAnalyzeFile(string path) => FileInputs.Contains(Path.GetExtension(path).ToLowerInvariant());
+    /// <summary>Its inputs, except a solution that lists projects and no C# one (a C++ one): that is left to its own language.</summary>
+    public bool CanAnalyzeFile(string path)
+    {
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        if (!FileInputs.Contains(extension)) return false;
+        return extension is not (".sln" or ".slnx" or ".slnf") || ProjectLoader.IsCSharpSolution(path);
+    }
 
     public IEnumerable<(string File, string Kind)> MarkersIn(string directory)
     {
         foreach (var file in Directory.EnumerateFiles(directory))
         {
             var extension = Path.GetExtension(file).ToLowerInvariant();
-            if (extension is ".sln" or ".slnx" or ".slnf") yield return (file, "solution");
+            if (extension is ".sln" or ".slnx" or ".slnf") { if (ProjectLoader.IsCSharpSolution(file)) yield return (file, "solution"); }
             else if (extension == ".csproj") yield return (file, "project");
         }
     }
@@ -58,7 +64,7 @@ public sealed class CSharpAnalyzer : ILanguageAnalyzer
     public IReadOnlyCollection<string> IgnoredFolders { get; } = new[] { "bin", "obj", "TestResults" };
 
     public bool Detect(string directory, CancellationToken ct) =>
-        ProjectLoader.EnumerateFiles(directory, "*.csproj").Any() || ProjectLoader.EnumerateFiles(directory, "*.cs").Any();
+        ProjectLoader.EnumerateFiles(directory, "*.csproj").Any() || ProjectLoader.EnumerateFiles(directory, "*.cs").Any(f => !ProjectLoader.IsUnrealBuildScript(f));
 
     public CodeGraph Analyze(string path, AnalyzerOptions options, CancellationToken ct)
     {

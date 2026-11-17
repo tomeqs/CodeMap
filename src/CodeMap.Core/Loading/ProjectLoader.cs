@@ -30,6 +30,13 @@ public static class ProjectLoader
                 case ".slnf":
                     var projectFiles = ext switch { ".sln" => ReadSln(full), ".slnx" => ReadSlnx(full), _ => ReadSlnf(full) };
                     var fromSolution = LoadProjects(projectFiles, warnings);
+                    var native = SolutionEntries(full).Where(e => e.EndsWith(".vcxproj", StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (native.Count > 0)
+                    {
+                        warnings.Add($"The solution also has {native.Count} C/C++ project(s) ({string.Join(", ", native.Take(3).Select(e => Path.GetFileName(e.Replace('\\', '/'))))}{(native.Count > 3 ? ", …" : "")}), " +
+                                     "which a solution map leaves out. Analyze the solution's folder to map them too.");
+                    }
+
                     return new LoadResult(full, dir, "solution", Path.GetFileNameWithoutExtension(full), fromSolution, warnings);
                 case ".csproj":
                     var all = LoadProjects(CollectProjectClosure(full), warnings);
@@ -51,7 +58,7 @@ public static class ProjectLoader
                 return new LoadResult(full, full, "directory", name, LoadProjects(csprojs, warnings), warnings);
             }
 
-            var sources = EnumerateFiles(full, "*.cs").ToList();
+            var sources = EnumerateFiles(full, "*.cs").Where(f => !IsUnrealBuildScript(f)).ToList();
             if (sources.Count == 0) throw new ArgumentException($"No .csproj or .cs files found in '{path}'.");
             var project = CreateVirtualProject(name, full, sources);
             return new LoadResult(full, full, "directory", name, new List<ProjectInfo> { project }, warnings);
@@ -140,6 +147,48 @@ public static class ProjectLoader
             {
                 yield return ResolvePath(dir, relative);
             }
+        }
+    }
+
+    /// <summary>
+    /// Whether a solution (.sln, .slnx, .slnf) is C#'s to map: it lists a C# project, or no project at all. One that
+    /// lists only other projects (a Visual Studio C++ solution) is left to the language that reads them. An unreadable
+    /// file counts as C#, so the error shows.
+    /// </summary>
+    public static bool IsCSharpSolution(string solutionPath)
+    {
+        try
+        {
+            if (!File.Exists(solutionPath)) return true;
+            var projects = SolutionEntries(solutionPath).Where(e => Path.GetExtension(e).EndsWith("proj", StringComparison.OrdinalIgnoreCase)).ToList();
+            return projects.Count == 0 || projects.Any(e => e.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Xml.XmlException or System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>Every project a solution lists, whatever its kind (paths as written).</summary>
+    internal static IEnumerable<string> SolutionEntries(string solutionPath)
+    {
+        switch (Path.GetExtension(solutionPath).ToLowerInvariant())
+        {
+            case ".sln":
+                var regex = new Regex("^Project\\(\"\\{[^}]+\\}\"\\)\\s*=\\s*\"[^\"]*\",\\s*\"(?<path>[^\"]+)\"", RegexOptions.Multiline);
+                return regex.Matches(File.ReadAllText(solutionPath)).Select(m => m.Groups["path"].Value).ToList();
+            case ".slnx":
+                return XDocument.Load(solutionPath).Descendants().Where(e => e.Name.LocalName == "Project")
+                    .Select(e => e.Attribute("Path")?.Value).OfType<string>().ToList();
+            case ".slnf":
+                using (var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(solutionPath)))
+                {
+                    var solution = doc.RootElement.GetProperty("solution");
+                    if (!solution.TryGetProperty("projects", out var projects)) return Array.Empty<string>();
+                    return projects.EnumerateArray().Select(e => e.GetString()).OfType<string>().ToList();
+                }
+            default:
+                return Array.Empty<string>();
         }
     }
 
@@ -391,6 +440,32 @@ public static class ProjectLoader
                 stack.Push(sub);
             }
         }
+    }
+
+    /// <summary>
+    /// Unreal Engine's build scripts (Game.Build.cs, Game.Target.cs) are C# that only Unreal's build tool reads: the
+    /// C++ module they describe is the code. They are not a C# project, so a folder of them is not mapped as one.
+    /// Recognised by the name and an Unreal project or plugin (.uproject, .uplugin) above them.
+    /// </summary>
+    internal static bool IsUnrealBuildScript(string file)
+    {
+        var name = Path.GetFileName(file);
+        if (!name.EndsWith(".Build.cs", StringComparison.OrdinalIgnoreCase) && !name.EndsWith(".Target.cs", StringComparison.OrdinalIgnoreCase)) return false;
+        var dir = Path.GetDirectoryName(Path.GetFullPath(file));
+        for (var depth = 0; dir != null && depth < 8; depth++, dir = Path.GetDirectoryName(dir))
+        {
+            try
+            {
+                if (Directory.EnumerateFiles(dir, "*.uproject").Any() || Directory.EnumerateFiles(dir, "*.uplugin").Any()) return true;
+                if (Directory.Exists(Path.Combine(dir, ".git"))) return false;
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Whether a folder holds a project of its own; an unreadable folder is skipped (it holds no sources we can read).</summary>

@@ -221,6 +221,21 @@ test('live updates follow Python sources and project files, not environments or 
   }
 });
 
+test('a solution without C# projects (Visual Studio C++) is not offered as a C# map', () => {
+  const { listsCSharpProjects } = require('../../src/extension');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codemap-sln-'));
+  try {
+    const write = (name, text) => { fs.writeFileSync(path.join(dir, name), text); return path.join(dir, name); };
+    assert.ok(listsCSharpProjects(write('Shop.sln', 'Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Api", "Api\\Api.csproj", "{1}"\nEndProject\n')));
+    assert.ok(listsCSharpProjects(write('Shop.slnx', '<Solution><Project Path="Api/Api.csproj" /></Solution>')));
+    assert.ok(!listsCSharpProjects(write('Game.sln', 'Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Game", "Game\\Game.vcxproj", "{2}"\nEndProject\n')));
+    assert.ok(listsCSharpProjects(write('Empty.sln', 'Microsoft Visual Studio Solution File, Format Version 12.00\n')), 'a solution with no project yet stays C#');
+    assert.ok(listsCSharpProjects(path.join(dir, 'missing.sln')), 'an unreadable solution is offered; CodeMap says what is wrong');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ------------------------------------------------------------------ with a stand-in analyzer
 
 /** The extension with an analyzer that returns what the test says (and counts how many run at once). */
