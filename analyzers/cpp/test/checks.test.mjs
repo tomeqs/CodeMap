@@ -40,6 +40,11 @@ test('each rule reports the lines planted for it, and nothing else', () => {
     'src/checks.cpp:144 empty-catch', // CHECKS_CATCH(...) {} reads as catch; CHECKS_THROW ends case 1 (no fallthrough)
     'src/checks.cpp:164 implicit-fallthrough', // case 3: its endless loop breaks; not case 1 (loops until it returns) nor case 2 (a switch whose every case returns)
     // Not checks.cpp:176: its case ends in __attribute__((fallthrough)), GCC's spelling of [[fallthrough]].
+    // Not Label's toString() and valueOf(): no unsafe C functions, though a JavaScript object has both names.
+    // Not Deferred's update() in the lambda its constructor hands on: it runs later, on the whole object.
+    // Not handed_on(): job is deleted in a lambda, owned is a unique_ptr's.
+    'src/checks.cpp:217 catch-by-value', // ShopError, a struct; not HRESULT (a typedef of long) nor Code (an enum)
+    'src/checks.cpp:222 catch-by-value', // a standard exception, const and with no name: still by value
   ]);
 });
 

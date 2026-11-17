@@ -13,7 +13,10 @@ import { isUnder } from './projects/projects.mjs';
 export function buildModel({ files, projects, root, graph, stats }) {
   const model = new Model(projects, root, graph, stats);
   model.files = files;
-  for (const project of projects) project.base = baseOf(project, files.filter((f) => f.project === project));
+  const filesOf = new Map(projects.map((p) => [p, []]));
+  for (const file of files) filesOf.get(file.project)?.push(file);
+  for (const project of projects) project.base = baseOf(project, filesOf.get(project));
+  model.findSeparate(files);
   for (const file of files) model.addTypes(file);
   for (const file of files) model.addFunctions(file);
   model.moveFileLocalHelpers(files);
@@ -32,12 +35,48 @@ class Model {
     this.namespaces = new Map(); // project id → Set(namespace key)
     this.functions = []; // FunctionEntry (free functions and variables)
     this.functionKeys = new Map(); // `${project}|${ns}|${name}` → [FunctionEntry]
+    this.separate = new Set(); // what several source files of a project each define for themselves (findSeparate)
     this.unplaced = 0;
     for (const project of projects) {
       this.types.set(project.id, new Map());
       this.namespaces.set(project.id, new Set());
       project.base = null;
     }
+  }
+
+  /**
+   * What two or more source files of one project each define, with no header of the project declaring it: every
+   * file's own (several programs in one folder, each with its `main`, its `usage` and its `struct state`). Merged
+   * into one node, the map had one `main` with the calls of all the programs. A function or a type that a header
+   * declares is one thing defined once per platform, and stays one node.
+   */
+  findSeparate(files) {
+    const sources = new Map(); // key → Set(source file)
+    const shared = new Set(); // keys a header declares or defines
+    const note = (key, file) => {
+      if (file.header) shared.add(key);
+      else if (!sources.has(key)) sources.set(key, new Set([file]));
+      else sources.get(key).add(file);
+    };
+    for (const file of files) {
+      const facts = file.facts;
+      for (const type of facts.types) {
+        if (type.name && !type.internal) note(typeKey(file, type), file);
+      }
+
+      for (const fn of facts.functions) {
+        if (fn.internal || fn.qualifiers.length || fn.test) continue;
+        // A header's declaration counts; of a source file, only what it defines.
+        if (file.header || fn.definition && !fn.noBody) note(functionKey(file, fn, 'function'), file);
+      }
+
+      for (const variable of facts.variables) {
+        if (variable.internal || variable.qualifiers.length) continue;
+        if (file.header || !variable.extern) note(functionKey(file, variable, 'variable'), file);
+      }
+    }
+
+    for (const [key, defining] of sources) if (defining.size > 1 && !shared.has(key)) this.separate.add(key);
   }
 
   // ------------------------------------------------------------------------------------------- types
@@ -52,9 +91,10 @@ class Model {
     const project = file.project;
     const scopeKey = decl.scope.join('::');
     const local = decl.internal || (!file.header && !outer && !decl.qualifiers.length);
+    const ownFile = decl.internal || !outer && !file.header && this.separate.has(typeKey(file, decl));
     const qualified = outer
       ? `${outer.qualified}::${decl.name}`
-      : [scopeKey, ...decl.qualifiers, decl.name].filter(Boolean).join('::') + (decl.internal ? `@${file.rel}` : '');
+      : [scopeKey, ...decl.qualifiers, decl.name].filter(Boolean).join('::') + (ownFile ? `@${file.rel}` : '');
     const table = this.types.get(project.id);
     let entry = table.get(qualified);
     if (!entry) {
@@ -136,13 +176,16 @@ class Model {
       for (const table of tables) if (table.has(key)) return table.get(key);
     }
 
-    // A class of another project the build files do not link (a test target's fixture header).
-    if (!this.searchedAll) {
-      const others = [...this.types.entries()].filter(([id]) => id !== project.id && !project.references.some((p) => p.id === id)).map(([, t]) => t);
-      for (let i = scope.length; i >= 0; i--) {
-        const key = [...scope.slice(0, i), name].filter(Boolean).join('::');
-        for (const table of others) if (table.has(key)) return table.get(key);
-      }
+    // A class of another project the build files do not link (a test target's fixture header). Every type is
+    // known by now (types are added before functions), so one index of them all serves every miss.
+    if (!this.everyType) {
+      this.everyType = new Map();
+      for (const table of this.types.values()) for (const [key, entry] of table) if (!this.everyType.has(key)) this.everyType.set(key, entry);
+    }
+
+    for (let i = scope.length; i >= 0; i--) {
+      const hit = this.everyType.get([...scope.slice(0, i), name].filter(Boolean).join('::'));
+      if (hit) return hit;
     }
 
     return null;
@@ -221,7 +264,8 @@ class Model {
     const kind = fn.kind ?? 'function';
     const namespace = fn.scope.join('::');
     const lang = file.lang;
-    const key = `${file.project.id}|${namespace}|${kind === 'function' ? '' : kind}|${fn.name}${fn.internal ? `|${file.rel}` : ''}`;
+    const separate = !fn.internal && !file.header && (kind === 'function' || kind === 'variable') && !fn.qualifiers?.length && this.separate.has(functionKey(file, fn, kind));
+    const key = `${file.project.id}|${namespace}|${kind === 'function' ? '' : kind}|${fn.name}${fn.internal || separate ? `|${file.rel}` : ''}`;
     const list = this.functionKeys.get(key) ?? [];
     let entry = null;
     if (kind === 'function') {
@@ -248,7 +292,7 @@ class Model {
       return entry;
     }
 
-    entry = { kind, name: fn.name, project: file.project, namespace, places: [{ file, member: fn, defined }], declaration: fn, lang, internal: fn.internal };
+    entry = { kind, name: fn.name, project: file.project, namespace, places: [{ file, member: fn, defined }], declaration: fn, lang, internal: fn.internal, separate: separate ? file : null };
     list.push(entry);
     this.functionKeys.set(key, list);
     this.functions.push(entry);
@@ -580,6 +624,17 @@ class Model {
 }
 
 // --------------------------------------------------------------------------------------------- helpers
+
+/** What a type is known by in its project: its namespace and name. */
+function typeKey(file, type) {
+  return `type|${file.project.id}|${[...type.scope, ...type.qualifiers, type.name].join('::')}`;
+}
+
+/** What a free function or a global is known by in its project: C has one per name, C++ one per parameter list. */
+function functionKey(file, fn, kind) {
+  const overload = kind === 'function' && file.lang !== 'c' ? `(${paramsKey(fn.params, true)})` : '';
+  return `${kind}|${file.project.id}|${fn.scope.join('::')}|${fn.name}${overload}`;
+}
 
 function tagsOf(...lists) {
   const tags = [...new Set(lists.flat())].sort();

@@ -181,7 +181,8 @@ aliases sit in a holder per header and source pair (`orders.h` + `orders.cpp`).
 * **A declaration and its definition are one node:** a method declared in a header and defined in a `.cpp` has the
   definition as its place and the declaration as an extra one; a class keeps its `.cpp` files as extra places (so git
   history counts them), and the file-local helpers of a class's source (`static` or anonymous-namespace functions)
-  are its private static members.
+  are its private static members. What several source files each define for themselves, with no header declaring it,
+  stays apart: two programs in one folder keep their own `main`, functions and types.
 * **Before parsing:** one branch of each `#if` is read (reading all of them unbalances the braces; a switch that turns
   a feature off, `#ifdef SQLITE_OMIT_…`, is taken as not set), and macros that only decorate declarations are left
   out: export macros (`class SHOP_API Order`), the project's own `#define`s that stand for nothing, a keyword or an

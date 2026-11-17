@@ -20,10 +20,13 @@ const KEYWORDS = new Set([
 const WRAPPERS = /^(?:std::)?(?:unique_ptr|shared_ptr|weak_ptr|optional|reference_wrapper|atomic|not_null|observer_ptr)$|^(?:QPointer|QSharedPointer|QScopedPointer|QWeakPointer|QSharedDataPointer|QExplicitlySharedDataPointer|TSharedPtr|TSharedRef|TUniquePtr|TWeakPtr|TWeakObjectPtr|TObjectPtr|TSoftObjectPtr|TStrongObjectPtr|ComPtr|CComPtr)$/;
 const MAPS = /^(?:std::)?(?:map|unordered_map|multimap|unordered_multimap|flat_map)$|^(?:QMap|QHash|QMultiMap|QMultiHash|TMap|TMultiMap)$/;
 const CONTAINERS = /^(?:std::)?(?:vector|list|deque|set|unordered_set|multiset|unordered_multiset|array|span|initializer_list|forward_list|queue|stack|priority_queue|flat_set)$|^(?:QList|QVector|QSet|QStringList|QQueue|QStack|TArray|TSet|TArrayView)$/;
+/** Exception classes the code does not declare: the standard ones, and what is named as one. */
+const EXCEPTION_NAME = /(?:^|::)(?:exception|out_of_range|invalid_argument|\w+_error|bad_\w+|\w*(?:Exception|Error|Failure))$/;
 const MAKERS = new Set(['make_unique', 'make_shared', 'make_unique_for_overwrite', 'allocate_shared', 'MakeShared', 'MakeUnique', 'MakeShareable', 'NewObject', 'CreateDefaultSubobject', 'SpawnActor']);
 
 export function resolveReferences(model, graph, { log = () => {}, stats = false, unresolvedFile = null, macroWords = null } = {}) {
   const resolver = new Resolver(model, graph);
+  resolver.keepUnresolved = Boolean(unresolvedFile);
   resolver.run();
   for (const word of macroWords ?? []) resolver.unknownNames.add(word);
   resolver.markMaybeUsed();
@@ -48,7 +51,12 @@ class Resolver {
     this.unknownNames = new Set();
     this.visible = new Map();
     this.byName = new Map(); // simple type name → [entries], every project
-    this.free = new Map(); // project id → Map(namespace → Map(name → [function entries]))
+    // Every project's types by qualified name and free functions by namespace and name: one lookup for a name,
+    // whatever the number of projects (each project's own table was asked in turn, for every name looked up).
+    this.typeIndex = new Map(); // qualified name → [entries], in the order of the projects
+    this.freeIndex = new Map(); // `${namespace}\u0000${name}` → [function entries]
+    this.projectIndex = new Map(model.projects.map((p, i) => [p.id, i]));
+    this.ranks = new Map(); // project id → Map(visible project id → its place)
     this.declaredNames = new Set();
     // Values of unscoped enums by name: `COL_COUNT` names its enum as `Columns::COL_COUNT` would.
     this.enumValues = new Map();
@@ -57,12 +65,13 @@ class Resolver {
       const queue = [project];
       while (queue.length) for (const ref of queue.shift().references ?? []) if (!seen.has(ref)) seen.add(ref), queue.push(ref);
       this.visible.set(project.id, [...seen]);
-      this.free.set(project.id, new Map());
     }
 
     for (const table of model.types.values()) {
       for (const entry of table.values()) {
         if (!entry.id) continue;
+        if (!this.typeIndex.has(entry.qualified)) this.typeIndex.set(entry.qualified, []);
+        this.typeIndex.get(entry.qualified).push(entry);
         if (!this.byName.has(entry.name)) this.byName.set(entry.name, []);
         this.byName.get(entry.name).push(entry);
         for (const m of entry.members) this.declaredNames.add(m.name);
@@ -78,13 +87,26 @@ class Resolver {
 
     for (const fn of model.functions) {
       if (!fn.id) continue;
-      const table = this.free.get(fn.project.id);
-      if (!table.has(fn.namespace)) table.set(fn.namespace, new Map());
-      const names = table.get(fn.namespace);
-      if (!names.has(fn.name)) names.set(fn.name, []);
-      names.get(fn.name).push(fn);
+      const key = `${fn.namespace}\u0000${fn.name}`;
+      if (!this.freeIndex.has(key)) this.freeIndex.set(key, []);
+      this.freeIndex.get(key).push(fn);
       if (fn.kind === 'function') this.declaredNames.add(fn.name);
     }
+  }
+
+  /**
+   * Where a project stands for the code of another: the projects it uses first (itself, then what it links, in
+   * that order), then the rest of the repository in its own order (a target the build file reader could not link).
+   */
+  rankOf(from) {
+    let visible = this.ranks.get(from.id);
+    if (!visible) {
+      visible = new Map();
+      for (const p of this.visible.get(from.id) ?? [from]) if (!visible.has(p.id)) visible.set(p.id, visible.size);
+      this.ranks.set(from.id, visible);
+    }
+
+    return (project) => visible.get(project.id) ?? visible.size + (this.projectIndex.get(project.id) ?? 0);
   }
 
   run() {
@@ -103,9 +125,15 @@ class Resolver {
    * The unscoped enum a bare value names: one nested in the class or its outer classes, else the one of the
    * file's own or of the visible projects (when exactly one fits).
    */
-  enumOfValue(name, ctx) {
+  enumOfValue(name, ctx, namespace = null) {
     const all = [...(this.enumValues.get(name) ?? [])].filter((en) => en.id && (!en.local || en.decls.some((d) => d.file === ctx.file)));
     if (!all.length) return null;
+    if (namespace !== null) {
+      // `ns::TS_STOPPED`: the value by the namespace of its enum (written in full, or from inside its parent).
+      const inNamespace = all.filter((en) => !en.outer && (en.namespace === namespace || en.namespace.endsWith(`::${namespace}`)));
+      return inNamespace.length === 1 ? inNamespace[0] : null;
+    }
+
     for (let cls = ctx.cls; cls; cls = cls.outer) {
       const nested = all.find((en) => en.outer === cls);
       if (nested) return nested;
@@ -192,16 +220,18 @@ class Resolver {
     const parts = name.replace(/^::/, '').split('::').map((p) => p.trim()).filter(Boolean);
     if (!parts.length) return null;
     const absolute = name.startsWith('::');
-    const visible = (this.visible.get(ctx.project.id) ?? [ctx.project]).map((p) => this.model.types.get(p.id)).filter(Boolean);
-    // The projects it uses first, then the rest of the repository (a target the build file reader could not link).
-    const tables = [...visible, ...[...this.model.types.values()].filter((t) => !visible.includes(t))];
+    const rank = this.rankOf(ctx.project);
+    // Of the types of that name, the nearest project's; in one project, the one every file sees before the file's own.
     const find = (key) => {
-      for (const table of tables) {
-        const hit = table.get(key) ?? (ctx.file ? table.get(`${key}@${ctx.file.rel}`) : undefined);
-        if (hit?.id) return hit;
-      }
-
-      return null;
+      const shared = this.typeIndex.get(key);
+      const own = ctx.file ? this.typeIndex.get(`${key}@${ctx.file.rel}`) : undefined;
+      if (!shared && !own) return null;
+      if (shared?.length === 1 && !own) return shared[0];
+      let best = null;
+      let bestRank = Infinity;
+      for (const entry of shared ?? []) if (rank(entry.project) * 2 < bestRank) (best = entry), (bestRank = rank(entry.project) * 2);
+      for (const entry of own ?? []) if (rank(entry.project) * 2 + 1 < bestRank) (best = entry), (bestRank = rank(entry.project) * 2 + 1);
+      return best;
     };
 
     // Nested types of the class, its outer classes and its bases.
@@ -259,8 +289,8 @@ class Resolver {
     for (const base of this.basesOf(entry)) {
       if (seen.has(base)) continue;
       seen.add(base);
-      const key = `${base.qualified}::${parts.join('::')}`;
-      for (const table of this.model.types.values()) if (table.get(key)?.id) return table.get(key);
+      const nested = this.typeIndex.get(`${base.qualified}::${parts.join('::')}`);
+      if (nested) return nested[0];
       const deeper = this.nestedInBases(base, parts, ctx, seen);
       if (deeper) return deeper;
     }
@@ -298,17 +328,19 @@ class Resolver {
   lookupFree(parts, ctx, kind = null) {
     const name = parts[parts.length - 1];
     const qual = parts.slice(0, -1);
-    const visible = this.visible.get(ctx.project.id) ?? [ctx.project];
-    const projects = [...visible, ...this.model.projects.filter((p) => !visible.includes(p))];
+    const rank = this.rankOf(ctx.project);
     const at = (ns) => {
-      const out = [];
-      for (const p of projects) {
-        const list = this.free.get(p.id)?.get(ns)?.get(name);
-        // File-local (static, anonymous namespace) is seen in its file, or by every includer when in a header.
-        if (list) for (const fn of list) if ((!kind || fn.kind === kind) && (!fn.internal || fn.places.some((pl) => pl.file === ctx.file || pl.file.header))) out.push(fn);
-      }
-
-      return out;
+      const list = this.freeIndex.get(`${ns}\u0000${name}`);
+      if (!list) return [];
+      // File-local (static, anonymous namespace) is seen in its file, or by every includer when in a header.
+      let out = list.filter((fn) => (!kind || fn.kind === kind) && (!fn.internal || fn.places.some((pl) => pl.file === ctx.file || pl.file.header)));
+      if (out.length < 2) return out;
+      // Of the definitions several source files each have for themselves (two programs in a folder, each with
+      // its usage()), a file means its own.
+      const near = out.filter((fn) => !fn.separate || fn.separate === ctx.file);
+      if (near.length) out = near;
+      // The nearest project's first (the sort keeps the order they were found in within a project).
+      return out.sort((a, b) => rank(a.project) - rank(b.project));
     };
 
     const tryNamespaces = (base) => {
@@ -674,13 +706,14 @@ class Resolver {
           const target = this.callee(site.f, site.argc, site.args ?? [], scope);
           if (!target && site.argx) this.connect(source, site.argx, scope);
           if (!target) {
-            if (candidate) this.unresolved.push([file.rel, site.line, describe(site.f), receiverType(site.f, scope, this)]);
+            if (candidate && this.keepUnresolved) this.unresolved.push([file.rel, site.line, describe(site.f), receiverType(site.f, scope, this)]);
             if (name && !external && !std) this.unknownNames.add(name);
             break;
           }
 
           if (site.argx) this.connect(source, site.argx, scope);
-          if (special && target.member && file.checked && (site.f.t === 'id' || site.f.t === 'fld' && site.f.b.t === 'this') && isVirtual(target.member) && !this.graph.get(special.entry.id)?.modifiers?.includes('sealed') && !target.member.places.some((p) => (p.member.modifiers ?? []).includes('sealed'))) {
+          // Not in a lambda: it runs when it is called, on the object as it is then (a timer, a signal's slot).
+          if (special && !site.deferred && target.member && file.checked && (site.f.t === 'id' || site.f.t === 'fld' && site.f.b.t === 'this') && isVirtual(target.member) && !this.graph.get(special.entry.id)?.modifiers?.includes('sealed') && !target.member.places.some((p) => (p.member.modifiers ?? []).includes('sealed'))) {
             // In a constructor or destructor the object is only its own class: a virtual call does not reach overrides.
             this.diagnostics.push({ rule: 'virtual-call-in-constructor', source: 'codemap', severity: 'warning', category: 'correctness', message: `${target.member.name}() is virtual: called from the ${special.kind} it runs ${special.entry.name}'s version, not a derived class's.`, location: { file: file.rel, line: site.line, endLine: site.line }, column: 1 });
           }
@@ -713,6 +746,16 @@ class Resolver {
 
         case 'type': {
           for (const type of this.classesInText(site.ty, ctx)) if (type !== ctx.cls) add(type.id, site.rel, site.line);
+          if (site.byValue && file.checked) {
+            // A class caught by value is sliced. What the code declares is known to be a class or not (an enum, a
+            // typedef of long such as HRESULT); of the rest, the standard exceptions and what is named like one.
+            const caught = this.classOfText(site.ty, ctx);
+            const kind = caught ? this.graph.get(caught.id)?.kind : null;
+            if (caught ? kind === 'class' || kind === 'struct' || kind === 'interface' : EXCEPTION_NAME.test(site.ty.replace(/\bconst\b|\s+/g, ''))) {
+              this.diagnostics.push({ rule: 'catch-by-value', source: 'codemap', severity: 'warning', category: 'exceptions', message: `${site.ty} is caught by value: a derived exception is sliced (catch by const reference).`, location: { file: file.rel, line: site.line, endLine: site.line }, column: site.byValue });
+            }
+          }
+
           break;
         }
 
@@ -814,7 +857,13 @@ class Resolver {
       }
 
       const free = this.lookupFree(e.p, scope.ctx);
-      if (free?.length) add(free[0].id, free[0].kind === 'variable' ? 'accesses' : 'uses', line);
+      if (free?.length) {
+        add(free[0].id, free[0].kind === 'variable' ? 'accesses' : 'uses', line);
+        return;
+      }
+
+      const enumeration = e.p.length > 1 ? this.enumOfValue(e.p[e.p.length - 1], scope.ctx, e.p.slice(0, -1).filter(Boolean).join('::')) : null;
+      if (enumeration) add(enumeration.id, 'uses', line);
     }
   }
 }

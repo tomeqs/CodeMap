@@ -218,6 +218,58 @@ test('a solution kept apart from the code says which folder to analyze', () => {
   }
 });
 
+test('two programs in one folder keep their own main, functions and types', () => {
+  // server.c and client.c beside one Makefile: the map had one main (in server.c) with the calls of both, and one
+  // struct state with the fields of both.
+  const { dir, dispose } = scratch({
+    Makefile: 'all: server client\n',
+    'server.c': 'struct state { int port; };\nvoid usage(void) {}\nint counter;\nint serve(struct state* s) { return s->port; }\nint main(void) { usage(); counter++; return serve(0); }\n',
+    'client.c': 'struct state { const char* host; };\nvoid usage(void) {}\nint counter;\nint dial(struct state* s) { return s->host != 0; }\nint main(void) { usage(); return dial(0); }\n',
+    // One function a header declares, defined once per platform: one node, as before.
+    'clock.h': 'long now(void);\n',
+    'clock_posix.c': '#include "clock.h"\nlong now(void) { return 1; }\n',
+    'clock_win.c': '#include "clock.h"\nlong now(void) { return 2; }\n',
+  });
+  try {
+    const map = run(dir);
+    const name = dir.split(/[\\/]/).pop();
+    const server = `cpp:${name}:file:server#(global)`;
+    const client = `cpp:${name}:file:client#(global)`;
+    for (const holder of [server, client]) {
+      assert.deepEqual(map.node(`${holder}::main()`).extraLocations, undefined);
+      assert.ok(map.node(holder).tags.includes('entrypoint'), holder);
+      assert.deepEqual(map.edgesFrom(`${holder}::main()`, 'calls').filter((id) => id.endsWith('usage()')), [`${holder}::usage()`]);
+    }
+
+    assert.ok(map.hasEdge(`${server}::main()`, 'calls', `${server}::serve(struct state*)`));
+    assert.ok(map.hasEdge(`${client}::main()`, 'calls', `${client}::dial(struct state*)`));
+    assert.ok(map.hasEdge(`${server}::main()`, 'accesses', `${server}::counter`));
+    const fields = (type) => map.nodes.filter((n) => n.parent === type).map((n) => n.name);
+    assert.deepEqual(fields(`cpp:${name}:state@server.c`), ['port']);
+    assert.deepEqual(fields(`cpp:${name}:state@client.c`), ['host']);
+    assert.ok(map.hasEdge(`${server}::serve(struct state*)`, 'accesses', `cpp:${name}:state@server.c::port`));
+    const now = map.node(`cpp:${name}:file:clock#(global)::now()`);
+    assert.deepEqual([now.location.file, ...now.extraLocations.map((l) => l.file)].sort(), ['clock.h', 'clock_posix.c', 'clock_win.c']);
+  } finally {
+    dispose();
+  }
+});
+
+test('a function named like a property of every JavaScript object is a function', () => {
+  // The table of test macros was asked for `toString` and answered with Object.prototype's: the function became
+  // a test named undefined.undefined.
+  const { dir, dispose } = scratch({ 'old.cpp': 'toString() { return 0; }\nint main() { return toString(); }\n' });
+  try {
+    const map = run(dir);
+    const name = dir.split(/[\\/]/).pop();
+    assert.equal(map.node(`cpp:${name}:file:old#(global)::toString()`).kind, 'function');
+    assert.ok(map.hasEdge(`cpp:${name}:file:old#(global)::main()`, 'calls', `cpp:${name}:file:old#(global)::toString()`));
+    assert.ok(!map.nodes.some((n) => n.tags?.includes('test')));
+  } finally {
+    dispose();
+  }
+});
+
 test('ids do not depend on the folder analyzed', () => {
   const whole = run('mini');
   const part = run(join(fixtures, 'mini', 'src'), { root: join(fixtures, 'mini') });

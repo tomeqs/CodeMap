@@ -182,3 +182,42 @@ int attributed(int kind) {
     }
     return total;
 }
+
+struct Label {
+    int toString() { return 1; }
+    int valueOf(int v) { return v; }
+    int text() { return toString() + valueOf(3); }
+};
+
+class Deferred {
+public:
+    Deferred() {
+        later([this] { update(); });
+    }
+    virtual ~Deferred() = default;
+    virtual void update();
+    template <typename F> void later(F f);
+};
+
+void handed_on() {
+    int* job = new int(1);
+    auto done = [job] { delete job; };
+    done();
+    int* owned = new int(2);
+    std::unique_ptr<int> owner(owned);
+}
+
+typedef long HRESULT;
+enum Code { Bad };
+struct ShopError { int code; };
+
+void caught() {
+    try { exceptions(); } catch (HRESULT hr) { throw; }
+    try { exceptions(); } catch (Code code) { throw; }
+    try { exceptions(); } catch (ShopError error) { throw; }
+    try { exceptions(); } catch (const ShopError& error) { throw; }
+}
+
+void caught_standard() {
+    try { exceptions(); } catch (const std::out_of_range) { throw; }
+}
