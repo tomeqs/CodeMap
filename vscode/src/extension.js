@@ -14,15 +14,17 @@ const VIEW_TYPE = 'codemap.map';
 const TARGET_KEY = 'codemap.target';
 const CACHE_FILE = 'map.codemap.json';
 // Files whose change makes the map out of date: C# and its projects, TypeScript / JavaScript and their packages,
-// Python and its project files.
-const SOURCE_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf|[cm]?tsx?|[cm]?jsx?|py)$|(^|[\\/])((package|jsconfig|tsconfig(\.[\w-]+)?)\.json|pyproject\.toml|setup\.cfg|Pipfile|requirements[\w.-]*\.txt)$/i;
-const NOT_SOURCE = /\.d\.[cm]?ts$|\.min\.js$|(^|[\\/])(node_modules|dist|bin|obj|__pycache__|site-packages|\.venv|venv|\.tox|[^\\/]+\.egg-info)[\\/]/i;
+// Python and its project files, C / C++ and their build files.
+const SOURCE_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf|[cm]?tsx?|[cm]?jsx?|py|c|cc|cpp|cxx|c\+\+|h|hh|hpp|hxx|h\+\+|ipp|inl|tpp|vcxproj|uproject)$|(^|[\\/])((package|jsconfig|tsconfig(\.[\w-]+)?)\.json|pyproject\.toml|setup\.cfg|Pipfile|requirements[\w.-]*\.txt|CMakeLists\.txt|meson\.build|compile_commands\.json)$/i;
+const NOT_SOURCE = /\.d\.[cm]?ts$|\.min\.js$|(^|[\\/])(moc_[^\\/]+|qrc_[^\\/]+|ui_[^\\/]+\.h|[^\\/]+\.(generated\.h|gen\.cpp|pb\.(h|cc)))$|(^|[\\/])(node_modules|dist|bin|obj|__pycache__|site-packages|\.venv|venv|\.tox|[^\\/]+\.egg-info|build|cmake-build-[^\\/]+|CMakeFiles|_deps|Intermediate|Binaries|DerivedDataCache)[\\/]/i;
 const EXCLUDE = '**/{node_modules,bin,obj,.git,.vs}/**';
 const SCRIPT_EXCLUDE = '**/{node_modules,bin,obj,dist,build,out,coverage,.git,.vs,.next,.angular}/**';
 const SCRIPT_MARKERS = '**/{package.json,tsconfig.json,jsconfig.json}';
 const SCRIPT_SOURCES = '**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}';
 const PYTHON_EXCLUDE = '**/{node_modules,bin,obj,dist,build,__pycache__,site-packages,.venv,venv,.tox,.git,.vs}/**';
 const PYTHON_SOURCES = '**/*.py';
+const CPP_EXCLUDE = '**/{node_modules,bin,obj,build,out,third_party,3rdparty,external,vendor,Intermediate,Binaries,.git,.vs}/**';
+const CPP_SOURCES = '**/*.{c,cc,cpp,cxx}';
 const READY_TIMEOUT_MS = 30000;
 
 /** One code map per window: the webview with the 3D map, the analysis behind it and the live updates. */
@@ -451,13 +453,13 @@ class CodeMapController {
 
   /**
    * What to analyze. C#: solutions first (shallowest first), then projects; asks when there is more than one.
-   * TypeScript / JavaScript or Python only: the workspace folder. C# with another language: asks, with the folder (one
-   * map of everything) first.
+   * TypeScript / JavaScript, Python or C / C++ only: the workspace folder. C# with another language: asks, with the
+   * folder (one map of everything) first.
    */
   async pickTarget({ always = false } = {}) {
     const folders = vscode.workspace.workspaceFolders ?? [];
     if (!folders.length) {
-      vscode.window.showWarningMessage('CodeMap: open a folder with code first (a C# solution or project, a TypeScript / JavaScript package or a Python project).');
+      vscode.window.showWarningMessage('CodeMap: open a folder with code first (a C# solution or project, a TypeScript / JavaScript package, a Python project or C / C++ code).');
       return null;
     }
 
@@ -465,9 +467,9 @@ class CodeMapController {
     let candidates = (await vscode.workspace.findFiles('**/*.{sln,slnx,slnf}', EXCLUDE, 50)).filter((uri) => listsCSharpProjects(uri.fsPath));
     if (!candidates.length) candidates = await vscode.workspace.findFiles('**/*.csproj', EXCLUDE, 200);
     const paths = candidates.map((uri) => uri.fsPath).sort((a, b) => depth(a) - depth(b) || a.localeCompare(b));
-    const others = paths.length ? [(await this.hasScripts()) && 'TypeScript / JavaScript', (await this.hasPython()) && 'Python'].filter(Boolean) : [];
+    const others = paths.length ? [(await this.hasScripts()) && 'TypeScript / JavaScript', (await this.hasPython()) && 'Python', (await this.hasCpp()) && 'C / C++'].filter(Boolean) : [];
     const scripts = others.length > 0;
-    const languages = others.length === 2 ? `C#, ${others[0]} and ${others[1]}` : `C# and ${others[0]}`;
+    const languages = listOf(['C#', ...others]);
     if (!paths.length && (!always || folders.length === 1)) return folders[0].uri.fsPath;
     if (paths.length === 1 && !always && !scripts) return paths[0];
 
@@ -482,6 +484,12 @@ class CodeMapController {
       : paths.length ? 'Which solution or project should CodeMap analyze?' : 'Which folder should CodeMap analyze?';
     const choice = await vscode.window.showQuickPick(items, { placeHolder });
     return choice?.target ?? null;
+  }
+
+  /** Whether the workspace has C or C++ code beside C#: sources outside build output and vendored libraries. */
+  async hasCpp() {
+    const sources = await vscode.workspace.findFiles(CPP_SOURCES, CPP_EXCLUDE, 50);
+    return sources.some((uri) => isSourceFile(vscode.workspace.asRelativePath(uri.fsPath, false)));
   }
 
   /** Whether the workspace has Python code beside C#: .py files outside environments and build output. */
@@ -511,6 +519,11 @@ function listsCSharpProjects(file) {
   } catch {
     return true;
   }
+}
+
+/** "A and B", "A, B and C". */
+function listOf(items) {
+  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
 function depth(file) {

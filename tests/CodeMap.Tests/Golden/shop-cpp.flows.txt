@@ -1,0 +1,85 @@
+## cpp:shop_cli:file:apps/cli/main#(global) (entrypoint, reach 25): cpp:shop_cli:file:apps/cli/main#(global)::main(int,char**)
+methods 25, types 10, depth 5, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as main
+    participant P1 as InMemoryOrderRepository
+    participant P2 as Money
+    participant P3 as OrderService
+    participant P4 as Order
+    participant P5 as PaymentService
+    participant P6 as FakePaymentGateway
+    participant P7 as discounts
+    Note over P0: main()
+    P0-)P1: new InMemoryOrderRepository
+    P0-)P2: new Money
+    P0->>P3: place()
+    activate P3
+    P3->>P4: addLine()
+    P3->>P1: save() [OrderRepository]
+    activate P1
+    P1->>P4: id()
+    deactivate P1
+    P3->>P1: find() [OrderRepository]
+    deactivate P3
+    P0->>P3: pay()
+    activate P3
+    P3->>P1: find() [OrderRepository]
+    P3->>P5: charge()
+    activate P5
+    P5->>P6: charge() [PaymentGateway]
+    activate P6
+    P6->>P2: cents()
+    deactivate P6
+    P5->>P4: id()
+    P5->>P4: total()
+    activate P4
+    P4-)P2: new Money
+    P4->>P2: times()
+    activate P2
+    P2->>P2: Money()
+    deactivate P2
+    P4->>P2: cents()
+    P4->>P4: roundCents()
+    deactivate P4
+    deactivate P5
+    P3->>P4: markPaid()
+    P3->>P1: save() [OrderRepository] (see above)
+    deactivate P3
+    P0->>P4: id()
+    P0->>P7: discountFor()
+    activate P7
+    P7-)P2: new Money
+    P7->>P2: cents()
+    deactivate P7
+    P0->>P2: cents()
+    P0->>P4: total() (see above)
+    P0->>P5: refund()
+    activate P5
+    P5->>P3: find()
+    activate P3
+    P3->>P1: find() [OrderRepository]
+    deactivate P3
+    P5->>P4: status()
+    P5->>P6: refund() [PaymentGateway]
+    P5->>P4: markRefunded()
+    deactivate P5
+
+## cpp:shop_qt:file:apps/qt/main#(global) (entrypoint, reach 5): cpp:shop_qt:file:apps/qt/main#(global)::main(int,char*[])
+methods 5, types 3, depth 3, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as main
+    participant P1 as CartWindow
+    participant P2 as Order
+    Note over P0: main()
+    P0-)P1: new CartWindow
+    P0->>P1: add()
+    activate P1
+    P1->>P2: addLine()
+    activate P2
+    P2->>P2: addLine()
+    deactivate P2
+    P1->>P1: itemsChanged()
+    deactivate P1
+

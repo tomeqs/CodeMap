@@ -73,6 +73,7 @@ pojedynczej i mnogiej, a `external` nazywa kod spoza analizy. Viewer bierze stą
 | C# (`csharp`) | Project / Projects | Namespace / Namespaces | Type / Types | Member / Members | BCL / NuGet |
 | TypeScript (`typescript`) | Package / Packages | Folder / Folders | File / Files | Declaration / Declarations | npm packages |
 | Python (`python`) | Project / Projects | Package / Packages | Module / Modules | Declaration / Declarations | PyPI packages |
+| C/C++ (`cpp`) | Project / Projects | Namespace / Namespaces | Type / Types | Member / Members | libraries |
 
 W TypeScripcie jednostką mapy jest plik (`module`, `level: "type"`), a klasy, interfejsy, funkcje, aliasy typów
 i stałe są jego składowymi (`level: "member"`); metody klasy mają ją za `parent` i też są składowymi. Metryki pliku
@@ -84,6 +85,19 @@ np. `shop.orders`, a moduły bez pakietu leżą w `(root)`). Klasy, funkcje i zm
 właściwości i pola klasy mają ją za `parent`. Id: `py:project:<projekt>`, `py:ns:<projekt>/<pakiet>`,
 `py:<projekt>:<ścieżka pliku>`, `…#Klasa.metoda`, kod na poziomie modułu `…#(top-level)`, paczki `py:pypi:<nazwa>`;
 `fullName` to pełna nazwa z kropkami (`shop.orders.service.OrderService.place`).
+
+W C i C++ mapa ma kształt C#: projekty (targety CMake, projekty Visual Studio, moduły Unreal Engine, foldery z innym plikiem
+budowania) → namespace’y C++ → typy (`class`, `struct`, także unie z modyfikatorem `union`, `enum`, `interface` dla klasy
+samych czystych funkcji wirtualnych bez danych) → składowe (`method`, także destruktory `~Order` i operatory, `constructor`,
+`field`, `property` z `Q_PROPERTY`). Kod spoza namespace’ów (cały C i część C++) leży w namespace’ach nazwanych od folderu
+(`net/`, z ukośnikiem na końcu; folder projektu to `(global)`), a funkcje wolne, zmienne globalne i aliasy w węźle `module`
+(`level: "type"`) na każdą parę nagłówek + plik źródłowy (`orders.h` + `orders.cpp`) w danym namespace’ie. Deklaracja
+i definicja to jeden węzeł: `location` to definicja, `extraLocations` deklaracja; klasa ma w `extraLocations` pliki ze swoimi
+definicjami. Id: `cpp:project:<projekt>`, `cpp:ns:<projekt>/<namespace>` (`a::b`, albo folder `src/net/`),
+`cpp:<projekt>:<pełna nazwa>` (`cpp:shop:shop::Order`), składowe z typami parametrów tak jak w deklaracji
+(`…::Order::addLine(const Product&,int)`), funkcje wolne `cpp:<projekt>:file:<ścieżka bez rozszerzenia>#<namespace>::<nazwa>(…)`,
+biblioteki `cpp:lib:<nazwa>` (`cpp:lib:Qt6::Widgets`). Modyfikatory: `static`, `virtual`, `override`, `abstract`, `sealed`
+(`final`), `const`, `constexpr`, `inline`, `extern`, `explicit`, `union`, `signal` (sygnał Qt), `nodiscard`.
 
 Mapa kilku języków (np. folder z solucją C# i aplikacją TypeScript) ma wszystkie w `source.languages`, a projekty i paczki
 każdego mają swój `language`.
@@ -102,13 +116,13 @@ każdego mają swój `language`.
 |---|---|
 | `controller`, `dbcontext`, `repository`, `service`, `handler`, `hosted-service`, `middleware`, `hub`, `exception`, `attribute`, `options`, `dto`, `validator`, `factory`, `extensions` | rozpoznane role (dziedziczenie, interfejsy, atrybuty, konwencje nazw) |
 | `page`, `component` | C#: strona Razor (`PageModel` albo code-behind pliku `.cshtml`) i komponent Blazora (`ComponentBase` albo code-behind pliku `.razor`); ich składowe nie są „nieużywane”, bo używa ich markup. `component` także dla komponentów Angulara |
-| `test`, `test-project` | klasa/metoda testowa, projekt testowy; w TypeScripcie także pliki w `test/`, `tests/`, `__tests__/`, `__fixtures__/`, `__testfixtures__/` oraz `*.test-d.ts`; w Pythonie `test_*.py`, `*_test.py`, `tests.py`, `conftest.py`, pliki w `tests/` i klasy `TestCase` |
+| `test`, `test-project` | klasa/metoda testowa, projekt testowy; w TypeScripcie także pliki w `test/`, `tests/`, `__tests__/`, `__fixtures__/`, `__testfixtures__/` oraz `*.test-d.ts`; w Pythonie `test_*.py`, `*_test.py`, `tests.py`, `conftest.py`, pliki w `tests/` i klasy `TestCase`; w C++ testy GoogleTest, Catch2, doctest, Boost.Test i Qt Test, pliki w `test/` / `tests/` i `*_test.cpp`, targety CMake linkujące framework testów |
 | `entity` | model ORM: Django, SQLAlchemy (także Flask-SQLAlchemy i SQLModel z `table=True`) |
-| `entrypoint` | `Main`, top-level statements, projekt wykonywalny; w TypeScripcie pliki z `main`, `module`, `bin` i `exports` w package.json (bez warunków `types`), pliki uruchamiające kod, których nikt nie importuje, i pliki, które framework ładuje sam (Next.js, SvelteKit, SolidStart, Astro, Nuxt) |
+| `entrypoint` | `Main`, top-level statements, projekt wykonywalny; w C/C++ `main` (i `WinMain`, `DllMain`…), funkcje Unreal wołane z Blueprintów i przez sieć, tryby gry; w TypeScripcie pliki z `main`, `module`, `bin` i `exports` w package.json (bez warunków `types`), pliki uruchamiające kod, których nikt nie importuje, i pliki, które framework ładuje sam (Next.js, SvelteKit, SolidStart, Astro, Nuxt) |
 | `route` | trasa HTTP (Express, NestJS; w Pythonie FastAPI, Flask, Django i Django REST framework, z pełną ścieżką na początku `doc`) albo plik trasy w routingu plikowym (`app/**/page.tsx`, `pages/**`, `+page.svelte`, `src/routes/**`, `server/api/**`) |
 | `config`, `barrel` | TypeScript: konfiguracja narzędzia w katalogu paczki (`vite.config.ts`, `.eslintrc.cjs`) i plik złożony tylko z importów i re-eksportów (`index.ts` folderu); Python: `setup.py`, `noxfile.py`, `docs/conf.py`, ustawienia Django, `__init__.py` tylko z importami |
 | `init` | Python: `__init__.py` z kodem, który wykonuje się przy imporcie pakietu |
-| `maybe-used` | Python: prywatna składowa, której może używać kod, którego analiza nie śledzi: jej nazwa pada na obiekcie nieznanego typu albo w `getattr`, albo to metoda klasy dziedziczącej po klasie spoza analizy (która może ją wołać jako hook); nie jest zgłaszana jako nieużywana |
+| `maybe-used` | C++: metoda `Q_INVOKABLE` (woła ją QML). Python: prywatna składowa, której może używać kod, którego analiza nie śledzi: jej nazwa pada na obiekcie nieznanego typu albo w `getattr`, albo to metoda klasy dziedziczącej po klasie spoza analizy (która może ją wołać jako hook); nie jest zgłaszana jako nieużywana |
 | `generated` | `[GeneratedCode]`, `[CompilerGenerated]` |
 | `positional` | właściwość z parametru pozycyjnego rekordu |
 | `in-cycle` | element należy do cyklu zależności |

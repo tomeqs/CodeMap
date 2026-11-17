@@ -15,6 +15,7 @@ public class CallFlowTests
     [InlineData("shop")]
     [InlineData("booking")]
     [InlineData("shop-py")]
+    [InlineData("shop-cpp")]
     public void Flows_match_what_the_viewer_computes(string name)
     {
         var golden = Path.Combine(GoldenTests.RepoRoot(), "tests", "CodeMap.Tests", "Golden");

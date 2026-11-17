@@ -118,6 +118,14 @@ async function scenario(controller) {
   assert.ok(py.nodes.some((n) => n.kind === 'module' && n.location?.file?.endsWith('.py')), 'modules are on the map');
   assert.ok(py.analysis?.di?.issues?.some((i) => i.kind === 'captive'), 'FastAPI\'s container is read');
 
+  // C and C++ run on the Node.js inside VS Code too, with tree-sitter as WebAssembly: nothing else has to be installed.
+  mark('C / C++ on the Node.js of VS Code');
+  const mini = path.resolve(__dirname, '..', '..', '..', 'analyzers', 'cpp', 'test', 'fixtures', 'mini');
+  const cpp = await runAnalyzer(analyzer, mini, { gitHistory: false }, { onLine: (l) => log.push(l) });
+  assert.ok(cpp.source.languages.some((l) => l.id === 'cpp'), 'mapped as C / C++');
+  assert.ok(cpp.nodes.some((n) => n.id === 'cpp:shop_domain:shop::Order'), 'classes are on the map');
+  assert.ok(cpp.edges.some((e) => e.kind === 'calls' && e.target === 'cpp:shop_domain:shop::Order::create()'), 'calls are resolved');
+
   // The MCP server for agent mode: offered through VS Code's provider API, started as VS Code would start it.
   mark('MCP server');
   const api = vscode.extensions.getExtension('tomeqs.codemap-3d').exports;

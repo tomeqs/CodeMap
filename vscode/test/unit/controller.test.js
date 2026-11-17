@@ -221,6 +221,17 @@ test('live updates follow Python sources and project files, not environments or 
   }
 });
 
+test('live updates follow C and C++ sources and build files, not build trees or generated files', () => {
+  const { isSourceFile } = require('../../src/extension');
+  for (const file of ['src/order.cpp', 'include/shop/order.h', 'lib/ledger.c', 'a.cc', 'b.hpp', 'x.inl', 'CMakeLists.txt', 'libs\\app\\CMakeLists.txt', 'Game/Game.vcxproj', 'Shop.uproject', 'meson.build', 'compile_commands.json']) {
+    assert.ok(isSourceFile(file), file);
+  }
+
+  for (const file of ['build/gen/x.cpp', 'cmake-build-debug/a.cpp', 'CMakeFiles/b.c', 'Intermediate/Build/x.cpp', 'qt/moc_cart.cpp', 'qt/ui_main.h', 'Source/Shop/Shop.generated.h', 'proto/orders.pb.cc', 'notes.txt']) {
+    assert.ok(!isSourceFile(file), file);
+  }
+});
+
 test('a solution without C# projects (Visual Studio C++) is not offered as a C# map', () => {
   const { listsCSharpProjects } = require('../../src/extension');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codemap-sln-'));

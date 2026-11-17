@@ -131,7 +131,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Sample graphs for the smoke tests (the analyzer on samples/Shop, samples/shop-ts, samples/shop-py and samples/ as a whole)
+      - name: Sample graphs for the smoke tests (the analyzer on samples/Shop, samples/shop-ts, samples/shop-py, samples/shop-cpp and samples/ as a whole)
         run: |
           dotnet build ../src/CodeMap.Cli -c Release -v quiet
           codemap() { dotnet ../src/CodeMap.Cli/bin/Release/net8.0/codemap.dll "$@" -f json --no-git -q; }
@@ -139,12 +139,13 @@ jobs:
           mkdir -p public && cp "$RUNNER_TEMP/shop/Shop.codemap.json" public/sample.codemap.json
           codemap ../samples/shop-ts -o "$RUNNER_TEMP/samples"
           codemap ../samples/shop-py -o "$RUNNER_TEMP/samples"
+          codemap ../samples/shop-cpp -o "$RUNNER_TEMP/samples"
           codemap ../samples -o "$RUNNER_TEMP/samples"
           ls "$RUNNER_TEMP/samples"
       - run: npm run build
       - name: The call flows the C# port is tested against match flow.js (codemap mcp's call_flow = the Flow view)
         run: |
-          for map in shop booking shop-py; do
+          for map in shop booking shop-py shop-cpp; do
             node ../tests/CodeMap.Tests/Golden/flows.mjs ../tests/CodeMap.Tests/Golden/$map.codemap.json | diff - ../tests/CodeMap.Tests/Golden/$map.flows.txt
           done
       - name: The viewer built into the CLI matches the sources

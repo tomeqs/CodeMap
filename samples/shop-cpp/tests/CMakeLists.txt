@@ -1,0 +1,5 @@
+find_package(GTest REQUIRED)
+find_package(Catch2 3 REQUIRED)
+add_executable(shop_tests order_test.cpp discounts_test.cpp)
+target_link_libraries(shop_tests PRIVATE shop_domain GTest::gtest_main Catch2::Catch2)
+gtest_discover_tests(shop_tests)
