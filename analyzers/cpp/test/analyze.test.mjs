@@ -113,6 +113,53 @@ test('C: a function returning a function pointer is a function; a function point
   }
 });
 
+test('a class in an anonymous namespace gets its methods defined out of line in the same file', () => {
+  // leveldb's DBIter: 41 definitions were left off the map, so its private methods looked unused.
+  const { dir, dispose } = scratch({
+    'iter.cc': [
+      'namespace db {',
+      'namespace {',
+      'class Iter {',
+      ' public:',
+      '  void Next();',
+      ' private:',
+      '  void FindNext();',
+      '};',
+      'void Iter::Next() { FindNext(); }',
+      'void Iter::FindNext() {}',
+      '}  // namespace',
+      '}  // namespace db',
+    ].join('\n'),
+  });
+  try {
+    const map = run(dir);
+    const name = dir.split(/[\\/]/).pop();
+    const iter = `cpp:${name}:db::Iter@iter.cc`;
+    assert.deepEqual(map.node(`${iter}::FindNext()`).location, { file: 'iter.cc', line: 10, endLine: 10 });
+    assert.ok(map.hasEdge(`${iter}::Next()`, 'calls', `${iter}::FindNext()`));
+  } finally {
+    dispose();
+  }
+});
+
+test('conversion operators are methods: defined in the class, or declared there and defined out of it', () => {
+  // gmock's `template <typename F> operator Action<F>() const { return Action<F>(new MonomorphicImpl<F>(…)); }`.
+  const { dir, dispose } = scratch({
+    'flag.h': 'class Impl {};\nclass Flag {\n public:\n  operator Impl*() const { return new Impl(); }\n  explicit operator bool() const;\n  bool ok() const;\n};',
+    'flag.cpp': '#include "flag.h"\nFlag::operator bool() const { return ok(); }\nbool Flag::ok() const { return true; }',
+  });
+  try {
+    const map = run(dir);
+    const name = dir.split(/[\\/]/).pop();
+    const flag = `cpp:${name}:Flag`;
+    assert.ok(map.hasEdge(`${flag}::operator Impl*()`, 'instantiates', `cpp:${name}:Impl`));
+    assert.deepEqual(map.node(`${flag}::operator bool()`).location, { file: 'flag.cpp', line: 2, endLine: 2 });
+    assert.ok(map.hasEdge(`${flag}::operator bool()`, 'calls', `${flag}::ok()`));
+  } finally {
+    dispose();
+  }
+});
+
 test('ids do not depend on the folder analyzed', () => {
   const whole = run('mini');
   const part = run(join(fixtures, 'mini', 'src'), { root: join(fixtures, 'mini') });

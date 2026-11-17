@@ -60,6 +60,7 @@ export function collectMacros(texts) {
   // Bodies made of decorations and other macros (`#define JSON_HEDLEY_ALWAYS_INLINE __attribute__((…)) JSON_HEDLEY_INLINE`):
   // decorations too once those macros are.
   const composed = new Map();
+  const functionLike = new Map();
   const decorate = (name, body) => {
     const words = body.split(/\s+/).filter((w) => KEYWORDS.has(w)).join(' ');
     // Defined differently in different branches (export or import): the safe reading is none of them.
@@ -82,6 +83,14 @@ export function collectMacros(texts) {
       } else if (!body.replace(/__attribute__\s*\(\(.*\)\)|__declspec\s*\([^)]*\)|\[\[.*\]\]|\b[A-Za-z_]\w*\b/g, ' ').trim()) {
         if (!composed.has(name)) composed.set(name, body);
       }
+    }
+
+    // `#define GUARDED_BY(x) THREAD_ANNOTATION_ATTRIBUTE__(guarded_by(x))`: an attribute, read later.
+    const fn = /^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)\([^)\n]*\)((?:[^\n\\]|\\\r?\n)*)$/gm;
+    while ((m = fn.exec(text))) {
+      const body = m[2].replace(/\\\r?\n/g, ' ').replace(/\/\*.*?\*\/|\/\/.*$/g, '').trim();
+      if (!functionLike.has(m[1])) functionLike.set(m[1], []);
+      functionLike.get(m[1]).push(body);
     }
 
     // `#define JSON_CATCH(e) catch(e)`: the call reads as the keyword. Throw macros stay calls: with exceptions
@@ -112,7 +121,30 @@ export function collectMacros(texts) {
 
   // A namespace macro is not a decoration, whatever another branch defines it as.
   for (const name of namespaces.keys()) decorations.delete(name);
-  return { decorations, namespaces, words: macroWords(texts) };
+  return { decorations, namespaces, attributes: attributeMacros(functionLike), words: macroWords(texts) };
+}
+
+/**
+ * Function-like macros that stand for an attribute in every definition (Clang's thread safety annotations:
+ * `void Compact() EXCLUSIVE_LOCKS_REQUIRED(mutex_);`, `int count GUARDED_BY(mu_);`), directly or through another
+ * such macro. Left in, the grammar reads them as a method or a field of their own.
+ */
+function attributeMacros(functionLike) {
+  const found = new Set();
+  const PIECE = /__attribute__\s*\(\(.*\)\)|__declspec\s*\(.*\)|\[\[.*\]\]/g;
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [name, bodies] of functionLike) {
+      if (found.has(name) || !bodies.some(Boolean)) continue;
+      const attribute = bodies.every((body) => !body.replace(PIECE, ' ').replace(/\b([A-Za-z_]\w*)\s*\((?:[^()]|\([^()]*\))*\)/g, (call, callee) => (found.has(callee) ? ' ' : call)).trim());
+      if (attribute) {
+        found.add(name);
+        changed = true;
+      }
+    }
+  }
+
+  return [...found];
 }
 
 /**
@@ -217,6 +249,7 @@ export function preprocess(source, { cplusplus = true, macros = null } = {}) {
   text = text.replace(/\b(class|struct|union)(\s+)([A-Z][A-Z0-9_]+)(?=\s+[A-Za-z_]\w*\s*(?:final\s*)?[:{])/g, (all, keyword, gap, macro) => keyword + gap + ' '.repeat(macro.length));
   text = replaceOutsideDirectives(text, EXPORT_MACRO, (word) => ' '.repeat(word.length));
 
+  if (macros?.attributes?.length) text = blankCalls(text, macros.attributes, null);
   if (macros) text = applyMacros(text, macros);
   const macroArguments = [];
   text = blankStatementMacros(text, macroArguments);

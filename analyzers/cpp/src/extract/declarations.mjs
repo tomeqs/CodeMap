@@ -397,7 +397,8 @@ function fieldLike(node, type, context, access) {
 function functionDefinition(node, scope, context, template) {
   const declarator = functionDeclaratorOf(node);
   if (!declarator) return;
-  const nameNode = declarator.childForFieldName('declarator');
+  // A conversion operator's name is the operator_cast (or Foo::operator_cast) around its declarator.
+  const nameNode = declarator.type === 'abstract_function_declarator' ? node.childForFieldName('declarator') : declarator.childForFieldName('declarator');
   const qualified = qualifiedName(nameNode);
   if (!qualified) return;
   const body = node.childForFieldName('body');
@@ -556,11 +557,36 @@ function bases(clause) {
 
 function functionDeclaratorOf(node) {
   for (const declarator of node.childrenForFieldName('declarator')) {
-    const fn = functionDeclarator(declarator);
+    const fn = functionDeclarator(declarator) ?? castDeclarator(castOf(declarator));
     if (fn) return fn;
   }
 
   return null;
+}
+
+/**
+ * A conversion operator's declarator (`operator bool() const`, `Foo::operator bool() const`): the grammar gives it
+ * no function declarator, only an operator_cast whose own declarator holds the parameters. Without this, gmock's
+ * `operator Matcher<T>() const` was not on the map, nor were the classes only it creates.
+ */
+function castOf(declarator) {
+  let d = declarator;
+  while (d?.type === 'qualified_identifier') d = d.childForFieldName('name');
+  return d?.type === 'operator_cast' ? d : null;
+}
+
+/** The function declarator of a conversion operator, under `*` / `&` (`operator Impl*()`, `operator const T&()`). */
+function castDeclarator(cast) {
+  let d = cast?.childForFieldName('declarator');
+  while (d && (d.type === 'abstract_pointer_declarator' || d.type === 'abstract_reference_declarator')) d = d.childForFieldName('declarator') ?? d.namedChildren.find((c) => c.type.startsWith('abstract_'));
+  return d?.type === 'abstract_function_declarator' ? d : null;
+}
+
+/** `operator Impl*`, `operator const std::string&`: the operator_cast's text up to its parameters. */
+function castName(cast) {
+  const params = castDeclarator(cast)?.childForFieldName('parameters');
+  const text = params ? cast.text.slice(0, params.startIndex - cast.startIndex) : 'operator ' + (cast.childForFieldName('type')?.text ?? '');
+  return oneLine(text).replace(/^operator\s*/, 'operator ').replace(/\s+([*&])/g, '$1');
 }
 
 function identifiersIn(node, out) {
@@ -635,7 +661,7 @@ function declaratorName(declarator) {
 function functionName(nameNode, declaration) {
   if (!nameNode) {
     const cast = declaration.namedChildren.find((c) => c.type === 'operator_cast');
-    return cast ? 'operator ' + oneLine(cast.childForFieldName('type')?.text ?? '') : null;
+    return cast ? castName(cast) : null;
   }
 
   switch (nameNode.type) {
@@ -652,7 +678,7 @@ function functionName(nameNode, declaration) {
     case 'qualified_identifier':
       return qualifiedName(nameNode)?.name ?? null;
     case 'operator_cast':
-      return 'operator ' + oneLine(nameNode.childForFieldName('type')?.text ?? '');
+      return castName(nameNode);
     default:
       return null;
   }

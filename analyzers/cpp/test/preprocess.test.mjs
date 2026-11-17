@@ -87,6 +87,17 @@ test('try and catch macros read as the keywords, so a class using them stays who
   assert.equal(text.split('\n')[2], '  catch     (std::exception& e) { JSON_THROW(e); }');
 });
 
+test('function-like macros that only stand for attributes are blanked where they are used', () => {
+  // leveldb: `void Compact() EXCLUSIVE_LOCKS_REQUIRED(mutex_);` became a method named EXCLUSIVE_LOCKS_REQUIRED.
+  const macros = collectMacros([
+    '#if defined(__clang__)\n#define THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))\n#else\n#define THREAD_ANNOTATION_ATTRIBUTE__(x)  // no-op\n#endif\n#define GUARDED_BY(x) THREAD_ANNOTATION_ATTRIBUTE__(guarded_by(x))\n#define EXCLUSIVE_LOCKS_REQUIRED(...) THREAD_ANNOTATION_ATTRIBUTE__(exclusive_locks_required(__VA_ARGS__))\n#define DCHECK(x)\n#define MAX(a, b) ((a) > (b) ? (a) : (b))\n',
+  ]);
+  assert.deepEqual(macros.attributes.sort(), ['EXCLUSIVE_LOCKS_REQUIRED', 'GUARDED_BY', 'THREAD_ANNOTATION_ATTRIBUTE__']);
+  const { text } = preprocess('class Db {\n  void Compact() EXCLUSIVE_LOCKS_REQUIRED(mutex_);\n  int count_ GUARDED_BY(mutex_);\n};\n', { macros });
+  assert.match(text.split('\n')[1], /^  void Compact\(\)\s+;$/);
+  assert.match(text.split('\n')[2], /^  int count_\s+;$/);
+});
+
 test('a macro made of other decoration macros is a decoration; one made of code is not', () => {
   const macros = collectMacros([
     '#define HEDLEY_INLINE inline\n#define HEDLEY_ALWAYS_INLINE __attribute__((__always_inline__)) HEDLEY_INLINE\n#define OUTER HEDLEY_ALWAYS_INLINE\n#define JSON_TRY try\n#define JSON_THROW throw\n',
