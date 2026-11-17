@@ -61,7 +61,7 @@ export function collectMacros(texts) {
       const body = m[2].replace(/\\\r?\n/g, ' ').replace(/\/\*.*?\*\/|\/\/.*$/g, '').trim();
       if (body && NAMESPACE_BODY.test(body)) {
         if (!namespaces.has(name)) namespaces.set(name, body.replace(/\s+/g, ' '));
-      } else if (body === '' || DECORATION.test(body)) {
+      } else if ((body === '' || DECORATION.test(body)) && !/fall[\s_]*thr(ough|u)/i.test(name + ' ' + body)) {
         const words = body.split(/\s+/).filter((w) => KEYWORDS.has(w)).join(' ');
         // Defined differently in different branches (export or import): the safe reading is none of them.
         decorations.set(name, decorations.has(name) && decorations.get(name) !== words ? '' : words);

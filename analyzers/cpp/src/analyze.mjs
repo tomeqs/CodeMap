@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs';
 import { basename, dirname, extname, join, normalize, relative, resolve } from 'node:path';
+import { classChecks, runChecks } from './checks.mjs';
 import { discover, grammarOf, includesOf, isGenerated, isHeaderFile, isTestFile, lineCount, readText, toPosix } from './discover.mjs';
 import { extractFile } from './extract/declarations.mjs';
 import { Graph } from './graph.mjs';
@@ -72,6 +73,7 @@ export function analyze(parser, request, log = () => {}) {
   timing.mark('includes and macros');
 
   // Pass 1: parse each file, keep its declarations, free the tree.
+  const diagnostics = [];
   let started = Date.now();
   let errorBytes = 0;
   let totalBytes = 0;
@@ -87,6 +89,13 @@ export function analyze(parser, request, log = () => {}) {
         totalBytes += pre.text.length;
         if (pre.text.length > 2000 && errors > pre.text.length / 2) counts.unreadable.push(file.rel);
         file.facts = extractFile(tree, { annotations: pre.annotations, sections: pre.sections });
+        // Problems inside the code (--checks): not in tests, nor in headers outside the folder analyzed.
+        if (options.checks && !file.test && !file.context) {
+          file.checked = true;
+          file.sourceLines = text.split('\n');
+          diagnostics.push(...runChecks(tree, file), ...classChecks(file.facts, file));
+          file.sourceLines = null;
+        }
       } finally {
         tree.delete();
       }
@@ -107,7 +116,14 @@ export function analyze(parser, request, log = () => {}) {
   const stats = { errorBytes, totalBytes };
   const model = buildModel({ files, projects, root, graph, stats });
   timing.mark('model');
-  resolveReferences(model, graph, { log, stats: Boolean(process.env.CODEMAP_CPP_STATS), unresolvedFile: process.env.CODEMAP_CPP_UNRESOLVED || null });
+  const resolved = resolveReferences(model, graph, { log, stats: Boolean(process.env.CODEMAP_CPP_STATS), unresolvedFile: process.env.CODEMAP_CPP_UNRESOLVED || null });
+  diagnostics.push(...resolved.diagnostics);
+  // fmt::sprintf is not the C library's: names the code declares itself are its own functions.
+  const own = new Set(model.functions.filter((f) => f.kind === 'function').map((f) => f.name));
+  for (let i = diagnostics.length - 1; i >= 0; i--) {
+    const d = diagnostics[i];
+    if (d.rule === 'unsafe-c-function' && own.has(/^(\w+)\(\)/.exec(d.message)?.[1])) diagnostics.splice(i, 1);
+  }
   timing.mark('references');
 
   if (counts.generated) warnings.push(`${counts.generated} generated file(s) were skipped.`);
@@ -134,7 +150,7 @@ export function analyze(parser, request, log = () => {}) {
     },
     nodes,
     edges,
-    analysis: { warnings },
+    analysis: options.checks ? { warnings, diagnostics: sortDiagnostics(diagnostics) } : { warnings },
   };
 }
 
@@ -332,6 +348,19 @@ class Timing {
     this.log(`${phase}: ${((now - this.last) / 1000).toFixed(2)}s`);
     this.last = now;
   }
+}
+
+/** One report per rule and place (a class defined twice in one header), in file order. */
+function sortDiagnostics(list) {
+  const seen = new Set();
+  return list
+    .filter((d) => {
+      const key = `${d.rule}|${d.location.file}|${d.location.line}|${d.column}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => cmp(a.location.file, b.location.file) || a.location.line - b.location.line || a.column - b.column || cmp(a.rule, b.rule));
 }
 
 function emptyFacts() {

@@ -7,7 +7,7 @@
   "license": "MIT",
   "engines": { "node": ">=18" },
   "scripts": {
-    "test": "node --test test/preprocess.test.mjs test/projects.test.mjs test/analyze.test.mjs test/resolve.test.mjs test/frameworks.test.mjs test/cli.test.mjs"
+    "test": "node --test test/preprocess.test.mjs test/projects.test.mjs test/analyze.test.mjs test/resolve.test.mjs test/frameworks.test.mjs test/checks.test.mjs test/cli.test.mjs"
   },
   "dependencies": {
     "tree-sitter-c": "0.24.1",

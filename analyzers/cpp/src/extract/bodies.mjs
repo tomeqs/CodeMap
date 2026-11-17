@@ -81,6 +81,7 @@ export function collectBody(body, extra = [], params = []) {
         if (node.parent?.type !== 'throw_statement') {
           const list = args ? args.namedChildren.filter((c) => c.type !== 'comment') : [];
           const site = { k: 'call', f: e, argc: list.length, args: list.map(argType), line: row(node) };
+          if (node.parent?.type === 'expression_statement') site.stmt = true;
           // Qt's connect(sender, &Sender::signal, receiver, &Receiver::slot): the arguments themselves matter.
           const last = e.t === 'id' ? e.n : e.t === 'q' ? e.p[e.p.length - 1] : e.t === 'fld' ? e.n : null;
           if (last === 'connect') site.argx = list.map(expr);
