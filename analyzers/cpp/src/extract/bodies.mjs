@@ -79,7 +79,12 @@ export function collectBody(body, extra = [], params = []) {
 
         // `throw OrderError(…)` is a throw of the type (a site of its own), not an instantiation.
         if (node.parent?.type !== 'throw_statement') {
-          out.sites.push({ k: 'call', f: e, argc: args ? args.namedChildren.filter((c) => c.type !== 'comment').length : 0, args: args ? args.namedChildren.filter((c) => c.type !== 'comment').map(argType) : [], line: row(node) });
+          const list = args ? args.namedChildren.filter((c) => c.type !== 'comment') : [];
+          const site = { k: 'call', f: e, argc: list.length, args: list.map(argType), line: row(node) };
+          // Qt's connect(sender, &Sender::signal, receiver, &Receiver::slot): the arguments themselves matter.
+          const last = e.t === 'id' ? e.n : e.t === 'q' ? e.p[e.p.length - 1] : e.t === 'fld' ? e.n : null;
+          if (last === 'connect') site.argx = list.map(expr);
+          out.sites.push(site);
         }
 
         // Template arguments name types (make_unique<Order>, std::vector<Line>{}).
@@ -128,6 +133,13 @@ export function collectBody(body, extra = [], params = []) {
         if (parent && (/declarator$/.test(parent.type) || parent.type === 'qualified_identifier')) break;
         out.sites.push({ k: 'access', e: expr(node), line: row(node) });
         return; // its parts are not references of their own
+      }
+
+      case 'field_initializer': {
+        // Order(int id) : id_(id): the constructor writes the field.
+        const field = node.namedChildren.find((c) => c.type === 'field_identifier');
+        if (field) out.sites.push({ k: 'access', e: { t: 'id', n: field.text }, line: row(node) });
+        break;
       }
 
       case 'compound_literal_expression': {
@@ -254,7 +266,7 @@ export function expr(node) {
     case 'string_literal':
     case 'raw_string_literal':
     case 'concatenated_string':
-      return { t: 'lit', ty: 'string' };
+      return { t: 'lit', ty: 'string', s: node.text.replace(/^[a-zA-Z0-9]*"|"$/g, '') };
     case 'number_literal':
       return { t: 'lit', ty: /[.eE]/.test(node.text) && !/^0[xX]/.test(node.text) ? 'double' : 'int' };
     case 'true':

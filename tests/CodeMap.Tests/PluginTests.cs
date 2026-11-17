@@ -385,6 +385,24 @@ public class PluginTests
     }
 
     [NodeFact(cpp: true)]
+    public void Cpp_frameworks_mark_entry_points_tests_and_handlers_so_nothing_they_use_reads_as_dead()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(CppFixture("frameworks"), registry, NoGit);
+
+        Assert.Empty(graph.Analysis.Warnings);
+        Assert.Empty(graph.Analysis.UnusedCandidates);
+        Assert.Empty(graph.Analysis.Cycles); // a Qt connection is not a dependency of the sender on the receiver
+        Assert.Contains(Tags.EntryPoint, graph.Node("cpp:cart:file:qt/main#qt/::main(int,char*[])").Tags);
+        Assert.Contains(Tags.Test, graph.Node("cpp:cart_tests:file:tests/gtest_test#tests/::CounterTest.Counts()").Tags);
+        Assert.Contains(Tags.Handler, graph.Node("cpp:cart:CartWidget::onCounted(int)").Tags);
+        Assert.Contains(Tags.Component, graph.Node("cpp:cart:CartWidget").Tags);
+        Assert.Contains(Tags.EntryPoint, graph.Node("cpp:Shop:AShopGameMode::OpenShop()").Tags);
+        Assert.Equal(NodeKinds.Interface, graph.Node("cpp:Shop:IShopper").Kind);
+        graph.AssertEdge("cpp:cart:CartWidget::CartWidget(QWidget*)", EdgeKinds.Subscribes, "cpp:cart:Counter::valueChanged(int)");
+    }
+
+    [NodeFact(cpp: true)]
     public void A_visual_studio_cpp_solution_is_mapped_by_the_cpp_plugin()
     {
         var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });

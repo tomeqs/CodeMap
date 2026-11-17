@@ -83,7 +83,9 @@ export function preprocess(source, { cplusplus = true, macros = null } = {}) {
   const annotations = [];
   const sections = [];
 
-  text = blankCalls(text, ['__attribute__', '__declspec', 'alignas_unused'], null);
+  text = blankCalls(text, ['__attribute__', '__declspec'], null);
+  // Qt's string connections: SIGNAL(valueChanged(int)) / SLOT(setValue(int)) read as the name in quotes.
+  text = text.replace(/\b(SIGNAL|SLOT|Q_SIGNAL_MACRO)\s*\(\s*(\w+)\s*\(([^()]*)\)\s*\)/g, (all, macro, name) => `"${name}"`.padEnd(all.length, ' '));
   text = blankCalls(text, ANNOTATIONS_WITH_ARGS, annotations);
 
   // Words, one regular expression for all of them.

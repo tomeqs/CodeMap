@@ -1,5 +1,6 @@
 import { basename, dirname, extname, relative } from 'node:path';
 import { toPosix } from './discover.mjs';
+import { Frameworks } from './frameworks.mjs';
 import { holderId, libraryId, memberId, namespaceId, projectId, typeId } from './ids.mjs';
 import { normalizeType } from './extract/declarations.mjs';
 import { isUnder } from './projects/projects.mjs';
@@ -16,6 +17,7 @@ export function buildModel({ files, projects, root, graph, stats }) {
   for (const file of files) model.addTypes(file);
   for (const file of files) model.addFunctions(file);
   model.moveFileLocalHelpers(files);
+  model.frameworks = new Frameworks(model, files);
   model.emit();
   return model;
 }
@@ -81,7 +83,9 @@ class Model {
 
   /** A member declared (or defined) in the class body. */
   addMember(entry, file, member, defined, strict = false) {
-    const existing = member.kind !== 'field' ? this.matchMember(entry, member, file, strict) : entry.members.find((m) => m.kind === 'field' && m.name === member.name);
+    const existing = member.kind === 'field' || member.kind === 'property'
+      ? entry.members.find((m) => m.kind === member.kind && m.name === member.name)
+      : this.matchMember(entry, member, file, strict);
     if (existing) {
       existing.places.push({ file, member, defined });
       return existing;
@@ -94,7 +98,7 @@ class Model {
 
   /** The member a definition (or another declaration) of the same function is: by name and arity, then types. */
   matchMember(entry, member, file, strict) {
-    const candidates = entry.members.filter((m) => m.kind !== 'field' && m.name === member.name && !m.places.some((p) => p.file === file && p.member.line === member.line));
+    const candidates = entry.members.filter((m) => m.kind !== 'field' && m.kind !== 'property' && m.name === member.name && !m.places.some((p) => p.file === file && p.member.line === member.line));
     if (!candidates.length) return null;
     // Declarations in a class body (or a second definition of the class): overloads unless the parameters are the same.
     if (strict) {
@@ -127,6 +131,15 @@ class Model {
       for (const table of tables) if (table.has(key)) return table.get(key);
     }
 
+    // A class of another project the build files do not link (a test target's fixture header).
+    if (!this.searchedAll) {
+      const others = [...this.types.entries()].filter(([id]) => id !== project.id && !project.references.some((p) => p.id === id)).map(([, t]) => t);
+      for (let i = scope.length; i >= 0; i--) {
+        const key = [...scope.slice(0, i), name].filter(Boolean).join('::');
+        for (const table of others) if (table.has(key)) return table.get(key);
+      }
+    }
+
     return null;
   }
 
@@ -143,7 +156,10 @@ class Model {
       if (fn.qualifiers.length) {
         const owner = this.findType(file.project, fn.scope, fn.qualifiers, usings);
         if (owner) {
-          const member = { ...fn, kind: memberKind(fn, owner), access: null, hasBody: fn.definition && !fn.noBody };
+          // Unreal: the body of a BlueprintNativeEvent or an RPC is Name_Implementation, declared as Name.
+          const native = /_Implementation$/.exec(fn.name);
+          const name = native && !owner.members.some((m) => m.name === fn.name) && owner.members.some((m) => m.name === fn.name.slice(0, native.index)) ? fn.name.slice(0, native.index) : fn.name;
+          const member = { ...fn, name, kind: memberKind({ ...fn, name }, owner), access: null, hasBody: fn.definition && !fn.noBody };
           const placed = this.addMember(owner, file, member, member.hasBody);
           if (member.hasBody) owner.definitionFiles.set(file, [...(owner.definitionFiles.get(file) ?? []), fn]);
           placed.outOfLine = true;
@@ -329,6 +345,8 @@ class Model {
       let loc = 0;
       for (const fn of holder.members) loc += this.emitFunction(fn, node, holder.nsKey);
       node.metrics.loc = loc;
+      if (node.entry) node.tags = tagsOf(node.tags ?? [], ['entrypoint']);
+      delete node.entry;
     }
 
     this.emitProjectEdges();
@@ -410,7 +428,7 @@ class Model {
       extraLocations: extra.filter(Boolean),
       attributes: decl.attributes,
       doc: decls.map((d) => d.decl.doc).find(Boolean) ?? undefined,
-      tags: decls.every((d) => d.file.test) ? ['test'] : undefined,
+      tags: tagsOf(decls.every((d) => d.file.test) ? ['test'] : [], this.frameworks.typeTags(entry)),
       metrics: { loc, ...(decl.template ? { typeParameters: decl.template } : {}) },
     });
     node.bases = decl.bases; // kept for the resolver, removed before writing
@@ -423,6 +441,8 @@ class Model {
   /** class, struct, enum, or interface: a class of pure virtual methods only and no data. */
   kindOf(entry, decl) {
     if (decl.kind === 'enum') return 'enum';
+    const declared = this.frameworks.typeKind(entry);
+    if (declared) return declared;
     if (decl.kind === 'union') return 'struct';
     const methods = entry.members.filter((m) => m.kind === 'method' && !m.name.startsWith('operator='));
     const fields = entry.members.filter((m) => m.kind === 'field' && !(m.declaration.modifiers ?? []).includes('static'));
@@ -435,7 +455,7 @@ class Model {
     const seen = new Set();
     for (const member of entry.members) {
       const decl = member.declaration;
-      const params = member.kind === 'field' ? undefined : paramsKey(decl.params, false);
+      const params = member.kind === 'field' || member.kind === 'property' ? undefined : paramsKey(decl.params, false);
       let id = memberId(entry.id, member.name, params);
       if (seen.has(id) && isConst(decl)) id += ' const';
       if (member.helper && seen.has(id)) id += `@${member.places[0].file.rel}`;
@@ -476,7 +496,7 @@ class Model {
       extraLocations: others.map((p) => this.location(p.file, p.member.line, p.member.endLine)).filter(Boolean),
       attributes: [...new Set(member.places.flatMap((p) => p.member.attributes ?? []))],
       doc: member.places.map((p) => p.member.doc).find(Boolean) ?? undefined,
-      tags: member.places.every((p) => p.file.test) ? ['test'] : undefined,
+      tags: tagsOf(member.places.every((p) => p.file.test) ? ['test'] : [], this.frameworks.memberTags(member, entry)),
       metrics: memberMetrics(kind, d, complexity, params),
     });
     node.declaredType = member.kind === 'field' ? decl.type : undefined;
@@ -514,9 +534,10 @@ class Model {
       extraLocations: others.map((p) => this.location(p.file, p.member.line, p.member.endLine)).filter(Boolean),
       attributes: [...new Set(fn.places.flatMap((p) => p.member.attributes ?? []))],
       doc: fn.places.map((p) => p.member.doc).find(Boolean) ?? undefined,
-      tags: fn.places.every((p) => p.file.test) ? ['test'] : undefined,
+      tags: tagsOf(fn.places.every((p) => p.file.test) ? ['test'] : [], this.frameworks.functionTags(fn)),
       metrics: memberMetrics(fn.kind, d, complexity, decl.params),
     });
+    if (node.tags?.includes('entrypoint')) holder.entry = true;
     node.declaredType = fn.kind === 'variable' ? decl.type : fn.kind === 'typeAlias' ? decl.target : undefined;
     node.returnType = decl.returns ?? undefined;
     node.paramTypes = decl.params?.map((p) => p.type);
@@ -547,6 +568,11 @@ class Model {
 }
 
 // --------------------------------------------------------------------------------------------- helpers
+
+function tagsOf(...lists) {
+  const tags = [...new Set(lists.flat())].sort();
+  return tags.length ? tags : undefined;
+}
 
 /** Whether a type has anything in the files analyzed (not only in headers read as context). */
 function hasOwnContent(entry) {

@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(frameworks CXX)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
+qt_add_executable(cart qt/cart.cpp qt/main.cpp)
+target_link_libraries(cart PRIVATE Qt6::Widgets)
+add_executable(cart_tests tests/gtest_test.cpp tests/catch_test.cpp tests/boost_test.cpp tests/qt_test.cpp)
+target_link_libraries(cart_tests PRIVATE GTest::gtest_main Qt6::Test)
