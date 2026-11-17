@@ -9,6 +9,12 @@
   - Tests over a list of types (`TEST_CASE_TEMPLATE`, `TEMPLATE_TEST_CASE`) are tests on the map and no longer hide the tests after them.
   - `__attribute__((fallthrough))` marks a case that runs on by intent, a function used only by a macro with `"\n"` in its body is not reported as unused, and a file starting with a byte order mark keeps its first line.
   - Large repositories: include guards are no longer treated as macros to apply. With 20,000 headers, preparing each file took about 180 times longer than it should.
+- **C and C++: projects.**
+  - CMake targets made in a loop or by the project's own function (`foreach(t …) add_executable(${t}_test …)`, googletest's `cxx_library(gtest …)`) are projects under their real names. In 0.5.0 they became one project with an unprintable name: fmt now shows its 36 targets, not 16, and googletest its libraries and tests.
+  - Opening an Unreal `.uproject` maps the project (it gave an empty map), and a C++ solution in the `.slnx` format is accepted.
+  - A solution kept apart from its code says which folder to open, where it used to give an empty map without a word.
+  - A CMake file with a no-break space between arguments no longer stops the analysis, `CMAKE_CURRENT_LIST_DIR` is right inside an included file, and dependencies commented out in an Unreal `Build.cs` are no longer shown as libraries.
+  - Large repositories: files are assigned to projects through an index of folders. 40,000 files in 400 projects took 30 s, now 0.2 s.
 
 ## 0.5.0
 

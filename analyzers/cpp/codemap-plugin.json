@@ -15,7 +15,7 @@
     "envVar": "CODEMAP_NODE",
     "help": "C and C++ need Node.js 18 or newer (https://nodejs.org); or set CODEMAP_NODE to the node executable."
   },
-  "inputs": "a CMakeLists.txt, .vcxproj, .sln, .uproject, .c, .cpp or .h file",
+  "inputs": "a CMakeLists.txt, .vcxproj, .sln, .slnx, .uproject, .c, .cpp or .h file",
   "markers": "CMakeLists.txt, .vcxproj, .uproject, meson.build, Makefile or .c / .cpp files",
   "detect": {
     "markers": [
@@ -51,6 +51,7 @@
       "CMakeLists.txt",
       "*.vcxproj",
       "*.sln",
+      "*.slnx",
       "*.uproject",
       "*.c",
       "*.cc",
