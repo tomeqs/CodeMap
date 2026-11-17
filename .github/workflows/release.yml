@@ -29,6 +29,8 @@ jobs:
           node-version: 22
       - name: TypeScript plugin
         run: npm ci --prefix analyzers/typescript && npm test --prefix analyzers/typescript
+      - name: C / C++ plugin
+        run: npm ci --prefix analyzers/cpp && npm test --prefix analyzers/cpp
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -77,8 +79,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: TypeScript plugin (shipped next to the executable, with its compiler)
-        run: npm ci --prefix analyzers/typescript
+      - name: TypeScript and C / C++ plugins (shipped next to the executable, with the TypeScript compiler and tree-sitter)
+        run: |
+          npm ci --prefix analyzers/typescript
+          npm ci --prefix analyzers/cpp
 
       - uses: actions/setup-python@v5
         if: matrix.smoke
@@ -105,6 +109,8 @@ jobs:
           grep -q '"py:project:shop-domain"' smoke-mixed/samples.codemap.json
           "$exe" analyzers/python/test/fixtures/mini -o smoke-py -f json -q
           grep -q '"py:mini:src/mini/orders/service.py#OrderService.place"' smoke-py/mini.codemap.json
+          "$exe" analyzers/cpp/test/fixtures/mini -o smoke-cpp -f json -q
+          grep -q '"cpp:shop_domain:shop::Order::addLine(const Product&,int)"' smoke-cpp/mini.codemap.json
           # The MCP server, as an agent uses it: analysis, findings, proposals, a diagram and a picture of the map.
           node tests/mcp-smoke.mjs "$exe"
 
@@ -195,9 +201,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Pack dotnet tool (with the TypeScript plugin)
+      - name: Pack dotnet tool (with the TypeScript and C / C++ plugins)
         run: |
           npm ci --prefix analyzers/typescript
+          npm ci --prefix analyzers/cpp
           dotnet pack src/CodeMap.Cli -c Release -p:Version=${{ steps.version.outputs.version }} -o dist
 
       - uses: actions/download-artifact@v4

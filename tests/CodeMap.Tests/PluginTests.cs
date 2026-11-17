@@ -6,12 +6,12 @@ using CodeMap.Model;
 namespace CodeMap.Tests;
 
 /// <summary>
-/// Runs only where Node.js is installed (and, for the TypeScript plugin, its npm install was done; with python, where a
-/// Python the Python plugin accepts is found too); CI requires them all.
+/// Runs only where Node.js is installed (and, for the TypeScript and C / C++ plugins, their npm install was done; with
+/// python, where a Python the Python plugin accepts is found too); CI requires them all.
 /// </summary>
 public sealed class NodeFactAttribute : FactAttribute
 {
-    public NodeFactAttribute(bool typescript = false, bool python = false)
+    public NodeFactAttribute(bool typescript = false, bool python = false, bool cpp = false)
     {
         if (python && Environment.GetEnvironmentVariable("CODEMAP_REQUIRE_PYTHON") != "1" && PythonFactAttribute.Missing() is { } missing)
         {
@@ -23,6 +23,8 @@ public sealed class NodeFactAttribute : FactAttribute
         if (RuntimeLocator.SearchPath("node") == null) Skip = "Node.js is not installed.";
         else if (typescript && !Directory.Exists(Path.Combine(GoldenTests.RepoRoot(), "analyzers", "typescript", "node_modules", "typescript")))
             Skip = "Run npm install in analyzers/typescript.";
+        else if (cpp && !Directory.Exists(Path.Combine(GoldenTests.RepoRoot(), "analyzers", "cpp", "node_modules", "web-tree-sitter")))
+            Skip = "Run npm ci in analyzers/cpp.";
     }
 }
 
@@ -326,6 +328,59 @@ public class PluginTests
     }
 
     internal static string PythonFixture(string name) => Path.Combine(GoldenTests.RepoRoot(), "analyzers", "python", "test", "fixtures", name);
+
+    internal static string CppFixture(string name) => Path.Combine(GoldenTests.RepoRoot(), "analyzers", "cpp", "test", "fixtures", name);
+
+    [NodeFact(cpp: true)]
+    public void The_cpp_plugin_maps_a_cmake_project_and_a_c_library()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var fixture = CppFixture("mini");
+        var cpp = registry.Find("cpp")!;
+        Assert.True(cpp.Detect(fixture, CancellationToken.None));
+        Assert.Equal("C/C++", cpp.Info.Name);
+
+        var graph = CodeMapAnalyzer.Analyze(fixture, registry, NoGit);
+
+        Assert.Empty(graph.Analysis.Warnings);
+        Assert.Equal(new[] { "cpp" }, graph.Source.Languages!.Select(l => l.Id));
+        const string order = "cpp:shop_domain:shop::Order";
+        Assert.Equal(NodeLevels.Type, NodeLevels.Of(graph.Node(order)));
+        Assert.Equal("cpp:ns:shop_domain/shop", graph.Node(order).Parent);
+        var addLine = graph.Node(order + "::addLine(const Product&,int)");
+        Assert.Equal(NodeLevels.Member, NodeLevels.Of(addLine));
+        Assert.Equal("src/order.cpp", addLine.Location!.File);
+        Assert.Equal("include/shop/order.h", Assert.Single(addLine.ExtraLocations!).File);
+        Assert.Equal(NodeKinds.Interface, graph.Node("cpp:shop_domain:shop::PaymentGateway").Kind);
+        graph.AssertEdge("cpp:project:shop_cli", EdgeKinds.ProjectReference, "cpp:project:shop_domain");
+        graph.AssertEdge("cpp:project:shop_cli", EdgeKinds.PackageReference, "cpp:lib:fmt::fmt");
+        Assert.Contains(Tags.TestProject, graph.Node("cpp:project:shop_tests").Tags);
+        Assert.Equal("struct", graph.Node("cpp:legacy:ledger").Kind);
+
+        // Every node passed the plugin checks: ids with the prefix, known levels, parents that exist.
+        Assert.All(graph.Nodes.Where(n => n.Language == null && n.Kind != NodeKinds.Package), n => Assert.StartsWith("cpp:", n.Id));
+    }
+
+    [NodeFact(cpp: true)]
+    public void A_visual_studio_cpp_solution_is_mapped_by_the_cpp_plugin()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(Path.Combine(CppFixture("msbuild"), "Game.sln"), registry, NoGit);
+
+        Assert.Equal(new[] { "cpp:project:Engine", "cpp:project:Game" }, graph.Nodes.Where(n => n.Kind == NodeKinds.Project).Select(n => n.Id).Order());
+        graph.AssertEdge("cpp:project:Game", EdgeKinds.ProjectReference, "cpp:project:Engine");
+    }
+
+    [NodeFact(cpp: true)]
+    public void An_unreal_project_is_cpp_and_its_build_scripts_are_not_csharp()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(CppFixture("unreal"), registry, NoGit);
+
+        Assert.Equal(new[] { "cpp" }, graph.Source.Languages!.Select(l => l.Id));
+        Assert.Equal(new[] { "cpp:project:ShopCore", "cpp:project:ShopGame" }, graph.Nodes.Where(n => n.Kind == NodeKinds.Project).Select(n => n.Id).Order());
+        Assert.Empty(graph.Analysis.Warnings);
+    }
 
     [PythonFact]
     public void The_python_plugin_maps_a_project()
