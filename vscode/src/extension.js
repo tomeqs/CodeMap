@@ -461,7 +461,8 @@ class CodeMapController {
       return null;
     }
 
-    let candidates = await vscode.workspace.findFiles('**/*.{sln,slnx,slnf}', EXCLUDE, 50);
+    // A solution with no C# project in it (a Visual Studio C++ one) is not a C# map: its folder is.
+    let candidates = (await vscode.workspace.findFiles('**/*.{sln,slnx,slnf}', EXCLUDE, 50)).filter((uri) => listsCSharpProjects(uri.fsPath));
     if (!candidates.length) candidates = await vscode.workspace.findFiles('**/*.csproj', EXCLUDE, 200);
     const paths = candidates.map((uri) => uri.fsPath).sort((a, b) => depth(a) - depth(b) || a.localeCompare(b));
     const others = paths.length ? [(await this.hasScripts()) && 'TypeScript / JavaScript', (await this.hasPython()) && 'Python'].filter(Boolean) : [];
@@ -496,6 +497,19 @@ class CodeMapController {
     const roots = markers.map((uri) => path.dirname(uri.fsPath) + path.sep);
     const sources = await vscode.workspace.findFiles(SCRIPT_SOURCES, SCRIPT_EXCLUDE, 500);
     return sources.some((uri) => isSourceFile(vscode.workspace.asRelativePath(uri.fsPath, false)) && roots.some((root) => uri.fsPath.startsWith(root)));
+  }
+}
+
+/**
+ * Whether a solution (.sln, .slnx, .slnf) is a C# map: it names a .csproj, or no project at all (one with only .vcxproj
+ * projects is a C++ solution). An unreadable one is offered, so CodeMap reports why.
+ */
+function listsCSharpProjects(file) {
+  try {
+    const text = fs.readFileSync(file, 'utf8');
+    return /\.csproj\b/i.test(text) || !/\.\w+proj\b/i.test(text);
+  } catch {
+    return true;
   }
 }
 
@@ -595,4 +609,4 @@ function extensionVersion(context) {
 
 function deactivate() {}
 
-module.exports = { activate, deactivate, CodeMapController, fingerprint, isSourceFile };
+module.exports = { activate, deactivate, CodeMapController, fingerprint, isSourceFile, listsCSharpProjects };

@@ -18,6 +18,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
 
     private readonly FolderFilter _folders;
     private readonly System.Text.RegularExpressions.Regex[] _excluded;
+    private readonly MarkerNames _markers;
 
     public ExternalProcessAnalyzer(PluginManifest manifest)
     {
@@ -25,6 +26,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
         Info = manifest.ToLanguageInfo();
         _folders = new FolderFilter(manifest.Detect.IgnoreDirs, manifest.Detect.IgnoreMarkers);
         _excluded = manifest.Detect.ExcludeFiles.Select(FolderFilter.Wildcard).ToArray();
+        _markers = new MarkerNames(manifest.Detect.Markers);
         var seconds = Environment.GetEnvironmentVariable("CODEMAP_PLUGIN_TIMEOUT");
         if (int.TryParse(seconds, out var s) && s > 0) Timeout = TimeSpan.FromSeconds(s);
     }
@@ -48,7 +50,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
     /// </summary>
     public bool Detect(string directory, CancellationToken ct)
     {
-        var markers = new HashSet<string>(Manifest.Detect.Markers, StringComparer.OrdinalIgnoreCase);
+        var markers = _markers;
         var sources = new HashSet<string>(Manifest.Detect.Sources, StringComparer.OrdinalIgnoreCase);
         if (Manifest.Detect.WithoutMarker && SourcesIn(directory, sources)) return true;
         var pending = new Stack<(string Dir, bool InProject)>();
@@ -83,7 +85,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
     /// A folder inside a project (src/ of a package) has its marker above it. Looks up to the repository root
     /// (a folder with .git, checked too) and stops before the home folder, as the plugins do.
     /// </summary>
-    private static bool MarkerAbove(string directory, HashSet<string> markers)
+    private static bool MarkerAbove(string directory, MarkerNames markers)
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         for (var dir = Directory.GetParent(Path.GetFullPath(directory)); dir != null; dir = dir.Parent)
@@ -105,7 +107,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
 
     public IEnumerable<(string File, string Kind)> MarkersIn(string directory) =>
         Directory.EnumerateFiles(directory)
-            .Where(f => Manifest.Detect.Markers.Contains(Path.GetFileName(f), StringComparer.OrdinalIgnoreCase))
+            .Where(f => _markers.Contains(Path.GetFileName(f)))
             .Select(f => (f, "project"));
 
     public bool IsWatched(string path)
@@ -113,7 +115,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
         var name = Path.GetFileName(path);
         var sources = new HashSet<string>(Manifest.Detect.Sources, StringComparer.OrdinalIgnoreCase);
         if (sources.Contains(Path.GetExtension(name))) return IsSource(path, sources); // not what excludeFiles names (.d.ts, .min.js…)
-        return Manifest.Detect.Markers.Contains(name, StringComparer.OrdinalIgnoreCase) || Manifest.Detect.Inputs.Any(p => Matches(p, name)); // tsconfig.app.json…
+        return _markers.Contains(name) || Manifest.Detect.Inputs.Any(p => Matches(p, name)); // tsconfig.app.json…
     }
 
     public IReadOnlyCollection<string> IgnoredFolders => Manifest.Detect.IgnoreDirs;
@@ -269,4 +271,28 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
 
     /// <summary>File name against a pattern with * wildcards ("*.ts", "tsconfig.*.json").</summary>
     internal static bool Matches(string pattern, string name) => FolderFilter.Wildcard(pattern).IsMatch(name);
+
+    /// <summary>
+    /// Project file names: exact ("package.json") or with * wildcards for files named after the project
+    /// ("*.vcxproj", "*.Build.cs"). Case-insensitive.
+    /// </summary>
+    private sealed class MarkerNames
+    {
+        private readonly HashSet<string> _exact = new(StringComparer.OrdinalIgnoreCase);
+        private readonly System.Text.RegularExpressions.Regex[] _patterns;
+
+        public MarkerNames(IEnumerable<string> markers)
+        {
+            var patterns = new List<System.Text.RegularExpressions.Regex>();
+            foreach (var marker in markers)
+            {
+                if (marker.Contains('*')) patterns.Add(FolderFilter.Wildcard(marker));
+                else _exact.Add(marker);
+            }
+
+            _patterns = patterns.ToArray();
+        }
+
+        public bool Contains(string name) => _exact.Contains(name) || _patterns.Any(p => p.IsMatch(name));
+    }
 }

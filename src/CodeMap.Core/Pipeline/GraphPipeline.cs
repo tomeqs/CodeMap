@@ -117,6 +117,8 @@ public static class GraphPipeline
         {
             var language = registry.Languages.FirstOrDefault(l => l.CanAnalyzeFile(full));
             if (language != null) return new List<ILanguageAnalyzer> { language };
+            if (Path.GetExtension(full).ToLowerInvariant() is ".sln" or ".slnx" or ".slnf")
+                throw new ArgumentException($"'{Path.GetFileName(full)}' lists no project CodeMap can read (C# reads the .csproj projects of a solution). Analyze its folder instead.");
             throw new ArgumentException($"Unsupported input '{path}'. Use {string.Join(", ", registry.Languages.Select(l => l.Info.Inputs))} or a directory.");
         }
 

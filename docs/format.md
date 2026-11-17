@@ -43,7 +43,7 @@ JSON Schema: [`codemap.schema.json`](codemap.schema.json).
 | `signature` | | deklaracja w składni C# (`public Task<Order?> FindAsync(Guid id, CancellationToken ct = default)`); dla projektów: SDK · TFM · OutputType; dla paczek: wersja |
 | `baseType` | | pełna nazwa klasy bazowej (także zewnętrznej, np. `Microsoft.AspNetCore.Mvc.ControllerBase`) |
 | `location` | | `{ file, line, endLine }`; `file` jest względny do `source.root`, z `/` jako separatorem; linie liczone od 1 |
-| `extraLocations` | | pozostałe deklaracje typów `partial` |
+| `extraLocations` | | pozostałe deklaracje: typów `partial` w C#; w innych językach także deklaracje składowych (przeciążenia w TypeScripcie, setter właściwości w Pythonie, w C++ deklaracja w nagłówku obok definicji w pliku `.cpp`) |
 | `attributes` | | nazwy atrybutów bez sufiksu `Attribute` (`ApiController`, `Fact`) |
 | `tags` | | role i wnioski (patrz niżej) |
 | `doc` | | pierwsze zdania `<summary>` z dokumentacji XML |

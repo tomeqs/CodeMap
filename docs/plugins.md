@@ -72,11 +72,11 @@ chyba że wskazano inny w ustawieniu `codemap.nodePath` albo w zmiennej `CODEMAP
 | `runtime.minVersion` | najstarsza wersja: główna (`18`) albo główna.poboczna (`"3.9"`); czytana z `--version` (stdout albo stderr). Program, który nie poda wersji (np. alias Microsoft Store w Windows), się nie liczy |
 | `runtime.candidates` | polecenia do sprawdzenia po kolei, każde jako program i argumenty: `[["python3"], ["python"], ["py", "-3"]]`; pierwsze, które działa i jest dość nowe, zastępuje `command[0]` (z argumentami). Bez nich – sam `runtime.name` |
 | `inputs`, `markers` | słowa do komunikatów („Use … or a directory”, „No … found”) |
-| `detect.markers` | pliki projektu: folder zawiera kod języka, gdy pod takim plikiem są pliki źródłowe |
+| `detect.markers` | pliki projektu: folder zawiera kod języka, gdy pod takim plikiem są pliki źródłowe; nazwy dokładne (`package.json`) albo z `*` dla plików nazwanych od projektu (`*.vcxproj`, `*.Build.cs`) |
 | `detect.sources` | rozszerzenia plików źródłowych |
 | `detect.excludeFiles` | pliki z rozszerzeniem źródłowym, które nie są kodem, z `*` (`*.d.ts`, `*.min.js`, `*_pb2.py`) |
 | `detect.withoutMarker` | `true`: pliki źródłowe leżące wprost w analizowanym folderze liczą się też bez pliku projektu (folder skryptów); głębsze nadal go potrzebują, więc pojedynczy skrypt w repozytorium innego języka go nie przejmuje |
-| `detect.inputs` | wzorce nazw plików, które można podać wprost (`*.ts`, `package.json`) |
+| `detect.inputs` | wzorce nazw plików, które można podać wprost (`*.ts`, `package.json`). Plik bierze pierwszy język, który go przyjmuje; C# nie przyjmuje solucji (`.sln`, `.slnx`, `.slnf`), która wymienia projekty, ale żadnego `.csproj`, więc solucja Visual Studio z samymi projektami C++ (`.vcxproj`) trafia do języka, który ma `*.sln` w `inputs`; solucja mieszana zostaje przy C# z ostrzeżeniem, że projekty C++ są na mapie folderu |
 | `detect.ignoreDirs` | foldery, do których wykrywanie, przeglądarka folderów i odświeżanie na żywo nie zaglądają, z `*` (`*.egg-info`); foldery z kropką są pomijane zawsze. Dotyczą wszystkich języków, więc nie wpisuj nazw, pod którymi inny język trzyma kod |
 | `detect.ignoreMarkers` | pliki, które wykluczają swój folder, jakkolwiek się nazywa (`pyvenv.cfg`: środowisko wirtualne Pythona) |
 | `display` | jak mapa nazywa poziomy tego języka i kod spoza analizy (trafia do `source.languages`) |

@@ -94,7 +94,7 @@ export class DetailsPanel {
             h('a', { href: '#', title: 'Copy path', onClick: (e) => copyText(e, `${abs}:${node.location.line}`) }, 'copy'),
           ),
       );
-      if (node.extraLocations?.length) body.append(h('div', { class: 'small faint' }, `+ ${node.extraLocations.length} more partial declaration(s): `, node.extraLocations.map((l) => l.file).join(', ')));
+      if (node.extraLocations?.length) body.append(h('div', { class: 'small faint' }, `+ ${node.extraLocations.length} more declaration(s): `, node.extraLocations.map((l) => l.file).join(', ')));
     }
 
     const chips = [...(node.tags ?? []), ...(node.attributes ?? []).map((a) => '[' + a + ']')];

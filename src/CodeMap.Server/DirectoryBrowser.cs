@@ -72,6 +72,7 @@ public static class DirectoryBrowser
             if (!Directory.Exists(candidate)) continue;
             var solutions = Directory.EnumerateFiles(candidate)
                 .Where(f => f.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+                .Where(f => registry.Languages.Any(l => l.CanAnalyzeFile(f))) // not a solution nothing here reads (C++ only)
                 .ToList();
             // Prefer the new .slnx format when both describe the same solution.
             var distinct = solutions.GroupBy(Path.GetFileNameWithoutExtension, StringComparer.OrdinalIgnoreCase)
