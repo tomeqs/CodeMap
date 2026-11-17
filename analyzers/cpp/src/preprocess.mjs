@@ -61,6 +61,8 @@ export function collectMacros(texts) {
   // decorations too once those macros are.
   const composed = new Map();
   const functionLike = new Map();
+  // `#define SPDLOG_NAMESPACE spdlog`: a name another macro may open as a namespace.
+  const identifiers = new Map();
   const decorate = (name, body) => {
     const words = body.split(/\s+/).filter((w) => KEYWORDS.has(w)).join(' ');
     // Defined differently in different branches (export or import): the safe reading is none of them.
@@ -73,6 +75,7 @@ export function collectMacros(texts) {
     while ((m = re.exec(text))) {
       const name = m[1];
       const body = m[2].replace(/\\\r?\n/g, ' ').replace(/\/\*.*?\*\/|\/\/.*$/g, '').trim();
+      if (/^[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*$/.test(body)) identifiers.set(name, identifiers.has(name) && identifiers.get(name) !== body ? null : body);
       const expansion = body && (namespaceExpansion(body) ?? templateHeader(body) ?? keywordMacro(body, name));
       if (expansion) {
         if (!namespaces.has(name)) namespaces.set(name, expansion);
@@ -118,6 +121,18 @@ export function collectMacros(texts) {
       }
     }
   }
+
+  // A macro naming a namespace (spdlog: `namespace SPDLOG_NAMESPACE {` behind SPDLOG_NAMESPACE_BEGIN) is that name
+  // everywhere, or the code in it and the calls naming it (`spdlog::info`) would not meet.
+  const named = new Set();
+  const nameOf = (w) => (identifiers.get(w) && !KEYWORDS.has(identifiers.get(w)) ? identifiers.get(w) : null);
+  for (const [name, expansion] of namespaces) {
+    if (!/\bnamespace\b/.test(expansion)) continue;
+    namespaces.set(name, expansion.replace(/\bnamespace\s+([A-Za-z_]\w*)/g, (all, w) => (nameOf(w) ? (named.add(w), `namespace ${nameOf(w)}`) : all)));
+  }
+
+  for (const text of texts) for (const m of text.matchAll(/\bnamespace\s+([A-Z_][A-Z0-9_]*)\s*\{/g)) if (nameOf(m[1])) named.add(m[1]);
+  for (const name of named) if (!namespaces.has(name)) namespaces.set(name, nameOf(name).padEnd(name.length));
 
   // A namespace macro is not a decoration, whatever another branch defines it as.
   for (const name of namespaces.keys()) decorations.delete(name);

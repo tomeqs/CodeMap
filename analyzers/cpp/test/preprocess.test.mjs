@@ -62,6 +62,16 @@ test('a namespace macro naming its inline namespace with another macro, or openi
   assert.ok(!macros.namespaces.has('COMPUTED') && !macros.decorations.has('BEGIN_C_DECLS'));
 });
 
+test('a macro naming a namespace is that name everywhere: in the namespace macro and in qualified names', () => {
+  // spdlog: `#define SPDLOG_NAMESPACE_BEGIN namespace SPDLOG_NAMESPACE {`; calls say spdlog::info.
+  const macros = collectMacros(['#ifndef SPDLOG_NAMESPACE\n#define SPDLOG_NAMESPACE spdlog\n#endif\n#define SPDLOG_NAMESPACE_BEGIN namespace SPDLOG_NAMESPACE {\n#define SPDLOG_NAMESPACE_END }\n#define LEVEL 3\n']);
+  assert.equal(macros.namespaces.get('SPDLOG_NAMESPACE_BEGIN'), 'namespace spdlog {');
+  assert.equal(macros.namespaces.get('SPDLOG_NAMESPACE'), 'spdlog'.padEnd(16));
+  assert.ok(!macros.namespaces.has('LEVEL'));
+  const { text } = preprocess('SPDLOG_NAMESPACE_BEGIN\nvoid f() { SPDLOG_NAMESPACE::info(); }\nSPDLOG_NAMESPACE_END\n', { macros });
+  assert.equal(text.split('\n')[1], 'void f() { spdlog          ::info(); }');
+});
+
 test('a macro standing for a template header is expanded, so the class after it stays a class', () => {
   // nlohmann/json: basic_json, the library's main class, was missing from the map.
   const macros = collectMacros(['#define TPL_DECLARATION \\\n  template<template<typename, typename...> class ObjectType, \\\n           class StringType>\n#define TPL_WITH_REST template<class T> int\n']);

@@ -50,6 +50,8 @@ class Resolver {
     this.byName = new Map(); // simple type name → [entries], every project
     this.free = new Map(); // project id → Map(namespace → Map(name → [function entries]))
     this.declaredNames = new Set();
+    // Values of unscoped enums by name: `COL_COUNT` names its enum as `Columns::COL_COUNT` would.
+    this.enumValues = new Map();
     for (const project of model.projects) {
       const seen = new Set([project]);
       const queue = [project];
@@ -64,6 +66,13 @@ class Resolver {
         if (!this.byName.has(entry.name)) this.byName.set(entry.name, []);
         this.byName.get(entry.name).push(entry);
         for (const m of entry.members) this.declaredNames.add(m.name);
+        for (const { decl } of entry.decls) {
+          if (decl.kind !== 'enum' || decl.scoped) continue;
+          for (const value of decl.values ?? []) {
+            if (!this.enumValues.has(value)) this.enumValues.set(value, new Set());
+            this.enumValues.get(value).add(entry);
+          }
+        }
       }
     }
 
@@ -88,6 +97,23 @@ class Resolver {
     }
 
     for (const fn of this.model.functions) if (fn.id) this.functionEdges(fn);
+  }
+
+  /**
+   * The unscoped enum a bare value names: one nested in the class or its outer classes, else the one of the
+   * file's own or of the visible projects (when exactly one fits).
+   */
+  enumOfValue(name, ctx) {
+    const all = [...(this.enumValues.get(name) ?? [])].filter((en) => en.id && (!en.local || en.decls.some((d) => d.file === ctx.file)));
+    if (!all.length) return null;
+    for (let cls = ctx.cls; cls; cls = cls.outer) {
+      const nested = all.find((en) => en.outer === cls);
+      if (nested) return nested;
+    }
+
+    const visible = this.visible.get(ctx.project.id) ?? [ctx.project];
+    const fits = all.filter((en) => !en.outer && visible.includes(en.project));
+    return fits.length === 1 ? fits[0] : null;
   }
 
   /**
@@ -750,6 +776,12 @@ class Resolver {
         return;
       }
 
+      const enumeration = this.enumOfValue(e.n, scope.ctx);
+      if (enumeration) {
+        add(enumeration.id, 'uses', line);
+        return;
+      }
+
       this.unknownNames.add(e.n);
       return;
     }
@@ -773,8 +805,11 @@ class Resolver {
       const owner = e.p.length > 1 ? this.lookupType(e.p.slice(0, -1).join('::'), scope.ctx) : null;
       if (owner) {
         const member = this.membersNamed(owner, e.p[e.p.length - 1])[0];
+        // An enumerator: Status::Paid, or Dialog::TAB_UI of an unscoped enum nested in Dialog.
+        const nested = member ? null : [...(this.enumValues.get(e.p[e.p.length - 1]) ?? [])].find((en) => en.outer === owner);
         if (member) add(member.member.id, member.member.kind === 'field' ? 'accesses' : 'uses', line);
-        else if (owner !== scope.ctx.cls) add(owner.id, 'uses', line); // an enumerator: Status::Paid
+        else if (nested) add(nested.id, 'uses', line);
+        else if (owner !== scope.ctx.cls) add(owner.id, 'uses', line);
         return;
       }
 

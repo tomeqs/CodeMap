@@ -232,7 +232,9 @@ function typeSpecifier(node, scope, context, owner, template, access) {
   }
 
   if (kind === 'enum') {
-    type.enumerators = body.namedChildren.filter((c) => c.type === 'enumerator').length;
+    const enumerators = body.namedChildren.filter((c) => c.type === 'enumerator');
+    type.enumerators = enumerators.length;
+    type.values = enumerators.map((e) => e.childForFieldName('name')?.text).filter(Boolean);
   } else {
     type.path = [...(owner ? owner.path : []), type.name ?? `(anonymous@${type.line})`];
     classBody(body, type, scope, context);
@@ -772,7 +774,8 @@ function innermostIdentifier(declarator) {
   let d = declarator;
   for (let guard = 0; d && guard < 20; guard++) {
     if (d.type === 'identifier' || d.type === 'field_identifier') return d;
-    const wrapper = ['parenthesized_declarator', 'pointer_declarator', 'reference_declarator', 'array_declarator', 'attributed_declarator', 'init_declarator'].includes(d.type);
+    // variadic_declarator: `Args&&... args` (the pack's name is not part of its type, nor of the function's id).
+    const wrapper = ['parenthesized_declarator', 'pointer_declarator', 'reference_declarator', 'array_declarator', 'attributed_declarator', 'init_declarator', 'variadic_declarator'].includes(d.type);
     const next = d.childForFieldName('declarator') ?? (wrapper ? d.namedChildren.find((c) => c.type.endsWith('declarator') || c.type === 'identifier') : null);
     if (!next) return null;
     d = next;

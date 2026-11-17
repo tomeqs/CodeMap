@@ -161,6 +161,31 @@ test('a static constant of a header is read by the files including it; their own
   }
 });
 
+test('a value of an unscoped enum uses its enum, bare or qualified by the class around the enum', () => {
+  // qBittorrent: `enum AdvSettingsCols { PROPERTY, VALUE, COL_COUNT };` read as setColumnCount(COL_COUNT).
+  const { dir, dispose } = scratch({
+    'table.cpp': [
+      'enum Columns { NAME, SIZE, COL_COUNT };',
+      'class Dialog {',
+      ' public:',
+      '  enum Tabs { TAB_UI, TAB_NET };',
+      '  void open(int tab);',
+      '};',
+      'void Dialog::open(int tab) { int n = COL_COUNT; if (tab == TAB_UI) n = SIZE; }',
+      'void show(Dialog& d) { d.open(Dialog::TAB_NET); }',
+    ].join('\n'),
+  });
+  try {
+    const m = run(dir);
+    const name = basename(dir);
+    assert.ok(m.hasEdge(`cpp:${name}:Dialog::open(int)`, 'uses', `cpp:${name}:Columns`), m.edgesFrom(`cpp:${name}:Dialog::open(int)`, 'uses').join(', '));
+    assert.ok(m.hasEdge(`cpp:${name}:Dialog::open(int)`, 'uses', `cpp:${name}:Dialog::Tabs`));
+    assert.ok(m.hasEdge(`cpp:${name}:file:table#(global)::show(Dialog&)`, 'uses', `cpp:${name}:Dialog::Tabs`));
+  } finally {
+    dispose();
+  }
+});
+
 test('names are looked up through namespaces, using declarations and directives, and across projects', () => {
   const m = run('mini');
   assert.ok(m.hasEdge('cpp:shop_domain:shop::Order::total()', 'calls', 'cpp:shop_domain:file:include/shop/money#shop::add(long,long)'));

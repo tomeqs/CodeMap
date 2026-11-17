@@ -160,6 +160,18 @@ test('conversion operators are methods: defined in the class, or declared there 
   }
 });
 
+test('the name of a parameter pack is not part of the function id', () => {
+  // spdlog's create(std::string,SinkArgs&&...sink_args) changed id whenever the pack was renamed.
+  const { dir, dispose } = scratch({ 'log.h': 'template <typename... Args>\nvoid log(const char* fmt, Args&&... args) {}' });
+  try {
+    const map = run(dir);
+    const name = dir.split(/[\\/]/).pop();
+    assert.equal(map.node(`cpp:${name}:file:log#(global)::log(const char*,Args&&...)`).kind, 'function');
+  } finally {
+    dispose();
+  }
+});
+
 test('ids do not depend on the folder analyzed', () => {
   const whole = run('mini');
   const part = run(join(fixtures, 'mini', 'src'), { root: join(fixtures, 'mini') });
