@@ -25,6 +25,7 @@ const MAKERS = new Set(['make_unique', 'make_shared', 'make_unique_for_overwrite
 export function resolveReferences(model, graph, { log = () => {}, stats = false, unresolvedFile = null } = {}) {
   const resolver = new Resolver(model, graph);
   resolver.run();
+  resolver.markMaybeUsed();
   if (stats) {
     const s = resolver.counts;
     const pct = (a, b) => (b ? ((100 * a) / b).toFixed(1) : '0.0');
@@ -42,6 +43,8 @@ class Resolver {
     this.counts = { calls: 0, resolved: 0, candidates: 0, candidateResolved: 0, ambiguous: 0 };
     this.diagnostics = [];
     this.unresolved = [];
+    // Names called or read on something the resolver could not type (template code: `t.helper()`, `x.m_value`).
+    this.unknownNames = new Set();
     this.visible = new Map();
     this.byName = new Map(); // simple type name → [entries], every project
     this.free = new Map(); // project id → Map(namespace → Map(name → [function entries]))
@@ -84,6 +87,21 @@ class Resolver {
     }
 
     for (const fn of this.model.functions) if (fn.id) this.functionEdges(fn);
+  }
+
+  /**
+   * A private member whose name is called or read on something the resolver could not type is tagged maybe-used,
+   * so it is not reported as unused on no evidence (as the Python plugin does): in template code most calls go
+   * through a type parameter (`j.template get<T>()`, `m_data.m_value`), and a C++ resolver cannot see through them.
+   */
+  markMaybeUsed() {
+    const mark = (id, name) => {
+      const node = id && this.unknownNames.has(name) ? this.graph.get(id) : null;
+      if (!node || node.accessibility !== 'private' || node.tags?.includes('maybe-used')) return;
+      node.tags = [...(node.tags ?? []), 'maybe-used'].sort();
+    };
+    for (const table of this.model.types.values()) for (const entry of table.values()) for (const m of entry.members) mark(m.id, m.name);
+    for (const fn of this.model.functions) mark(fn.id, fn.name);
   }
 
   // ------------------------------------------------------------------------------------- contexts
@@ -628,6 +646,7 @@ class Resolver {
           if (!target && site.argx) this.connect(source, site.argx, scope);
           if (!target) {
             if (candidate) this.unresolved.push([file.rel, site.line, describe(site.f), receiverType(site.f, scope, this)]);
+            if (name && !external && !std) this.unknownNames.add(name);
             break;
           }
 
@@ -728,6 +747,7 @@ class Resolver {
         return;
       }
 
+      this.unknownNames.add(e.n);
       return;
     }
 
@@ -735,6 +755,7 @@ class Resolver {
       const owner = this.classOf(this.typeOf(e.b, scope));
       const member = owner ? this.membersNamed(owner, e.n)[0] : null;
       if (member) add(member.member.id, member.member.kind === 'field' ? 'accesses' : 'uses', line);
+      else if (!owner) this.unknownNames.add(e.n);
       return;
     }
 

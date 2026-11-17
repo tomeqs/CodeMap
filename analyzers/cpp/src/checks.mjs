@@ -448,6 +448,8 @@ function terminates(node) {
   if (node.type === 'expression_statement') {
     const e = node.namedChild(0);
     if (e?.type === 'call_expression' && NORETURN.test(e.childForFieldName('function')?.text ?? '')) return true;
+    // JSON_THROW(…), FMT_THROW(…): a throw, or an abort with exceptions off; stays a call (see preprocess).
+    if (e?.type === 'call_expression' && /^(?:[A-Z][A-Z0-9_]*_)?THROW$/.test(e.childForFieldName('function')?.text ?? '')) return true;
     // assert(0) / assert(false) / assert(!"unreachable"): it stops the program.
     if (e?.type === 'call_expression' && /^(assert|ASSERT|DCHECK|CHECK|ALWAYS|NEVER|Q_ASSERT|check|ensure|verify)$/.test(e.childForFieldName('function')?.text ?? '') && /^\(\s*(0|false|!\s*"[^"]*")\s*\)$/.test(e.childForFieldName('arguments')?.text ?? '')) return true;
     if (/fall[\s_-]*thr(ough|u)/i.test(node.text)) return true;

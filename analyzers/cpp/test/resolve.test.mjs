@@ -85,6 +85,33 @@ test('no guessing: a call on something of unknown type gives no edge', () => {
   }
 });
 
+test('a private member named by a call or read on something of unknown type is maybe-used, not dead', () => {
+  // nlohmann/json: most calls in template code go through a type parameter; 500 private methods looked unused.
+  const { dir, dispose } = scratch({
+    'a.cpp': [
+      'class Codec {',
+      '  template <typename T> friend void encode(T& codec);',
+      '  void write_header() {}',
+      '  int m_size = 0;',
+      '  void dead() {}',
+      'public:',
+      '  void run() {}',
+      '};',
+      'template <typename T> void encode(T& codec) { codec.write_header(); codec.m_size++; }',
+    ].join('\n'),
+  });
+  try {
+    const m = run(dir);
+    const name = basename(dir);
+    assert.ok(m.node(`cpp:${name}:Codec::write_header()`).tags?.includes('maybe-used'));
+    assert.ok(m.node(`cpp:${name}:Codec::m_size`).tags?.includes('maybe-used'));
+    assert.ok(!m.node(`cpp:${name}:Codec::dead()`).tags?.includes('maybe-used'));
+    assert.ok(!m.node(`cpp:${name}:Codec::run()`).tags?.includes('maybe-used')); // public: never a candidate anyway
+  } finally {
+    dispose();
+  }
+});
+
 test('names are looked up through namespaces, using declarations and directives, and across projects', () => {
   const m = run('mini');
   assert.ok(m.hasEdge('cpp:shop_domain:shop::Order::total()', 'calls', 'cpp:shop_domain:file:include/shop/money#shop::add(long,long)'));

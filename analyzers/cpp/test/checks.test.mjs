@@ -37,6 +37,7 @@ test('each rule reports the lines planted for it, and nothing else', () => {
     'src/checks.cpp:119 return-local-address', // a reference to a local
     'src/checks.cpp:123 leaked-new', // lost; not kept (deleted)
     'src/checks.cpp:128 delete-mismatch', // new int[4] … delete
+    'src/checks.cpp:144 empty-catch', // CHECKS_CATCH(...) {} reads as catch; CHECKS_THROW ends case 1 (no fallthrough)
   ]);
 });
 

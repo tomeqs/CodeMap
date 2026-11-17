@@ -127,3 +127,20 @@ void memory() {
     int* table = new int[4];
     delete table;
 }
+
+#define CHECKS_TRY try
+#define CHECKS_CATCH(exception) catch(exception)
+#define CHECKS_THROW(exception) throw exception
+
+int macros(int kind) {
+    CHECKS_TRY {
+        switch (kind) {
+        case 1:
+            CHECKS_THROW(std::runtime_error("one"));
+        case 2:
+            return 2;
+        }
+    }
+    CHECKS_CATCH(...) {}
+    return 0;
+}

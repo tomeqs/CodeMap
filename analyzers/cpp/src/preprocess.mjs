@@ -5,15 +5,18 @@
  *
  * - every `#if` / `#ifdef` chain keeps one branch (the first; `#if 0` is skipped, `__cplusplus` is defined for
  *   C++ and not for C). Reading every branch leaves unbalanced braces (`#ifdef X` `void f(int a) {` `#else` …).
+ * - `#define` and `#undef`, with their continuation lines: the grammar ends a macro's body at a comment inside
+ *   it, and reads the lines after as code (nlohmann/json's enum macros became functions of the file).
  * - macros that only decorate a declaration: export macros (`class SHOP_API Order`, `SHOP_EXPORT void f()`),
  *   `__declspec(…)`, `__attribute__((…))`, and the project's own `#define`s that expand to nothing or to
  *   keywords (`#define SQLITE_PRIVATE static`: the keyword is put back when it fits);
- * - namespace macros (`#define FMT_BEGIN_NAMESPACE namespace fmt {`) are expanded (on their own line);
+ * - namespace macros (`#define FMT_BEGIN_NAMESPACE namespace fmt {`) and template headers
+ *   (`#define NLOHMANN_BASIC_JSON_TPL_DECLARATION template<…>`) are expanded (on their own line);
  * - Qt and Unreal Engine annotations (`Q_OBJECT`, `signals:`, `UCLASS(…)`, `UPROPERTY(…)` …): blanked, and
  *   returned as annotations of the next declaration, with the `signals:` / `slots:` sections.
  */
 
-const DIRECTIVE = /^\s*#\s*(if|ifdef|ifndef|elif|elifdef|elifndef|else|endif)\b(.*)$/;
+const DIRECTIVE = /^\s*#\s*(if|ifdef|ifndef|elif|elifdef|elifndef|else|endif|define|undef)\b(.*)$/;
 
 /** Annotations kept as the next declaration's attributes (Unreal reflection, Qt meta-object). */
 const ANNOTATIONS_WITH_ARGS = [
@@ -41,17 +44,27 @@ const EXPORT_MACRO = /\b[A-Z][A-Z0-9_]*_(API|EXPORT|EXPORTS|DLL|DLLEXPORT|DECL|E
 /** Keywords a decoration macro may stand for; put back when they fit in the macro's place. */
 const KEYWORDS = new Set(['static', 'extern', 'inline', 'const', 'volatile', 'constexpr', 'virtual', 'explicit', 'register', 'thread_local', 'override', 'final', 'noexcept']);
 const DECORATION = /^(?:\s*(?:__attribute__\s*\(\(.*\)\)|__declspec\s*\([^)]*\)|\[\[.*\]\]|__cdecl|__stdcall|__fastcall|WINAPI|__extension__|__inline|__forceinline|static|extern|inline|const|volatile|constexpr|virtual|explicit|override|final|noexcept|thread_local))*\s*$/;
-const NAMESPACE_BODY = /^(?:(?:inline\s+)?namespace\s+[A-Za-z_][\w:]*\s*\{\s*|\}\s*(?:\/\/.*)?)+$/;
+/** One step of a macro that opens or closes namespaces: `namespace a {`, `inline namespace NAME(TAGS, VERSION) {`, `extern "C" {`, `}`. */
+const NAMESPACE_STEP = /^\s*(?:(inline\s+)?namespace(?:\s+([A-Za-z_][\w:]*)(\s*\((?:[^()]|\([^()]*\))*\))?)?\s*\{|(extern\s*"C(?:\+\+)?"\s*\{)|(\}\s*;?))/;
 
 const blank = (s) => s.replace(/[^\n\r]/g, ' ');
 
 /**
- * Object-like macros of the project that decorate declarations or open and close namespaces, from its headers'
- * `#define`s (`#define SQLITE_API`, `#define FMT_BEGIN_NAMESPACE namespace fmt { inline namespace v10 {`).
+ * Object-like macros of the project that decorate declarations (`decorations`), or open and close namespaces or
+ * stand for a template header (`namespaces`, expanded in place), from its headers' `#define`s (`#define SQLITE_API`,
+ * `#define FMT_BEGIN_NAMESPACE namespace fmt { inline namespace v10 {`, `#define TPL_DECLARATION template<…>`).
  */
 export function collectMacros(texts) {
   const decorations = new Map();
   const namespaces = new Map();
+  // Bodies made of decorations and other macros (`#define JSON_HEDLEY_ALWAYS_INLINE __attribute__((…)) JSON_HEDLEY_INLINE`):
+  // decorations too once those macros are.
+  const composed = new Map();
+  const decorate = (name, body) => {
+    const words = body.split(/\s+/).filter((w) => KEYWORDS.has(w)).join(' ');
+    // Defined differently in different branches (export or import): the safe reading is none of them.
+    decorations.set(name, decorations.has(name) && decorations.get(name) !== words ? '' : words);
+  };
   for (const text of texts) {
     if (!text.includes('define')) continue;
     const re = /^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)(?![\w(])[ \t]*((?:[^\n\\]|\\\r?\n)*)$/gm;
@@ -59,12 +72,40 @@ export function collectMacros(texts) {
     while ((m = re.exec(text))) {
       const name = m[1];
       const body = m[2].replace(/\\\r?\n/g, ' ').replace(/\/\*.*?\*\/|\/\/.*$/g, '').trim();
-      if (body && NAMESPACE_BODY.test(body)) {
-        if (!namespaces.has(name)) namespaces.set(name, body.replace(/\s+/g, ' '));
-      } else if ((body === '' || DECORATION.test(body)) && !/fall[\s_]*thr(ough|u)/i.test(name + ' ' + body)) {
-        const words = body.split(/\s+/).filter((w) => KEYWORDS.has(w)).join(' ');
-        // Defined differently in different branches (export or import): the safe reading is none of them.
-        decorations.set(name, decorations.has(name) && decorations.get(name) !== words ? '' : words);
+      const expansion = body && (namespaceExpansion(body) ?? templateHeader(body) ?? keywordMacro(body, name));
+      if (expansion) {
+        if (!namespaces.has(name)) namespaces.set(name, expansion);
+      } else if (/fall[\s_]*thr(ough|u)/i.test(name + ' ' + body)) {
+        continue;
+      } else if (body === '' || DECORATION.test(body)) {
+        decorate(name, body);
+      } else if (!body.replace(/__attribute__\s*\(\(.*\)\)|__declspec\s*\([^)]*\)|\[\[.*\]\]|\b[A-Za-z_]\w*\b/g, ' ').trim()) {
+        if (!composed.has(name)) composed.set(name, body);
+      }
+    }
+
+    // `#define JSON_CATCH(e) catch(e)`: the call reads as the keyword. Throw macros stay calls: with exceptions
+    // off they do not throw, and the code after them (`FMT_THROW(…); return 0;`) is there for that case.
+    const call = /^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)\([ \t]*([A-Za-z_]\w*)[ \t]*\)[ \t]*catch[ \t]*\([ \t]*([A-Za-z_]\w*)[ \t]*\)[ \t]*$/gm;
+    while ((m = call.exec(text))) {
+      const [, name, param, arg] = m;
+      if (arg === param && !namespaces.has(name)) namespaces.set(name, 'catch'.padEnd(name.length));
+    }
+  }
+
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [name, body] of composed) {
+      if (decorations.has(name)) continue;
+      const words = [];
+      const rest = body.replace(/\b[A-Za-z_]\w*\b/g, (word) => {
+        if (!decorations.has(word)) return word;
+        words.push(decorations.get(word));
+        return '';
+      });
+      if (DECORATION.test(rest)) {
+        decorate(name, [rest, ...words].join(' '));
+        changed = true;
       }
     }
   }
@@ -72,6 +113,55 @@ export function collectMacros(texts) {
   // A namespace macro is not a decoration, whatever another branch defines it as.
   for (const name of namespaces.keys()) decorations.delete(name);
   return { decorations, namespaces };
+}
+
+/**
+ * A macro that stands for `try`, `catch (...)` or an access specifier (`#define JSON_TRY try`,
+ * `#define JSON_PRIVATE_UNLESS_TESTED public`), padded to the macro's length, else null. Left as a name,
+ * `JSON_TRY { … }` is not a statement and the class around it falls apart.
+ */
+function keywordMacro(body, name) {
+  return /^(?:try|public|protected|private)$/.test(body) || /^catch\s*\(\s*\.\.\.\s*\)$/.test(body) ? body.padEnd(name.length) : null;
+}
+
+/**
+ * A macro that stands for a template header (`template<…>` with its brackets balanced and nothing after it), else
+ * null. Left unexpanded, the class after it is read as something else and drops off the map (nlohmann's
+ * `basic_json`).
+ */
+function templateHeader(body) {
+  const m = /^template\s*</.exec(body);
+  if (!m) return null;
+  let depth = 0;
+  for (let i = m[0].length - 1; i < body.length; i++) {
+    if (body[i] === '<') depth++;
+    else if (body[i] === '>' && --depth === 0) return body.slice(i + 1).trim() ? null : body.replace(/\s+/g, ' ');
+  }
+
+  return null;
+}
+
+/**
+ * The body of a macro that only opens and closes namespaces, in a form the parser reads, else null. An inline
+ * namespace named by another macro (nlohmann's `inline namespace NLOHMANN_JSON_NAMESPACE_CONCAT(…) {`) keeps that
+ * macro's name: inline namespaces are not part of the ids anyway. Taking the closing macro without its opening one
+ * would leave the braces unbalanced, so both kinds are read the same way.
+ */
+function namespaceExpansion(body) {
+  const parts = [];
+  let rest = body;
+  while (rest.trim()) {
+    const m = NAMESPACE_STEP.exec(rest);
+    if (!m) return null;
+    const [whole, inline, name, call, externC] = m;
+    if (call && !inline) return null; // a namespace whose name is computed is not one ids could use
+    if (externC) parts.push('extern "C" {');
+    else if (whole.trim().startsWith('}')) parts.push('}');
+    else parts.push(`${inline ? 'inline ' : ''}namespace${name ? ' ' + name : ''} {`);
+    rest = rest.slice(whole.length);
+  }
+
+  return parts.join(' ');
 }
 
 /**
@@ -291,7 +381,7 @@ function replaceOutsideDirectives(text, re, replace) {
   });
 }
 
-/** The project's decoration macros blanked (or their keyword put back), namespace macros expanded on their line. */
+/** The project's decoration macros blanked (or their keyword put back), namespace and template macros expanded on their line. */
 export function applyMacros(text, { decorations, namespaces }) {
   const names = [...decorations.keys(), ...namespaces.keys()];
   if (!names.length) return text;
