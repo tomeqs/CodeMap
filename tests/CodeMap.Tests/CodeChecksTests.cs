@@ -242,4 +242,23 @@ public class CodeChecksTests
         Assert.NotNull(FindingRules.Find("code.blocking-in-async"));
         Assert.Contains("Python", FindingRules.Find("code.empty-catch")!.Detection);
     }
+
+    [NodeFact(cpp: true)]
+    public void Cpp_checks_become_findings_on_nodes_of_the_map()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(PluginTests.CppFixture("checks"), registry, Checks);
+
+        var diagnostics = graph.Analysis.Diagnostics!;
+        Assert.Contains(diagnostics, d => d.Rule == "virtual-call-in-constructor" && d.Node == "cpp:checks:Widget::Widget()");
+        Assert.Contains(diagnostics, d => d.Rule == "delete-mismatch" && d.Node == "cpp:checks:Widget::~Widget()");
+        Assert.Contains(diagnostics, d => d.Rule == "unsafe-c-function" && d.Severity == "warning" && d.Node == "cpp:checks:file:src/c_checks#(global)::read_line(char*,int)");
+        Assert.DoesNotContain(diagnostics, d => d.Location.File.StartsWith("tests/"));
+
+        // Every C / C++ rule is in the catalog, so findings say what it found and why it matters.
+        var findings = FindingsAnalysis.Compute(graph).Findings.Where(f => f.Rule.StartsWith("code.")).ToList();
+        Assert.NotEmpty(findings);
+        Assert.All(findings, f => Assert.NotNull(FindingRules.Find(f.Rule)));
+        Assert.Contains("C and C++", FindingRules.Find("code.float-equality")!.Detection);
+    }
 }

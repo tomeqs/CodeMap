@@ -1,0 +1,5 @@
+project(checks CXX C)
+add_library(checks src/checks.cpp src/c_checks.c)
+target_include_directories(checks PUBLIC include)
+add_executable(checks_tests tests/checks_test.cpp)
+add_test(NAME checks_tests COMMAND checks_tests)

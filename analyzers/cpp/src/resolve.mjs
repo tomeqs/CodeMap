@@ -32,7 +32,7 @@ export function resolveReferences(model, graph, { log = () => {}, stats = false,
   }
 
   if (unresolvedFile) writeFileSync(unresolvedFile, JSON.stringify(resolver.unresolved, null, 1));
-  return resolver.counts;
+  return { ...resolver.counts, diagnostics: resolver.diagnostics };
 }
 
 class Resolver {
@@ -40,6 +40,7 @@ class Resolver {
     this.model = model;
     this.graph = graph;
     this.counts = { calls: 0, resolved: 0, candidates: 0, candidateResolved: 0, ambiguous: 0 };
+    this.diagnostics = [];
     this.unresolved = [];
     this.visible = new Map();
     this.byName = new Map(); // simple type name → [entries], every project
@@ -570,7 +571,9 @@ class Resolver {
 
     for (const place of member.places) {
       const body = place.member.body;
-      if (body) this.bodyEdges(member.id, body, { ...this.contextOf(entry, place.file), cls: entry }, place.member.params ?? decl.params, place.file);
+      if (!body) continue;
+      const special = member.kind === 'constructor' || member.kind === 'destructor' ? { kind: member.kind, entry } : null;
+      this.bodyEdges(member.id, body, { ...this.contextOf(entry, place.file), cls: entry }, place.member.params ?? decl.params, place.file, special);
     }
   }
 
@@ -601,7 +604,7 @@ class Resolver {
     }
   }
 
-  bodyEdges(source, body, ctx, params, file) {
+  bodyEdges(source, body, ctx, params, file, special = null) {
     const locals = new Map();
     for (const p of params ?? []) if (p.name) locals.set(p.name, { ty: p.type });
     for (const local of body.locals) locals.set(local.n, local);
@@ -629,8 +632,17 @@ class Resolver {
           }
 
           if (site.argx) this.connect(source, site.argx, scope);
+          if (special && target.member && file.checked && (site.f.t === 'id' || site.f.t === 'fld' && site.f.b.t === 'this') && isVirtual(target.member) && !this.graph.get(special.entry.id)?.modifiers?.includes('sealed') && !target.member.places.some((p) => (p.member.modifiers ?? []).includes('sealed'))) {
+            // In a constructor or destructor the object is only its own class: a virtual call does not reach overrides.
+            this.diagnostics.push({ rule: 'virtual-call-in-constructor', source: 'codemap', severity: 'warning', category: 'correctness', message: `${target.member.name}() is virtual: called from the ${special.kind} it runs ${special.entry.name}'s version, not a derived class's.`, location: { file: file.rel, line: site.line, endLine: site.line }, column: 1 });
+          }
+
           this.counts.resolved++;
           if (candidate) this.counts.candidateResolved++;
+          if (site.stmt && target.type && file.checked && /(Error|Exception)$/.test(target.type.name)) {
+            this.diagnostics.push({ rule: 'exception-not-thrown', source: 'codemap', severity: 'warning', category: 'exceptions', message: `${target.type.name}(…) makes an exception and drops it: the throw is missing.`, location: { file: file.rel, line: site.line, endLine: site.line }, column: 1 });
+          }
+
           if (target.member) add(target.member.id, 'calls', site.line);
           else if (target.fn) add(target.fn.id, 'calls', site.line);
           else if (target.type) add(target.type.id, 'instantiates', site.line);
