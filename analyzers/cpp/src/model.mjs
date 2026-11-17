@@ -75,13 +75,13 @@ class Model {
 
     entry.decls.push({ file, decl });
     entry.local &&= local;
-    for (const member of decl.members) this.addMember(entry, file, member, member.hasBody);
+    for (const member of decl.members) this.addMember(entry, file, member, member.hasBody, true);
     for (const nested of decl.nested) this.addType(file, nested, entry);
   }
 
   /** A member declared (or defined) in the class body. */
-  addMember(entry, file, member, defined) {
-    const existing = member.kind !== 'field' ? this.matchMember(entry, member, file) : entry.members.find((m) => m.kind === 'field' && m.name === member.name);
+  addMember(entry, file, member, defined, strict = false) {
+    const existing = member.kind !== 'field' ? this.matchMember(entry, member, file, strict) : entry.members.find((m) => m.kind === 'field' && m.name === member.name);
     if (existing) {
       existing.places.push({ file, member, defined });
       return existing;
@@ -93,9 +93,15 @@ class Model {
   }
 
   /** The member a definition (or another declaration) of the same function is: by name and arity, then types. */
-  matchMember(entry, member, file) {
+  matchMember(entry, member, file, strict) {
     const candidates = entry.members.filter((m) => m.kind !== 'field' && m.name === member.name && !m.places.some((p) => p.file === file && p.member.line === member.line));
     if (!candidates.length) return null;
+    // Declarations in a class body (or a second definition of the class): overloads unless the parameters are the same.
+    if (strict) {
+      const key = paramsKey(member.params, true);
+      return candidates.find((m) => paramsKey(m.declaration.params, true) === key && isConst(m.declaration) === isConst(member)) ?? null;
+    }
+
     const arity = member.params ? member.params.length : 0;
     const fits = candidates.filter((m) => fitsArity(m.declaration.params, arity, member.params));
     if (fits.length === 1) return fits[0];

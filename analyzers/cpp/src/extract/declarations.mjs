@@ -1,3 +1,4 @@
+import { collectBody } from './bodies.mjs';
 import { complexityOf } from './complexity.mjs';
 
 /**
@@ -299,6 +300,7 @@ function member(node, type, context, access, section, template, hasBody) {
     signature: signatureOf(node, body),
     doc: docOf(node),
     attributes: claim(context, row(node)),
+    body: body ? collectBody(body, [node.namedChildren.find((c) => c.type === 'field_initializer_list')], parameters) : null,
   });
 }
 
@@ -323,11 +325,13 @@ function functionDefinition(node, scope, context, template) {
   const modifiers = functionModifiers(node);
   const tail = declaratorTail(declarator);
   if (tail.const) modifiers.push('const');
+  const parameters = params(declarator.childForFieldName('parameters'));
   context.facts.functions.push({
     name: qualified.name,
     qualifiers: qualified.qualifiers,
     scope: scope.namespace,
-    params: params(declarator.childForFieldName('parameters')),
+    params: parameters,
+    body: body ? collectBody(body, [node.namedChildren.find((c) => c.type === 'field_initializer_list')], parameters) : null,
     returns: returnType(node, declarator),
     modifiers: [...new Set(modifiers)],
     internal: scope.internal || modifiers.includes('static') && !qualified.qualifiers.length,
@@ -388,6 +392,8 @@ function declaration(node, scope, context, template) {
       line: row(node),
       endLine: endRow(node),
       complexity: init ? complexityOf(init) : 0,
+      // What the initializer names: a table of callbacks, a factory called once.
+      body: init ? collectBody(null, [init]) : null,
       signature: oneLine(node.text).replace(/;$/, '').slice(0, 200),
       doc: docOf(node),
       attributes: claim(context, row(node)),

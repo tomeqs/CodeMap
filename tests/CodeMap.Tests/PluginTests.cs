@@ -356,9 +356,32 @@ public class PluginTests
         graph.AssertEdge("cpp:project:shop_cli", EdgeKinds.PackageReference, "cpp:lib:fmt::fmt");
         Assert.Contains(Tags.TestProject, graph.Node("cpp:project:shop_tests").Tags);
         Assert.Equal("struct", graph.Node("cpp:legacy:ledger").Kind);
+        graph.AssertEdge(order + "::total()", EdgeKinds.Calls, "cpp:shop_domain:file:include/shop/money#shop::add(long,long)");
+        graph.AssertEdge("cpp:shop_cli:file:app/main#app/::main(int,char**)", EdgeKinds.Calls, order + "::create()");
 
         // Every node passed the plugin checks: ids with the prefix, known levels, parents that exist.
         Assert.All(graph.Nodes.Where(n => n.Language == null && n.Kind != NodeKinds.Package), n => Assert.StartsWith("cpp:", n.Id));
+    }
+
+    [NodeFact(cpp: true)]
+    public void Cpp_calls_reach_implementations_through_pure_virtuals_in_call_flows()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(CppFixture("resolve"), registry, NoGit);
+
+        Assert.Empty(graph.Analysis.Warnings);
+        const string pay = "cpp:pay:pay::";
+        graph.AssertEdge(pay + "PaymentService::pay(long)", EdgeKinds.Calls, pay + "Gateway::charge(long)");
+        graph.AssertEdge(pay + "CardGateway::charge(long)", EdgeKinds.Implements, pay + "Gateway::charge(long)");
+        graph.AssertEdge(pay + "CardGateway", EdgeKinds.Implements, pay + "Gateway");
+
+        // The flow from pay() goes through the interface to the card gateway and on to what it calls.
+        var flow = new CodeMap.Insights.CallFlow(new CodeMap.Insights.GraphIndex(graph)).Build(new[] { pay + "PaymentService::pay(long)" });
+        Assert.Contains(flow.Methods, m => m.Id == pay + "CardGateway::charge(long)");
+        Assert.Contains(flow.Methods, m => m.Id == pay + "Audited::note(double)");
+
+        // Every C callback in the table is used; the dispatching function reads it.
+        Assert.DoesNotContain(graph.Analysis.UnusedCandidates, id => id.Contains("on_open") || id.Contains("on_close"));
     }
 
     [NodeFact(cpp: true)]

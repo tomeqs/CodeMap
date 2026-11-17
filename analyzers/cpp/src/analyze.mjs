@@ -6,6 +6,7 @@ import { Graph } from './graph.mjs';
 import { buildModel } from './model.mjs';
 import { collectMacros, preprocess } from './preprocess.mjs';
 import { buildProjects, isUnder } from './projects/projects.mjs';
+import { resolveReferences } from './resolve.mjs';
 
 /** Files above this size are left out (generated tables, amalgamations of amalgamations); SQLite's 8 MB parses in about a second. */
 const MAX_BYTES = 16 * 1024 * 1024;
@@ -104,6 +105,8 @@ export function analyze(parser, request, log = () => {}) {
   const stats = { errorBytes, totalBytes };
   const model = buildModel({ files, projects, root, graph, stats });
   timing.mark('model');
+  resolveReferences(model, graph, { log, stats: Boolean(process.env.CODEMAP_CPP_STATS), unresolvedFile: process.env.CODEMAP_CPP_UNRESOLVED || null });
+  timing.mark('references');
 
   if (counts.generated) warnings.push(`${counts.generated} generated file(s) were skipped.`);
   if (counts.tests) warnings.push(`${counts.tests} test file(s) were left out.`);
