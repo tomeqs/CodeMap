@@ -168,3 +168,111 @@ test('a struct named in capitals is not taken for an export macro', () => {
   assert.match(text, /struct SOCKADDR addr/);
   assert.match(text, /class\s+Order/);
 });
+
+test('export macros are blanked where they decorate a declaration, not where a constant ends the same way', () => {
+  // socket(AF_LOCAL, …) became socket(        , …), and enumerators named *_PUBLIC / *_HIDDEN vanished.
+  const { text } = preprocess('int s = socket(AF_LOCAL, 1, 0);\nenum Vis { VIS_PUBLIC, VIS_HIDDEN };\nif (v == STV_HIDDEN) f(RTLD_NOW | RTLD_LOCAL);\nint y = A_PUBLIC or B_LOCAL;\nSHOP_EXPORT void f();\nextern SHOP_API int x;\nstruct S { LIB_API ~S(); };\n');
+  const lines = text.split('\n');
+  assert.equal(lines[0], 'int s = socket(AF_LOCAL, 1, 0);');
+  assert.equal(lines[1], 'enum Vis { VIS_PUBLIC, VIS_HIDDEN };');
+  assert.equal(lines[2], 'if (v == STV_HIDDEN) f(RTLD_NOW | RTLD_LOCAL);');
+  assert.equal(lines[3], 'int y = A_PUBLIC or B_LOCAL;');
+  assert.equal(lines[4].trim(), 'void f();');
+  assert.match(lines[5], /^extern\s+int x;$/);
+  assert.match(lines[6], /^struct S \{\s+~S\(\); \};$/);
+});
+
+test('a class named in capitals and marked final keeps its name', () => {
+  // `class AABB final {` read AABB as an export macro: the class had no name and dropped off the map.
+  const { text } = preprocess('class AABB final { int x; };\nstruct URL final : Base {};\nclass SHOP_API Order final : public Base {};\n');
+  const lines = text.split('\n');
+  assert.equal(lines[0], 'class AABB final { int x; };');
+  assert.equal(lines[1], 'struct URL final : Base {};');
+  assert.match(lines[2], /^class\s+Order final : public Base \{\};$/);
+});
+
+test('a macro named like a keyword is not applied', () => {
+  // One test file with `#define private public` made every private member of the repository public.
+  const macros = collectMacros(['#define private public\n#define protected public\n#define inline\n#define const\n#define SHOP_INLINE inline\n']);
+  assert.deepEqual([...macros.namespaces.keys()], []);
+  assert.deepEqual([...macros.decorations.keys()], ['SHOP_INLINE']);
+  const source = 'class A : private B { private: int x; protected: SHOP_INLINE const int* f(); };';
+  assert.equal(preprocess(source, { macros }).text, 'class A : private B { private: int x; protected: inline      const int* f(); };');
+});
+
+test('a macro call inside an expression is not blanked as a statement', () => {
+  const kept = [
+    'foo(a,\n    MAX(b, c)\n);', // an argument: foo(a, ) had one argument less
+    'EXPECT_TRUE(ok)\n    << "why" << detail();', // the next line goes on from it
+    'x = y &&\n    IS_SET(f)\n    && other;', // an operand
+    'T table[] = {\n  ENTRY(a, b),\n  ENTRY(c, d)\n};', // the last entry of a table
+    'int n = a >\n    LIMIT(b)\n    ? 1 : 2;',
+    'value =\n    COMPUTE(x)\n;',
+  ];
+  for (const source of kept) assert.equal(preprocess(source).text, source, source);
+});
+
+test('a macro standing as a statement or a declaration is still blanked', () => {
+  const blanked = (source, macro) => assert.ok(!preprocess(source).text.includes(macro), source);
+  blanked('DECLARE_LOG_CATEGORY(Shop)\nint after;', 'DECLARE_LOG');
+  blanked('#include "a.h"\nDECLARE_LOG_CATEGORY(Shop)\nint after;', 'DECLARE_LOG'); // after a preprocessor line
+  blanked('int before;\n// what it is for\n/* and\n   more */\nDECLARE_THING(a)\nint after;', 'DECLARE_THING'); // after comments
+  blanked('struct S {\n  DECLARE_FIELDS(S)\n};', 'DECLARE_FIELDS');
+  blanked('class W {\npublic:\n  DECLARE_EVENTS(W)\n  void f();\n};', 'DECLARE_EVENTS');
+  blanked('BEGIN_MAP(A, B)\n  ON_PAINT()\n  ON_COMMAND(ID_X, OnX)\nEND_MAP()\nint after;', 'ON_COMMAND'); // each after the one blanked before it
+  blanked('template <class T>\nREQUIRES_NUMBER(T)\nvoid f(T t);', 'REQUIRES_NUMBER');
+  blanked('DECLARE_CATEGORY(lc)\n[[nodiscard]] int f();', 'DECLARE_CATEGORY'); // [[…]] starts a declaration
+  // Catch2's decomposer: the macros come after the long #define they call (blanked: thousands of spaces).
+  blanked('int before;\n#define LONG(op) \\\n' + '    line(op); \\\n'.repeat(700) + '    end(op)\n\nDEFINE_OPERATOR( lt, < )\nDEFINE_OPERATOR( gt, > )\nint after;', 'DEFINE_OPERATOR');
+  blanked('int before;\n/*' + ' many words\n'.repeat(1500) + '*/\nDECLARE_AFTER_COMMENT(a)\nint after;', 'DECLARE_AFTER_COMMENT');
+  // The names it is given are still recorded.
+  assert.deepEqual(preprocess('IOMETHODS(\n  afpIoFinder,\n  afpClose\n)\nint after;').macroArguments, ['afpIoFinder', 'afpClose']);
+});
+
+test('a #define whose body escapes a character is read: the names it uses are recorded', () => {
+  // `#define LOG(fmt) log_write(fmt "\n")` matched no pattern, so log_write looked unused.
+  const macros = collectMacros(['#define LOG(fmt) log_write(fmt "\\n")\n#define SEP \'\\\\\' + separator()\n#define MULTI(x) \\\n  first(x "\\t"); \\\n  second(x)\n']);
+  for (const name of ['log_write', 'separator', 'first', 'second']) assert.ok(macros.words.has(name), name);
+});
+
+test('a comment that begins on a directive line and runs on is blanked to its end', () => {
+  // GNU-style headers: the tail was read as code (a syntax error and a variable named `for`).
+  const lines = flatten('#define FLAG_A 0x01 /* first flag,\n                       used for X */\nint y;\n#define FLAG_B 2 /* one line */\nint w;\n#endif /* GUARD\n  ends here */ int z;\n', true).split('\n');
+  assert.deepEqual(lines.slice(0, 2).map((l) => l.trim()), ['', '']);
+  assert.equal(lines[2], 'int y;');
+  assert.equal(lines[4], 'int w;');
+  assert.equal(lines[6].trim(), 'int z;');
+});
+
+test('__attribute__((fallthrough)) stays in the text; other attributes are blanked', () => {
+  const { text } = preprocess('switch (x) { case 1: f(); __attribute__((fallthrough));\ncase 2: g(); __attribute__ ((__fallthrough__));\ndefault: break; }\nint h() __attribute__((noreturn));\n');
+  const lines = text.split('\n');
+  assert.match(lines[0], /__attribute__\(\(fallthrough\)\);$/);
+  assert.match(lines[1], /__attribute__ \(\(__fallthrough__\)\);$/);
+  assert.match(lines[3], /^int h\(\)\s+;$/);
+});
+
+test('an include guard is not a decoration macro; a macro given its default the same way is', () => {
+  // Every header's guard was in the table of macros: 20,000 headers made a regular expression of 20,000 names.
+  const macros = collectMacros([
+    '#ifndef SHOP_ORDER_H\n#define SHOP_ORDER_H\nclass Order {};\n#endif\n',
+    '#if !defined(SHOP_MONEY_H_)\n#  define SHOP_MONEY_H_ // guard\n\nint x;\n#endif\n',
+    '#ifndef SHOP_API\n#  define SHOP_API\n#endif\n',
+  ]);
+  assert.deepEqual([...macros.decorations.keys()], ['SHOP_API']);
+  assert.match(preprocess('class SHOP_API Order {};\nSHOP_API void f();', { macros }).text, /^class\s+Order \{\};\n\s+void f\(\);$/);
+  // The table and the regular expression of the names are made once and kept for the next file.
+  const pattern = macros.pattern;
+  preprocess('SHOP_API void g();', { macros });
+  assert.ok(pattern && macros.pattern === pattern);
+});
+
+test('a test over a list of types keeps its title; the types are blanked', () => {
+  // nlohmann/json: TEST_CASE_TEMPLATE("…", T, int32_t, …) is no call the grammar can read; the test and the
+  // tests after it were lost (or the whole macro was blanked, when a comment ended its line).
+  const { text } = preprocess('TEST_CASE_TEMPLATE("extreme values", T, int32_t, uint64_t) // NOLINT\n{\n  T x;\n}\nTEMPLATE_TEST_CASE("sizes", "[vector]", int, (std::tuple<int, float>))\n{\n}\nTEST_CASE("plain") {}\n');
+  const lines = text.split('\n');
+  assert.match(lines[0], /^TEST_CASE_TEMPLATE\("extreme values"\s+\) \/\/ NOLINT$/);
+  assert.match(lines[4], /^TEMPLATE_TEST_CASE\("sizes", "\[vector\]"\s+\)$/);
+  assert.equal(lines[7], 'TEST_CASE("plain") {}');
+});

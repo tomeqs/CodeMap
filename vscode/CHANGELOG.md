@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **C and C++: code that was read wrongly.** Found by reviewing 0.5.0.
+  - Constants named like export macros (`AF_LOCAL`, `RTLD_LOCAL`, an enumerator `VIS_HIDDEN`) were erased from expressions and enums, and a class named in capitals and marked `final` (`class AABB final`) was missing from the map.
+  - One `#define private public` in a test file made every private member of the repository public, so none of them could be reported as unused.
+  - Macro calls inside expressions were erased (`foo(a,⏎ MAX(b, c)⏎)` lost an argument, `EXPECT_TRUE(ok)⏎ << "why"` its first half), and a comment begun on a `#define` line and continued below it was read as code.
+  - Tests over a list of types (`TEST_CASE_TEMPLATE`, `TEMPLATE_TEST_CASE`) are tests on the map and no longer hide the tests after them.
+  - `__attribute__((fallthrough))` marks a case that runs on by intent, a function used only by a macro with `"\n"` in its body is not reported as unused, and a file starting with a byte order mark keeps its first line.
+  - Large repositories: include guards are no longer treated as macros to apply. With 20,000 headers, preparing each file took about 180 times longer than it should.
+
 ## 0.5.0
 
 - **C and C++**, as a fourth language, with nothing to install: the analyzer reads them with tree-sitter on VS Code's own Node.js, so code maps without its compiler, its dependencies or a configured build.
