@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyze } from '../src/analyze.mjs';
 import { loadParser } from '../src/parser.mjs';
@@ -11,7 +11,7 @@ const parser = await loadParser();
 
 /** Maps a fixture (or any folder or file) in process and returns lookups that fail with a readable message. */
 export function run(target, { root, options = {} } = {}) {
-  const path = target.startsWith('/') ? target : join(fixtures, target);
+  const path = isAbsolute(target) ? target : join(fixtures, target);
   const fragment = analyze(parser, { target: path, root: root ?? (/\.\w+$/.test(path) ? dirname(path) : path), options }, () => {});
   const byId = new Map(fragment.nodes.map((n) => [n.id, n]));
   return {
