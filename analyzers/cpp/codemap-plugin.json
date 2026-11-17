@@ -1,0 +1,148 @@
+{
+  "protocol": 1,
+  "id": "cpp",
+  "idPrefix": "cpp:",
+  "name": "C/C++",
+  "version": "0.1.0",
+  "command": [
+    "node",
+    "--max-old-space-size=8192",
+    "./src/cli.mjs"
+  ],
+  "runtime": {
+    "name": "node",
+    "minVersion": 18,
+    "envVar": "CODEMAP_NODE",
+    "help": "C and C++ need Node.js 18 or newer (https://nodejs.org); or set CODEMAP_NODE to the node executable."
+  },
+  "inputs": "a CMakeLists.txt, .vcxproj, .sln, .uproject, .c, .cpp or .h file",
+  "markers": "CMakeLists.txt, .vcxproj, .uproject, meson.build, Makefile or .c / .cpp files",
+  "detect": {
+    "markers": [
+      "CMakeLists.txt",
+      "*.vcxproj",
+      "*.uproject",
+      "*.uplugin",
+      "*.Build.cs",
+      "meson.build",
+      "Makefile",
+      "GNUmakefile",
+      "makefile",
+      "BUILD",
+      "BUILD.bazel",
+      "MODULE.bazel",
+      "WORKSPACE",
+      "configure.ac",
+      "premake5.lua",
+      "xmake.lua",
+      "vcpkg.json",
+      "conanfile.txt",
+      "conanfile.py",
+      "compile_commands.json"
+    ],
+    "sources": [
+      ".c",
+      ".cc",
+      ".cpp",
+      ".cxx",
+      ".c++"
+    ],
+    "inputs": [
+      "CMakeLists.txt",
+      "*.vcxproj",
+      "*.sln",
+      "*.uproject",
+      "*.c",
+      "*.cc",
+      "*.cpp",
+      "*.cxx",
+      "*.c++",
+      "*.h",
+      "*.hh",
+      "*.hpp",
+      "*.hxx",
+      "*.h++",
+      "*.ipp",
+      "*.inl",
+      "*.tpp"
+    ],
+    "excludeFiles": [
+      "moc_*",
+      "qrc_*",
+      "*.gen.cpp",
+      "*.pb.cc",
+      "*.pb.c"
+    ],
+    "ignoreDirs": [
+      "build",
+      "cmake-build-*",
+      "CMakeFiles",
+      "_deps",
+      "Intermediate",
+      "Binaries",
+      "DerivedDataCache",
+      "node_modules",
+      "site-packages"
+    ],
+    "ignoreMarkers": [
+      "pyvenv.cfg"
+    ],
+    "withoutMarker": true
+  },
+  "display": {
+    "levels": {
+      "project": [
+        "Project",
+        "Projects"
+      ],
+      "namespace": [
+        "Namespace",
+        "Namespaces"
+      ],
+      "type": [
+        "Type",
+        "Types"
+      ],
+      "member": [
+        "Member",
+        "Members"
+      ]
+    },
+    "external": "libraries"
+  },
+  "unused": {
+    "memberAccessibility": [
+      "private"
+    ],
+    "typeAccessibility": [
+      "private"
+    ],
+    "skipAttributed": true,
+    "skipMemberKinds": [
+      "constructor"
+    ],
+    "skipModifiers": [
+      "override",
+      "virtual"
+    ],
+    "skipNamePattern": "^(operator\\b|~)",
+    "skipTags": [
+      "entrypoint",
+      "test",
+      "handler",
+      "maybe-used"
+    ],
+    "skipTypeTags": [
+      "entrypoint",
+      "test",
+      "component",
+      "generated"
+    ],
+    "skipParentKinds": [
+      "interface"
+    ],
+    "skipParentTags": [
+      "test"
+    ]
+  }
+}

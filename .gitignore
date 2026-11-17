@@ -489,3 +489,5 @@ tests/CodeMap.Tests/Golden/*.actual.json
 # The TypeScript plugin's test fixtures are code, whatever their folders are called (express/, packages/…)
 !analyzers/typescript/test/fixtures/**
 !analyzers/python/test/fixtures/**
+# The C / C++ plugin's fixtures too: Visual Studio's patterns above would drop *_i.c, Debug/, x64/…
+!analyzers/cpp/test/fixtures/**

@@ -24,9 +24,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: analyzers/typescript/package-lock.json
-      - name: TypeScript plugin (the .NET tests run it)
-        run: npm ci --prefix analyzers/typescript
+          cache-dependency-path: |
+            analyzers/typescript/package-lock.json
+            analyzers/cpp/package-lock.json
+      - name: TypeScript and C / C++ plugins (the .NET tests run them)
+        run: |
+          npm ci --prefix analyzers/typescript
+          npm ci --prefix analyzers/cpp
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -56,6 +60,29 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: analyzers/typescript/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  # The C / C++ language plugin on the Node versions it supports, and on Windows (paths, \r\n).
+  cpp:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, node: 20 }
+          - { os: ubuntu-24.04, node: 22 }
+          - { os: windows-latest, node: 22 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: analyzers/cpp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: analyzers/cpp/package-lock.json
       - run: npm ci
       - run: npm test
 
@@ -97,8 +124,10 @@ jobs:
       - run: npm ci
       - name: Chromium for the smoke tests
         run: npx playwright install --with-deps chromium
-      - name: TypeScript plugin (the analyzer maps samples/shop-ts with it)
-        run: npm ci --prefix ../analyzers/typescript
+      - name: TypeScript and C / C++ plugins (the analyzer maps the samples with them)
+        run: |
+          npm ci --prefix ../analyzers/typescript
+          npm ci --prefix ../analyzers/cpp
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
