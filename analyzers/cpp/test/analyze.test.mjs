@@ -189,6 +189,87 @@ test('a byte order mark does not hide the first line of a file', () => {
   }
 });
 
+test('an Unreal project file as the target maps its folder', () => {
+  // `codemap Game.uproject` gave an empty map with no warning: no branch read the file's folder.
+  const byFile = run(join(fixtures, 'unreal', 'ShopGame.uproject'));
+  const byFolder = run('unreal');
+  assert.ok(byFile.nodes.length > 10);
+  assert.deepEqual(byFile.nodes.map((n) => n.id), byFolder.nodes.map((n) => n.id));
+});
+
+test('a solution kept apart from the code says which folder to analyze', () => {
+  // contrib/vs/zlib.sln naming ..\..\src\*.c: no node and no word of why. CodeMap shows no place outside the
+  // folder analyzed, so the files are not read; the warning names the folder that holds them.
+  const { dir, dispose } = scratch({
+    'contrib/vs/zlib.sln': 'Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "zlib", "zlib.vcxproj", "{11111111-1111-1111-1111-111111111111}"\nEndProject\n',
+    'contrib/vs/zlib.vcxproj': '<Project><ItemGroup><ClCompile Include="..\\..\\src\\zutil.c" /><ClCompile Include="..\\..\\src\\gone.c" /></ItemGroup></Project>',
+    'src/zutil.c': 'int zutil(void) { return 1; }\n',
+  });
+  try {
+    const solution = run(join(dir, 'contrib', 'vs', 'zlib.sln'));
+    assert.equal(solution.nodes.length, 0);
+    assert.deepEqual(solution.analysis.warnings, ['zlib.sln lists 1 file(s) outside its folder, which are not read (../../src/zutil.c). Analyze the folder that holds them and zlib.sln to map them: ../..']);
+    // The folder has the project and its file, and nothing to warn about.
+    const folder = run(dir);
+    assert.equal(folder.node('cpp:zlib:file:src/zutil#(global)::zutil()').kind, 'function');
+    assert.deepEqual(folder.analysis.warnings, []);
+  } finally {
+    dispose();
+  }
+});
+
+test('two programs in one folder keep their own main, functions and types', () => {
+  // server.c and client.c beside one Makefile: the map had one main (in server.c) with the calls of both, and one
+  // struct state with the fields of both.
+  const { dir, dispose } = scratch({
+    Makefile: 'all: server client\n',
+    'server.c': 'struct state { int port; };\nvoid usage(void) {}\nint counter;\nint serve(struct state* s) { return s->port; }\nint main(void) { usage(); counter++; return serve(0); }\n',
+    'client.c': 'struct state { const char* host; };\nvoid usage(void) {}\nint counter;\nint dial(struct state* s) { return s->host != 0; }\nint main(void) { usage(); return dial(0); }\n',
+    // One function a header declares, defined once per platform: one node, as before.
+    'clock.h': 'long now(void);\n',
+    'clock_posix.c': '#include "clock.h"\nlong now(void) { return 1; }\n',
+    'clock_win.c': '#include "clock.h"\nlong now(void) { return 2; }\n',
+  });
+  try {
+    const map = run(dir);
+    const name = dir.split(/[\\/]/).pop();
+    const server = `cpp:${name}:file:server#(global)`;
+    const client = `cpp:${name}:file:client#(global)`;
+    for (const holder of [server, client]) {
+      assert.deepEqual(map.node(`${holder}::main()`).extraLocations, undefined);
+      assert.ok(map.node(holder).tags.includes('entrypoint'), holder);
+      assert.deepEqual(map.edgesFrom(`${holder}::main()`, 'calls').filter((id) => id.endsWith('usage()')), [`${holder}::usage()`]);
+    }
+
+    assert.ok(map.hasEdge(`${server}::main()`, 'calls', `${server}::serve(struct state*)`));
+    assert.ok(map.hasEdge(`${client}::main()`, 'calls', `${client}::dial(struct state*)`));
+    assert.ok(map.hasEdge(`${server}::main()`, 'accesses', `${server}::counter`));
+    const fields = (type) => map.nodes.filter((n) => n.parent === type).map((n) => n.name);
+    assert.deepEqual(fields(`cpp:${name}:state@server.c`), ['port']);
+    assert.deepEqual(fields(`cpp:${name}:state@client.c`), ['host']);
+    assert.ok(map.hasEdge(`${server}::serve(struct state*)`, 'accesses', `cpp:${name}:state@server.c::port`));
+    const now = map.node(`cpp:${name}:file:clock#(global)::now()`);
+    assert.deepEqual([now.location.file, ...now.extraLocations.map((l) => l.file)].sort(), ['clock.h', 'clock_posix.c', 'clock_win.c']);
+  } finally {
+    dispose();
+  }
+});
+
+test('a function named like a property of every JavaScript object is a function', () => {
+  // The table of test macros was asked for `toString` and answered with Object.prototype's: the function became
+  // a test named undefined.undefined.
+  const { dir, dispose } = scratch({ 'old.cpp': 'toString() { return 0; }\nint main() { return toString(); }\n' });
+  try {
+    const map = run(dir);
+    const name = dir.split(/[\\/]/).pop();
+    assert.equal(map.node(`cpp:${name}:file:old#(global)::toString()`).kind, 'function');
+    assert.ok(map.hasEdge(`cpp:${name}:file:old#(global)::main()`, 'calls', `cpp:${name}:file:old#(global)::toString()`));
+    assert.ok(!map.nodes.some((n) => n.tags?.includes('test')));
+  } finally {
+    dispose();
+  }
+});
+
 test('ids do not depend on the folder analyzed', () => {
   const whole = run('mini');
   const part = run(join(fixtures, 'mini', 'src'), { root: join(fixtures, 'mini') });

@@ -152,12 +152,16 @@ grammars as WebAssembly: nothing to install, build or configure, the same build 
 extension uses the editor's own Node.js. tree-sitter reads the code as written, so a project maps without its
 compiler, its dependencies or a configured build (no `compile_commands.json` needed, though one is used when found).
 
-* **What you can open:** a folder, a `CMakeLists.txt`, a Visual Studio `.sln` (one with C++ projects only; a solution
-  with C# projects maps its C#, and its folder maps both) or `.vcxproj`, an Unreal `.uproject`, or a source or header.
+* **What you can open:** a folder, a `CMakeLists.txt`, a Visual Studio `.sln` / `.slnx` (one with C++ projects only; a
+  solution with C# projects maps its C#, and its folder maps both) or `.vcxproj`, an Unreal `.uproject`, or a source
+  or header. A solution kept apart from its code (`contrib/vs/zlib.sln` naming `..\..\src\*.c`) maps nothing by
+  itself: the warning names the folder to open instead.
 * **Projects:**
   * CMake targets (`add_library`, `add_executable`, Qt's `qt_add_executable`), read, not run: `add_subdirectory`,
     variables, `file(GLOB)`, `target_sources`, include directories and links between targets (`projectReference`);
-    other libraries (`Qt6::Widgets`, `fmt::fmt`) are external. A target linking a test framework, or registered with
+    other libraries (`Qt6::Widgets`, `fmt::fmt`) are external. A `foreach` over items that are written out is read
+    for each of them, and the project's own functions and macros are read where they are called (googletest's
+    `cxx_library(gtest …)`); a target whose name cannot be told this way is left out. A target linking a test framework, or registered with
     `add_test` / `gtest_discover_tests`, is a test project;
   * Visual Studio projects (`.vcxproj`: their files, references and include directories);
   * Unreal Engine modules (the folder of `Name.Build.cs`, with the modules it depends on); its `.Build.cs` and
@@ -177,7 +181,8 @@ aliases sit in a holder per header and source pair (`orders.h` + `orders.cpp`).
 * **A declaration and its definition are one node:** a method declared in a header and defined in a `.cpp` has the
   definition as its place and the declaration as an extra one; a class keeps its `.cpp` files as extra places (so git
   history counts them), and the file-local helpers of a class's source (`static` or anonymous-namespace functions)
-  are its private static members.
+  are its private static members. What several source files each define for themselves, with no header declaring it,
+  stays apart: two programs in one folder keep their own `main`, functions and types.
 * **Before parsing:** one branch of each `#if` is read (reading all of them unbalances the braces; a switch that turns
   a feature off, `#ifdef SQLITE_OMIT_…`, is taken as not set), and macros that only decorate declarations are left
   out: export macros (`class SHOP_API Order`), the project's own `#define`s that stand for nothing, a keyword or an

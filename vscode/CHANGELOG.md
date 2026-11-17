@@ -9,6 +9,18 @@
   - Tests over a list of types (`TEST_CASE_TEMPLATE`, `TEMPLATE_TEST_CASE`) are tests on the map and no longer hide the tests after them.
   - `__attribute__((fallthrough))` marks a case that runs on by intent, a function used only by a macro with `"\n"` in its body is not reported as unused, and a file starting with a byte order mark keeps its first line.
   - Large repositories: include guards are no longer treated as macros to apply. With 20,000 headers, preparing each file took about 180 times longer than it should.
+- **C and C++: projects.**
+  - CMake targets made in a loop or by the project's own function (`foreach(t …) add_executable(${t}_test …)`, googletest's `cxx_library(gtest …)`) are projects under their real names. In 0.5.0 they became one project with an unprintable name: fmt now shows its 36 targets, not 16, and googletest its libraries and tests.
+  - Opening an Unreal `.uproject` maps the project (it gave an empty map), and a C++ solution in the `.slnx` format is accepted.
+  - A solution kept apart from its code says which folder to open, where it used to give an empty map without a word.
+  - A CMake file with a no-break space between arguments no longer stops the analysis, `CMAKE_CURRENT_LIST_DIR` is right inside an included file, and dependencies commented out in an Unreal `Build.cs` are no longer shown as libraries.
+  - Large repositories: files are assigned to projects through an index of folders. 40,000 files in 400 projects took 30 s, now 0.2 s.
+- **C and C++: the map and the checks.**
+  - Several programs in one folder are apart again. They were merged into one `main` holding every program's calls, and structs of one name into one with the fields of all (Redis's four `aeApiState`, one per platform).
+  - A field or a constant read only where a variable is declared (`int sum = base_;`, `int buf[kSize];`) counts as used.
+  - Checks: `toString()` and `valueOf()` are not unsafe C functions; a virtual call in a lambda that a constructor hands on, a pointer deleted in a lambda or given to a `unique_ptr`, and an enum or `HRESULT` caught by value are no longer reported.
+  - Large repositories: looking a name up no longer takes longer with every project. 400 files in 400 projects resolved in 11 s, now 0.4 s.
+- **Saving a C# file in a folder named `build`, `Binaries` or `Intermediate` refreshes the map again.** 0.5.0 took these folders for build output whatever the language.
 
 ## 0.5.0
 

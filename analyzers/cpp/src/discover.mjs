@@ -68,9 +68,10 @@ export function discover(target) {
   if (isFile) {
     if (/\.(sln|slnx)$/i.test(full)) solution = full;
     else if (/\.vcxproj$/i.test(full)) markers.vcxproj.push(full);
-    else if (basename(full) === 'CMakeLists.txt') walk(scanDir, files, markers, scanDir);
-    else if (isSourceFile(full) || isHeaderFile(full)) only = full;
-    if (solution || markers.vcxproj.length) walk(scanDir, files, markers, scanDir);
+    // One source or header alone; any build file (CMakeLists.txt, a solution, a .vcxproj, a .uproject or
+    // .uplugin…) stands for its folder.
+    if (isSourceFile(full) || isHeaderFile(full)) only = full;
+    else walk(scanDir, files, markers, scanDir);
   } else {
     walk(scanDir, files, markers, scanDir);
   }
@@ -97,7 +98,7 @@ export function discover(target) {
     if (names.includes('.git')) break;
   }
 
-  return { scanDir, files: only ? [only] : files, only, solution, markers, above, repository: stop };
+  return { scanDir, files: only ? [only] : files, only, solution, targetProject: isFile && /\.vcxproj$/i.test(full), markers, above, repository: stop };
 }
 
 function walk(dir, files, markers, scanDir, depth = 0) {

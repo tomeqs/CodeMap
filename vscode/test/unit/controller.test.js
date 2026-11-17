@@ -227,9 +227,21 @@ test('live updates follow C and C++ sources and build files, not build trees or 
     assert.ok(isSourceFile(file), file);
   }
 
-  for (const file of ['build/gen/x.cpp', 'cmake-build-debug/a.cpp', 'CMakeFiles/b.c', 'Intermediate/Build/x.cpp', 'qt/moc_cart.cpp', 'qt/ui_main.h', 'Source/Shop/Shop.generated.h', 'proto/orders.pb.cc', 'notes.txt']) {
+  for (const file of ['build/gen/x.cpp', 'cmake-build-debug/a.cpp', 'CMakeFiles/b.c', 'Intermediate/Build/x.cpp', 'qt/moc_cart.cpp', 'qt/ui_main.h', 'Source/Shop/Shop.generated.h', 'proto/orders.pb.cc', 'notes.txt',
+    'build/CMakeLists.txt', 'build/_deps/fmt/src/format.cc', 'build/lib/pkg/module.py', 'build/static/main.js']) {
     assert.ok(!isSourceFile(file), file);
   }
+});
+
+test('C# files in a folder named like build output still change the map', () => {
+  // 0.5.0 left out build/, Binaries/ and Intermediate/ for every language: a build/_build.csproj (the build's own
+  // project) is part of the C# map, and saving its files no longer refreshed it.
+  const { isSourceFile } = require('../../src/extension');
+  for (const file of ['build/_build.csproj', 'build/Build.cs', 'build\\Targets\\Pack.cs', 'Binaries/Tools/Program.cs', 'Intermediate/Shared.props', 'build/Build.sln']) {
+    assert.ok(isSourceFile(file), file);
+  }
+
+  for (const file of ['build/bin/Debug/Build.cs', 'build/obj/x.cs']) assert.ok(!isSourceFile(file), file);
 });
 
 test('a solution without C# projects (Visual Studio C++) is not offered as a C# map', () => {

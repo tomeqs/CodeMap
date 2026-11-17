@@ -173,6 +173,8 @@ test('a value of an unscoped enum uses its enum, bare or qualified by the class 
       '};',
       'void Dialog::open(int tab) { int n = COL_COUNT; if (tab == TAB_UI) n = SIZE; }',
       'void show(Dialog& d) { d.open(Dialog::TAB_NET); }',
+      'namespace ns { enum State { TS_STOPPED, TS_RUNNING }; }',
+      'int state() { return ns::TS_RUNNING; }',
     ].join('\n'),
   });
   try {
@@ -181,6 +183,43 @@ test('a value of an unscoped enum uses its enum, bare or qualified by the class 
     assert.ok(m.hasEdge(`cpp:${name}:Dialog::open(int)`, 'uses', `cpp:${name}:Columns`), m.edgesFrom(`cpp:${name}:Dialog::open(int)`, 'uses').join(', '));
     assert.ok(m.hasEdge(`cpp:${name}:Dialog::open(int)`, 'uses', `cpp:${name}:Dialog::Tabs`));
     assert.ok(m.hasEdge(`cpp:${name}:file:table#(global)::show(Dialog&)`, 'uses', `cpp:${name}:Dialog::Tabs`));
+    // By the namespace of the enum (nlohmann/json's examples: json j = ns::TS_STOPPED;).
+    assert.ok(m.hasEdge(`cpp:${name}:file:table#(global)::state()`, 'uses', `cpp:${name}:ns::State`), m.edgesFrom(`cpp:${name}:file:table#(global)::state()`, 'uses').join(', '));
+  } finally {
+    dispose();
+  }
+});
+
+test('what a declaration starts from is read: a field, a constant, the size of an array', () => {
+  // `int sum = base_;` gave no edge to base_ (only expressions did), so a field read only this way looked unused.
+  const { dir, dispose } = scratch({
+    'widget.cpp': [
+      'struct Config { static const int kMax = 8; };',
+      'static const int kSize = 4;',
+      'class Widget {',
+      '  int base_ = 1;',
+      '  int used_ = 2;',
+      '  int* items_ = nullptr;',
+      'public:',
+      '  int total() {',
+      '    int sum = base_;',
+      '    int buf[kSize];',
+      '    int n = Config::kMax;',
+      '    auto copy = items_;',
+      '    return sum + n + used_ + buf[0] + (copy != nullptr);',
+      '  }',
+      '};',
+    ].join('\n'),
+  });
+  try {
+    const m = run(dir);
+    const name = basename(dir);
+    const total = `cpp:${name}:Widget::total()`;
+    for (const field of ['base_', 'used_', 'items_']) assert.ok(m.hasEdge(total, 'accesses', `cpp:${name}:Widget::${field}`), field);
+    assert.ok(m.hasEdge(total, 'accesses', `cpp:${name}:Widget::kSize`) || m.hasEdge(total, 'accesses', `cpp:${name}:file:widget#(global)::kSize`), m.edgesFrom(total, 'accesses').join(', '));
+    assert.ok(m.hasEdge(total, 'accesses', `cpp:${name}:Config::kMax`), m.edgesFrom(total, 'accesses').join(', '));
+    // The names declared are no reads of themselves.
+    assert.deepEqual(m.edgesFrom(total, 'accesses').filter((id) => /::(sum|buf|n|copy)$/.test(id)), []);
   } finally {
     dispose();
   }

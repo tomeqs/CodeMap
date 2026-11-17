@@ -70,6 +70,13 @@ export function runChecks(tree, file) {
     if (pushed) {
       const done = scopes.pop();
       finishScope(done, at);
+      // What a lambda names of the function around it (captured, deleted in it) is in the lambda's hands.
+      const outer = scopes[scopes.length - 1];
+      if (outer && node.type === 'lambda_expression') {
+        for (const use of done.uses) outer.handedOn.add(use.text);
+        for (const name of done.handedOn) outer.handedOn.add(name);
+      }
+
       if (done.owner) {
         if (!classes.has(done.owner)) classes.set(done.owner, { allocations: [], deletes: [] });
         const fields = classes.get(done.owner);
@@ -111,7 +118,7 @@ function mismatches({ allocations, deletes }, at, fields = false) {
 
 /** A function's locals and parameters with what the checks need of their types. */
 function functionScope(node) {
-  const scope = { locals: new Map(), allocations: [], deletes: [], news: [], returnsReference: false, uses: [] };
+  const scope = { locals: new Map(), allocations: [], deletes: [], news: [], returnsReference: false, uses: [], handedOn: new Set() };
   const declarator = node.childForFieldName('declarator');
   if (node.type === 'function_definition') {
     let d = declarator;
@@ -279,16 +286,7 @@ function check(node, scope, at, file) {
         at('swallowed-exception', node, 'Every exception is caught and dropped: not rethrown, logged or turned into a result.');
       }
 
-      const param = parameters?.namedChildren.find((c) => c.type === 'parameter_declaration');
-      if (param) {
-        const declarator = param.childForFieldName('declarator');
-        const type = param.childForFieldName('type');
-        const byValue = !declarator || !/^[&*]/.test(declarator.text.trim()) && declarator.type !== 'reference_declarator' && declarator.type !== 'pointer_declarator';
-        if (type && byValue && !/^(int|long|char|unsigned|short|bool|float|double|size_t|auto)\b/.test(type.text) && /^[A-Za-z_:]/.test(type.text)) {
-          at('catch-by-value', param, `${type.text} is caught by value: a derived exception is sliced (catch by const reference).`);
-        }
-      }
-
+      // catch-by-value is the resolver's: it knows whether the type caught is a class (an enum or HRESULT is not sliced).
       break;
     }
 
@@ -316,7 +314,8 @@ function check(node, scope, at, file) {
     case 'call_expression': {
       const callee = node.childForFieldName('function');
       const name = callee?.type === 'identifier' ? callee.text : callee?.type === 'qualified_identifier' && /^(::|std::)/.test(callee.text) ? callee.text.replace(/^::|^std::/, '') : null;
-      if (name && UNSAFE[name]) {
+      // An own entry of the table: `toString()` or `valueOf()` is not one, though every object has them.
+      if (name && Object.hasOwn(UNSAFE, name)) {
         at('unsafe-c-function', node, name === 'gets' ? 'gets() cannot know the buffer size and was removed from C and C++ (use fgets).' : `${name}() writes without a size limit (use the n-version or snprintf).`, UNSAFE[name]);
       }
 
@@ -367,6 +366,9 @@ function check(node, scope, at, file) {
   }
 
   if (scope && node.type === 'identifier') scope.uses.push(node);
+  // `std::unique_ptr<Job> owner(job);` reads to the grammar as a function declared with a parameter of type `job`:
+  // the name in the place of a type is an argument, and the pointer is the owner's now.
+  if (scope && node.type === 'type_identifier' && node.parent?.type === 'parameter_declaration') scope.handedOn.add(node.text);
 }
 
 /** When a function ends: delete / delete[] against how the same name was allocated; locals newed and never let go. */
@@ -375,6 +377,7 @@ function finishScope(scope, at) {
 
   for (const created of scope.news) {
     if (/^(Q[A-Z]|U[A-Z]|A[A-Z])/.test(created.type.trim()) || /\b(this|parent\w*|owner)\b/i.test(created.args)) continue;
+    if (scope.handedOn.has(created.name)) continue;
     const later = scope.uses.filter((u) => u.text === created.name && u.startIndex > created.node.endIndex);
     const escapes = later.some((u) => {
       const parent = u.parent;

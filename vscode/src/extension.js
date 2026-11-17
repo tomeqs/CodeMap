@@ -16,7 +16,11 @@ const CACHE_FILE = 'map.codemap.json';
 // Files whose change makes the map out of date: C# and its projects, TypeScript / JavaScript and their packages,
 // Python and its project files, C / C++ and their build files.
 const SOURCE_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf|[cm]?tsx?|[cm]?jsx?|py|c|cc|cpp|cxx|c\+\+|h|hh|hpp|hxx|h\+\+|ipp|inl|tpp|vcxproj|uproject)$|(^|[\\/])((package|jsconfig|tsconfig(\.[\w-]+)?)\.json|pyproject\.toml|setup\.cfg|Pipfile|requirements[\w.-]*\.txt|CMakeLists\.txt|meson\.build|compile_commands\.json)$/i;
-const NOT_SOURCE = /\.d\.[cm]?ts$|\.min\.js$|(^|[\\/])(moc_[^\\/]+|qrc_[^\\/]+|ui_[^\\/]+\.h|[^\\/]+\.(generated\.h|gen\.cpp|pb\.(h|cc)))$|(^|[\\/])(node_modules|dist|bin|obj|__pycache__|site-packages|\.venv|venv|\.tox|[^\\/]+\.egg-info|build|cmake-build-[^\\/]+|CMakeFiles|_deps|Intermediate|Binaries|DerivedDataCache)[\\/]/i;
+const NOT_SOURCE = /\.d\.[cm]?ts$|\.min\.js$|(^|[\\/])(moc_[^\\/]+|qrc_[^\\/]+|ui_[^\\/]+\.h|[^\\/]+\.(generated\.h|gen\.cpp|pb\.(h|cc)))$|(^|[\\/])(node_modules|dist|bin|obj|__pycache__|site-packages|\.venv|venv|\.tox|[^\\/]+\.egg-info)[\\/]/i;
+// Folders a build writes to (CMake, Unreal Engine; TypeScript and Python leave their output in build/ too). C# reads
+// its projects wherever they are, and a build/ folder with the build's own project is common: its files there count.
+const BUILD_OUTPUT = /(^|[\\/])(build|cmake-build-[^\\/]+|CMakeFiles|_deps|Intermediate|Binaries|DerivedDataCache)[\\/]/i;
+const CSHARP_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf)$/i;
 const EXCLUDE = '**/{node_modules,bin,obj,.git,.vs}/**';
 const SCRIPT_EXCLUDE = '**/{node_modules,bin,obj,dist,build,out,coverage,.git,.vs,.next,.angular}/**';
 const SCRIPT_MARKERS = '**/{package.json,tsconfig.json,jsconfig.json}';
@@ -389,7 +393,7 @@ class CodeMapController {
   /** A folder whose change changes the map: one with source files in it, or (gone or moved away) one the map has code from. */
   holdsSources(relative, file) {
     const inside = relative.replace(/\\/g, '/').replace(/\/$/, '') + '/';
-    if (NOT_SOURCE.test(inside)) return false;
+    if (NOT_SOURCE.test(inside) || BUILD_OUTPUT.test(inside)) return false;
     let stat = null;
     try {
       stat = fs.statSync(file);
@@ -532,7 +536,7 @@ function depth(file) {
 
 /** Whether a change to a file (its path inside the analyzed folder) can change the map. */
 function isSourceFile(file) {
-  return SOURCE_FILES.test(file) && !NOT_SOURCE.test(file);
+  return SOURCE_FILES.test(file) && !NOT_SOURCE.test(file) && (!BUILD_OUTPUT.test(file) || CSHARP_FILES.test(file));
 }
 
 /** Whether a folder (`inside`: its path in the analyzed folder, ending in /) holds a source file; a huge folder is taken to. */
@@ -548,7 +552,7 @@ function folderHasSources(folder, inside, budget = { left: 5000 }) {
     if (budget.left-- <= 0) return true;
     const name = inside + entry.name;
     if (entry.isDirectory()) {
-      if (!entry.name.startsWith('.') && !NOT_SOURCE.test(name + '/') && folderHasSources(path.join(folder, entry.name), name + '/', budget)) return true;
+      if (!entry.name.startsWith('.') && !NOT_SOURCE.test(name + '/') && !BUILD_OUTPUT.test(name + '/') && folderHasSources(path.join(folder, entry.name), name + '/', budget)) return true;
     } else if (isSourceFile(name)) return true;
   }
 
