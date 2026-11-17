@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { basename } from 'node:path';
 import { run, scratch } from './helpers.mjs';
 
 const T = 'cpp:pay:pay::';
@@ -75,7 +76,7 @@ test('no guessing: a call on something of unknown type gives no edge', () => {
   });
   try {
     const m = run(dir);
-    const name = dir.split('/').pop();
+    const name = basename(dir);
     const runId = `cpp:${name}:file:a#(global)::run(Order&)`;
     assert.deepEqual(m.edgesFrom(runId, 'calls'), [`cpp:${name}:Order::pay()`]);
     assert.deepEqual(m.edgesFrom(`cpp:${name}:file:a#(global)::settle(T&)`, 'calls'), []);
