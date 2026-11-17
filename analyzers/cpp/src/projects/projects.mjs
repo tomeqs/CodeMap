@@ -192,7 +192,7 @@ export function buildProjects(found, files) {
     project.libraries = [...libraries].sort();
   }
 
-  return { projects: used, fileProject };
+  return { projects: used, fileProject, explicit: new Set([...explicit.keys()].filter((f) => fileProject.has(f))) };
 }
 
 function containingModule(projects, file) {

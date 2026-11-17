@@ -28,12 +28,73 @@ export function extractFile(tree, { annotations = [], sections = [], lines }) {
   return facts;
 }
 
+/** Test macros written like a call followed by a block: Catch2 and doctest (TEST_CASE("…") { … }). */
+const BLOCK_TESTS = new Set(['TEST_CASE', 'SCENARIO', 'TEST_CASE_METHOD', 'TEST_CASE_FIXTURE', 'TEMPLATE_TEST_CASE', 'TEMPLATE_PRODUCT_TEST_CASE', 'TEMPLATE_LIST_TEST_CASE', 'METHOD_AS_TEST_CASE', 'TEST_CASE_TEMPLATE']);
+const BLOCK_SUITES = new Set(['TEST_SUITE', 'TEST_SUITE_BEGIN']);
+/** Test macros written like a function definition: GoogleTest and Boost.Test (TEST(Suite, Name) { … }). */
+const FUNCTION_TESTS = {
+  TEST: { framework: 'gtest', fixture: false },
+  GTEST_TEST: { framework: 'gtest', fixture: false },
+  TEST_F: { framework: 'gtest', fixture: 0 },
+  TEST_P: { framework: 'gtest', fixture: 0 },
+  TYPED_TEST: { framework: 'gtest', fixture: 0 },
+  TYPED_TEST_P: { framework: 'gtest', fixture: 0 },
+  FRIEND_TEST: null,
+  BOOST_AUTO_TEST_CASE: { framework: 'boost', fixture: false, single: true },
+  BOOST_AUTO_TEST_CASE_TEMPLATE: { framework: 'boost', fixture: false, single: true },
+  BOOST_DATA_TEST_CASE: { framework: 'boost', fixture: false, single: true },
+  BOOST_FIXTURE_TEST_CASE: { framework: 'boost', fixture: 1, single: true },
+};
+
 /** A namespace-level (or extern "C") list of declarations. */
 function visitScope(node, scope, context) {
   for (let i = 0; i < node.namedChildCount; i++) {
     const child = node.namedChild(i);
+    const next = node.namedChild(i + 1);
+    if (child.type === 'expression_statement' && next?.type === 'compound_statement' && blockTest(child, next, scope, context)) {
+      i++;
+      continue;
+    }
+
     visitDeclaration(child, scope, context, null);
   }
+}
+
+/** TEST_CASE("name") { … } (and TEST_SUITE("x") { … } around such tests): a test function with that body. */
+function blockTest(statement, block, scope, context) {
+  const call = statement.namedChild(0);
+  if (call?.type !== 'call_expression') return false;
+  const macro = call.childForFieldName('function')?.text;
+  if (BLOCK_SUITES.has(macro)) {
+    visitScope(block, scope, context);
+    return true;
+  }
+
+  if (!BLOCK_TESTS.has(macro)) return false;
+  const args = call.childForFieldName('arguments')?.namedChildren ?? [];
+  const title = args.find((a) => a.type === 'string_literal');
+  const fixture = /METHOD|FIXTURE/.test(macro) && args[0]?.type === 'identifier' ? args[0].text : null;
+  const name = title ? title.text.replace(/^"|"$/g, '') : `${macro}@${row(statement)}`;
+  context.facts.functions.push({
+    name,
+    qualifiers: [],
+    scope: scope.namespace,
+    params: [],
+    returns: null,
+    modifiers: [],
+    internal: false,
+    definition: true,
+    line: row(statement),
+    endLine: endRow(block),
+    complexity: complexityOf(block),
+    template: 0,
+    signature: oneLine(call.text).slice(0, 200),
+    doc: docOf(statement),
+    attributes: [],
+    test: { framework: 'catch', fixture },
+    body: collectBody(block),
+  });
+  return true;
 }
 
 function visitDeclaration(node, scope, context, template) {
@@ -177,6 +238,16 @@ function typeSpecifier(node, scope, context, owner, template, access) {
 function classBody(body, type, scope, context) {
   let access = type.kind === 'class' ? 'private' : 'public';
   let section = null;
+  // Qt properties: Q_PROPERTY(type name READ getter WRITE setter NOTIFY signal …) in the body.
+  for (const a of context.pending.annotations) {
+    if (a.name !== 'Q_PROPERTY' || a.claimed || a.line < row(body) || a.line > endRow(body)) continue;
+    a.claimed = true;
+    const m = /^(.*?)\s*\b(\w+)\s+(?=(?:READ|WRITE|MEMBER|NOTIFY|RESET|BINDABLE|CONSTANT|FINAL|STORED|DESIGNABLE|SCRIPTABLE|USER|REQUIRED|REVISION)\b)/.exec(a.args);
+    if (!m) continue;
+    const part = (key) => new RegExp(`\\b${key}\\s+(\\w+)`).exec(a.args)?.[1] ?? null;
+    type.members.push({ kind: 'property', name: m[2], type: normalizeType(m[1]), access: 'public', modifiers: [], line: a.line, endLine: a.line, signature: `Q_PROPERTY(${a.args})`, doc: null, attributes: [], read: part('READ'), write: part('WRITE'), notify: part('NOTIFY'), member: part('MEMBER') });
+  }
+
   for (let i = 0; i < body.namedChildCount; i++) {
     const child = body.namedChild(i);
     switch (child.type) {
@@ -326,6 +397,34 @@ function functionDefinition(node, scope, context, template) {
   const tail = declaratorTail(declarator);
   if (tail.const) modifiers.push('const');
   const parameters = params(declarator.childForFieldName('parameters'));
+  const macro = !node.childForFieldName('type') && !qualified.qualifiers.length ? FUNCTION_TESTS[qualified.name] : undefined;
+  if (macro !== undefined) {
+    if (!macro) return; // FRIEND_TEST and the like declare nothing of their own
+    const args = parameters.map((p) => p.type);
+    const name = macro.single ? args[0] : `${args[0]}.${args[1]}`;
+    const fixture = macro.fixture === false ? null : args[macro.fixture];
+    context.facts.functions.push({
+      name: name ?? qualified.name,
+      qualifiers: [],
+      scope: scope.namespace,
+      params: [],
+      returns: null,
+      modifiers: [],
+      internal: false,
+      definition: true,
+      line: row(node),
+      endLine: endRow(node),
+      complexity: body ? complexityOf(body) : 0,
+      template: 0,
+      signature: signatureOf(node, body),
+      doc: docOf(node),
+      attributes: claim(context, row(node)),
+      test: { framework: macro.framework, fixture },
+      body: body ? collectBody(body) : null,
+    });
+    return;
+  }
+
   context.facts.functions.push({
     name: qualified.name,
     qualifiers: qualified.qualifiers,
@@ -720,7 +819,7 @@ function docOf(node) {
 function claim(context, line) {
   const out = [];
   for (const a of context.pending.annotations) {
-    if (a.claimed || a.line > line) continue;
+    if (a.claimed || a.line > line || a.name === 'Q_PROPERTY') continue;
     if (a.line < line - 6) {
       a.claimed = true;
       continue;

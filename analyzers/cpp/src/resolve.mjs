@@ -553,8 +553,16 @@ class Resolver {
   memberEdges(member, entry) {
     const decl = member.declaration;
     const ctx = this.contextOf(entry);
-    if (member.kind === 'field') {
+    if (member.kind === 'field' || member.kind === 'property') {
       for (const target of this.classesInText(decl.type, ctx)) if (target !== entry) this.graph.addEdge(member.id, target.id, 'holds');
+      if (member.kind === 'property') {
+        // Q_PROPERTY: its READ / WRITE functions run when it is used; MEMBER is the field it is; NOTIFY the signal.
+        for (const [name, kind] of [[decl.read, 'calls'], [decl.write, 'calls'], [decl.member, 'accesses'], [decl.notify, 'uses']]) {
+          const wanted = kind === 'accesses' ? 'field' : 'method';
+          const target = name ? this.membersNamed(entry, name).find((m) => m.member.kind === wanted) : null;
+          if (target) this.graph.addEdge(member.id, target.member.id, kind);
+        }
+      }
     } else {
       for (const p of decl.params ?? []) for (const target of this.classesInText(p.type, ctx)) this.graph.addEdge(member.id, target.id, 'accepts');
       if (decl.returns) for (const target of this.classesInText(decl.returns, ctx)) this.graph.addEdge(member.id, target.id, 'returns');
@@ -580,7 +588,16 @@ class Resolver {
 
     for (const place of fn.places) {
       const body = place.member.body;
-      if (body) this.bodyEdges(fn.id, body, this.contextOfFree(fn, place.file), place.member.params ?? decl.params, place.file);
+      if (!body) continue;
+      const ctx = this.contextOfFree(fn, place.file);
+      // A fixture test (TEST_F, BOOST_FIXTURE_TEST_CASE, TEST_CASE_METHOD) runs as a member of its fixture.
+      const fixture = place.member.test?.fixture ? this.lookupType(place.member.test.fixture, ctx) : null;
+      if (fixture) {
+        this.graph.addEdge(fn.id, fixture.id, 'uses');
+        ctx.cls = fixture;
+      }
+
+      this.bodyEdges(fn.id, body, ctx, place.member.params ?? decl.params, place.file);
     }
   }
 
@@ -605,11 +622,13 @@ class Resolver {
           const candidate = name && this.declaredNames.has(name) && !external && !std;
           if (candidate) this.counts.candidates++;
           const target = this.callee(site.f, site.argc, site.args ?? [], scope);
+          if (!target && site.argx) this.connect(source, site.argx, scope);
           if (!target) {
             if (candidate) this.unresolved.push([file.rel, site.line, describe(site.f), receiverType(site.f, scope, this)]);
             break;
           }
 
+          if (site.argx) this.connect(source, site.argx, scope);
           this.counts.resolved++;
           if (candidate) this.counts.candidateResolved++;
           if (target.member) add(target.member.id, 'calls', site.line);
@@ -652,6 +671,30 @@ class Resolver {
           break;
       }
     }
+  }
+
+  /**
+   * Qt's connect(sender, &Sender::signal, receiver, &Receiver::slot) (or with SIGNAL()/SLOT() names): the connecting
+   * code subscribes to the signal and uses the slot, as C# code subscribing to an event. The signal does not call the
+   * slot on the map: its class does not depend on every receiver (that would make a cycle of each connection).
+   */
+  connect(source, args, scope) {
+    const memberOf = (e, owner) => {
+      if (e?.t === 'addr' && e.b?.t === 'q' && e.b.p.length > 1) {
+        const type = this.lookupType(e.b.p.slice(0, -1).join('::'), scope.ctx);
+        return type ? this.membersNamed(type, e.b.p[e.b.p.length - 1]).find((m) => m.member.kind !== 'field')?.member ?? null : null;
+      }
+
+      if (e?.t === 'lit' && e.s && owner) return this.membersNamed(owner, e.s).find((m) => m.member.kind !== 'field')?.member ?? null;
+      return null;
+    };
+    const sender = this.classOf(this.typeOf(args[0], scope));
+    const signal = memberOf(args[1], sender);
+    if (!signal) return;
+    this.graph.addEdge(source, signal.id, 'subscribes');
+    const receiver = args.length > 3 ? this.classOf(this.typeOf(args[2], scope)) : null;
+    const slot = args.length > 3 ? memberOf(args[3], receiver) : memberOf(args[2], null);
+    if (slot) this.graph.addEdge(source, slot.id, 'uses');
   }
 
   /** A field or global read or written (accesses), a function named as a value (uses), a type named (uses). */

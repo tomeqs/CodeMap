@@ -27,7 +27,7 @@ export function analyze(parser, request, log = () => {}) {
   const timing = new Timing(process.env.CODEMAP_CPP_STATS ? log : null);
   const found = discover(request.target);
   timing.mark('discover');
-  const { projects, fileProject } = buildProjects(found, found.files);
+  const { projects, fileProject, explicit } = buildProjects(found, found.files);
   timing.mark('projects');
   const warnings = [];
   const counts = { generated: 0, tests: 0, large: 0, failed: [], unreadable: [] };
@@ -57,7 +57,8 @@ export function analyze(parser, request, log = () => {}) {
       continue;
     }
 
-    files.push({ path, rel, project, test, header: isHeaderFile(path), lang: grammarOf(path), includes: includesOf(text), lines: lineCount(text) });
+    const qtest = [...text.matchAll(/\bQTEST_(?:GUILESS_|APPLESS_)?MAIN\s*\(\s*(\w+)\s*\)/g)].map((m) => m[1]);
+    files.push({ path, rel, project, test, header: isHeaderFile(path), lang: grammarOf(path), includes: includesOf(text), lines: lineCount(text), qtest });
     if (text.includes('define')) texts.push(text);
   }
 
@@ -65,6 +66,7 @@ export function analyze(parser, request, log = () => {}) {
   const macros = collectMacros(texts);
   texts.length = 0;
   resolveIncludes(files, projects);
+  headersToTheirIncluders(files, explicit);
   chooseHeaderGrammars(files);
   assignComponents(files);
   timing.mark('includes and macros');
@@ -203,6 +205,33 @@ function resolveIncludes(files, projects) {
       }
 
       if (target && target !== file) file.included.push(target);
+    }
+  }
+}
+
+/**
+ * A header no build file lists, included only by the sources of one other project (a test target's fixture header
+ * next to the library's folder), belongs to that project.
+ */
+function headersToTheirIncluders(files, explicit) {
+  const includers = new Map();
+  for (const file of files) {
+    if (file.header) continue;
+    for (const target of file.included) {
+      if (!includers.has(target)) includers.set(target, new Set());
+      includers.get(target).add(file.project);
+    }
+  }
+
+  for (const file of files) {
+    if (!file.header || file.context || explicit.has(file.path) || file.project.kind === 'unreal') continue;
+    const projects = includers.get(file);
+    if (projects?.size === 1) {
+      const [project] = projects;
+      if (project !== file.project) {
+        file.project = project;
+        file.test ||= project.test;
+      }
     }
   }
 }
