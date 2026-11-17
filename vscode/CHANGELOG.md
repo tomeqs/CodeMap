@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **C and C++**, as a fourth language, with nothing to install: the analyzer reads them with tree-sitter on VS Code's own Node.js, so code maps without its compiler, its dependencies or a configured build.
+  - Projects from CMake targets (with their links), Visual Studio projects and solutions, Unreal Engine modules, and folders with other build files (Makefile, meson, Bazel).
+  - A map shaped like C#'s: namespaces, classes and members; code outside namespaces (all of C) grouped by folder; free functions in a module per header and source pair. A declaration in a header and its definition in a `.cpp` are one node with both places.
+  - Calls, inheritance, overrides (a pure virtual call reaches its implementations in the Flow view), constructor injection, fields and the types in signatures, resolved from the types the code declares; a call that cannot be told gives no edge.
+  - GoogleTest, Catch2, doctest, Boost.Test and Qt Test; Qt's signals, slots, `connect` and `Q_PROPERTY`; Unreal's `UCLASS`, `UFUNCTION` called from Blueprints and `UINTERFACE`.
+  - Checks inside functions (`--checks`): a case falling through, a missing virtual destructor, `delete` against `new[]`, a lock that unlocks at once, returning the address of a local, and more.
+  - *Show in Code Map* and *Show Call Flow* work in C and C++ files, the map follows changes to sources, headers and build files, and the keyboard shortcut now works in Python files too.
+
 ## 0.4.2
 
 - **Opening the map no longer leaves the camera inside it.** The map shows the last graph at once and the fresh analysis a moment later; when that second load came before the first layout had settled, the camera stayed in the small starting ball, with oversized, washed-out planets. The same happened when a file was saved during the first layout.

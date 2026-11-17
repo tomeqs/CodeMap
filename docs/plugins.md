@@ -12,13 +12,18 @@ Druga to Python ([`analyzers/python`](../analyzers/python)): program w Pythonie 
 pakietów. Nazwy rozwiązuje sam (importy, re-eksporty w `__init__.py`, klasy bazowe, typy z adnotacji i konstruktorów),
 a gdy typu odbiorcy nie da się ustalić, nie zgaduje: wywołanie nie daje krawędzi.
 
+Trzecia to C i C++ ([`analyzers/cpp`](../analyzers/cpp)): Node.js + tree-sitter z gramatykami C i C++ jako WebAssembly (bez
+dodatków natywnych, więc jedna kopia działa na każdej platformie). Projekty bierze z targetów CMake, projektów Visual Studio
+i modułów Unreal Engine, przed parsowaniem wycina jedną gałąź każdego `#if` i makra, które tylko ozdabiają deklaracje, a nazwy
+rozwiązuje jak Python: z typów, które kod deklaruje, bez zgadywania. Wynik: [`samples/shop-cpp`](../samples/shop-cpp).
+
 ## Gdzie CodeMap szuka wtyczek
 
 W tej kolejności (dla jednego `id` wygrywa pierwsza znaleziona):
 
 1. foldery z `CODEMAP_PLUGIN_PATH` (rozdzielone `:` albo `;` na Windows) i z opcji `--plugins <folder>`,
 2. `~/.codemap/plugins` (albo `$CODEMAP_HOME/plugins`),
-3. `plugins/` obok programu `codemap` (tam trafiają wtyczki TypeScript i Python z wydaniami i z `dotnet build`).
+3. `plugins/` obok programu `codemap` (tam trafiają wtyczki TypeScript, Python i C/C++ z wydaniami i z `dotnet build`).
 
 Folder jest wtyczką, gdy ma plik `codemap-plugin.json`, albo folderem wtyczek, gdy mają go jego podfoldery.
 **Wtyczki nigdy nie są ładowane z analizowanego repozytorium**: wtyczka to program, który się uruchamia.
@@ -31,8 +36,8 @@ Manifest, którego nie da się użyć (zły JSON, brak `id`, `command` albo `det
 
 `codemap --version` wypisuje znalezione języki, czy ich środowisko (np. Node.js) jest dostępne i dlaczego ewentualnie nie jest.
 
-Rozszerzenie VS Code ma wtyczkę TypeScript w sobie i ustawia `CODEMAP_NODE` na Node.js wbudowany w VS Code (Electron jako Node),
-chyba że wskazano inny w ustawieniu `codemap.nodePath` albo w zmiennej `CODEMAP_NODE`.
+Rozszerzenie VS Code ma wtyczki TypeScript i C/C++ w sobie i ustawia `CODEMAP_NODE` na Node.js wbudowany w VS Code (Electron
+jako Node), chyba że wskazano inny w ustawieniu `codemap.nodePath` albo w zmiennej `CODEMAP_NODE`.
 
 ## Manifest `codemap-plugin.json`
 

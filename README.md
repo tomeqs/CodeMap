@@ -1,6 +1,6 @@
 # CodeMap
 
-A 3D map of C#, TypeScript / JavaScript and Python code: dependencies, architecture layers, dependency injection and call
+A 3D map of C#, TypeScript / JavaScript, Python, C and C++ code: dependencies, architecture layers, dependency injection and call
 flows, one click away from the code. It also runs as an MCP server, so AI agents can read the structure and improve it.
 
 | Galaxy: types as stars, projects as solar systems | City: height = complexity, colour = hotspot |
@@ -31,7 +31,7 @@ Pick one:
   * Add its folder to `PATH`, so `codemap` works in any terminal.
 * **.NET tool** (.NET SDK 8+): `dotnet tool install -g CodeMap.Tool`
 
-TypeScript and JavaScript also need Node.js 18+ (the extension uses the one built into the editor).
+TypeScript, JavaScript, C and C++ also need Node.js 18+ (the extension uses the one built into the editor).
 Python needs Python 3.9+: the one on the `PATH`, or the one `CODEMAP_PYTHON` names.
 
 ## Open a map
@@ -144,6 +144,13 @@ Full reference: [docs/mcp.md](docs/mcp.md).
   * FastAPI (routes, and `Depends` in the DI view), Flask, Django and Django REST framework (routes with their full paths);
   * SQLAlchemy, SQLModel, Django and Pydantic models;
   * Celery tasks, click and typer commands, pytest fixtures.
+* **C and C++** (needs Node.js 18+, nothing to build or configure): open a folder, `CMakeLists.txt`, a Visual Studio
+  `.sln` / `.vcxproj`, an Unreal `.uproject` or a file. Read with tree-sitter, so code that does not build on this
+  machine maps too. Projects come from CMake targets, Visual Studio projects, Unreal modules or other build files
+  (Makefile, meson, Bazel); names are resolved from the types the code declares. Recognises:
+  * GoogleTest, Catch2, doctest, Boost.Test and Qt Test;
+  * Qt (signals, slots, `connect`, `Q_PROPERTY`, widgets);
+  * Unreal Engine (`UCLASS`, `UFUNCTION` called from Blueprints, `UINTERFACE`).
 * **Several in one repository:** one map with all of them.
 * **Other languages:** as [plugins](docs/plugins.md).
 
@@ -199,6 +206,7 @@ dotnet run --project src/CodeMap.Cli -- path/to/MySolution.sln   # run without i
 dotnet test                                          # analyzer and MCP server tests
 cd analyzers/typescript && npm install && npm test   # TypeScript plugin (npm install is also needed to build it into the CLI)
 cd analyzers/python && python3 -m unittest discover -s test   # Python plugin (standard library only)
+cd analyzers/cpp && npm ci && npm test               # C / C++ plugin (npm ci is also needed to build it into the CLI)
 cd vscode && npm install && npm test                 # VS Code extension
 cd viewer && npm install && npm run dev              # viewer: http://localhost:5173/?data=sample.codemap.json
 npm run build                                        # builds the viewer into src/CodeMap.Cli/Assets/viewer.html

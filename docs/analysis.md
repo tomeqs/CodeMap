@@ -145,9 +145,77 @@ codemap path/to/repo --lang python  # only the Python of a repository
 CODEMAP_PYTHON=/path/to/python codemap path/to/project
 ```
 
+### C and C++
+
+A plugin (`analyzers/cpp`, included in the releases) that runs on **Node.js 18+** with tree-sitter and its C and C++
+grammars as WebAssembly: nothing to install, build or configure, the same build on every platform; the VS Code
+extension uses the editor's own Node.js. tree-sitter reads the code as written, so a project maps without its
+compiler, its dependencies or a configured build (no `compile_commands.json` needed, though one is used when found).
+
+* **What you can open:** a folder, a `CMakeLists.txt`, a Visual Studio `.sln` (one with C++ projects only; a solution
+  with C# projects maps its C#, and its folder maps both) or `.vcxproj`, an Unreal `.uproject`, or a source or header.
+* **Projects:**
+  * CMake targets (`add_library`, `add_executable`, Qt's `qt_add_executable`), read, not run: `add_subdirectory`,
+    variables, `file(GLOB)`, `target_sources`, include directories and links between targets (`projectReference`);
+    other libraries (`Qt6::Widgets`, `fmt::fmt`) are external. A target linking a test framework, or registered with
+    `add_test` / `gtest_discover_tests`, is a test project;
+  * Visual Studio projects (`.vcxproj`: their files, references and include directories);
+  * Unreal Engine modules (the folder of `Name.Build.cs`, with the modules it depends on); its `.Build.cs` and
+    `.Target.cs` files are not taken for C# code;
+  * a project per folder with another build file (Makefile, meson, Bazel, autotools, vcpkg, Conan), and the folder's
+    name for code outside any.
+* **Left out:** build trees (`build`, `cmake-build-*`, any folder with a `CMakeCache.txt`), Unreal's `Intermediate` and
+  `Binaries`, vendored code (`third_party`, `3rdparty`, `external`, `vendor`…), generated files (`moc_*`, `ui_*.h`,
+  `*.generated.h`, `*.pb.cc`…) unless asked for.
+* **C or C++:** `.c` files are C, `.cpp` / `.cc` / `.cxx` C++; a `.h` is read as what includes it.
+
+The map is shaped like C#'s: projects → **namespaces** → types (classes, structs and unions, enums; a class of pure
+virtual functions and no data is an interface) → members. Code outside any namespace (all of C, much C++) is grouped
+by folder (`include/` and `src/` left out, so a header and its source land together), and free functions, globals and
+aliases sit in a holder per header and source pair (`orders.h` + `orders.cpp`).
+
+* **A declaration and its definition are one node:** a method declared in a header and defined in a `.cpp` has the
+  definition as its place and the declaration as an extra one; a class keeps its `.cpp` files as extra places (so git
+  history counts them), and the file-local helpers of a class's source (`static` or anonymous-namespace functions)
+  are its private static members.
+* **Before parsing:** one branch of each `#if` is read (reading all of them unbalances the braces), and macros that
+  only decorate declarations are left out: export macros (`class SHOP_API Order`), the project's own `#define`s that
+  stand for nothing or a keyword (`SQLITE_PRIVATE`), namespace macros expanded (`FMT_BEGIN_NAMESPACE`). Files that are
+  still mostly unreadable are named in a warning.
+* **Resolution:** the types of expressions come from what the code declares: locals, parameters, fields and globals
+  (through `const`, references, pointers and smart pointers), `auto` from its initializer, a call from its callee's
+  return type, a range-for variable from its container. Names are looked up as C++ does (the class and its bases,
+  the enclosing namespaces, `using`), overloads told apart by argument count, then literal argument types. A call that
+  cannot be told (a template parameter's member, a macro) makes no edge rather than a guessed one.
+* **Edges:** calls (in order), `new`, `make_unique` and objects made on the stack (`instantiates`), inheritance and
+  implemented interfaces, overrides of virtual functions (a call of a pure virtual reaches its implementations in call
+  flows), constructor parameters (`injects`), signature and field types through smart pointers and containers
+  (`accepts`, `returns`, `holds`), fields and globals (`accesses`), `throw` and `catch`, functions named as values (C
+  callback tables), and the libraries projects link.
+* **Entry points:** `main` (and `WinMain`, `DllMain`, `LLVMFuzzerTestOneInput`…), executable targets.
+* **Tests:** GoogleTest (`TEST`, `TEST_F`: the test runs as its fixture), Catch2 and doctest (`TEST_CASE`, `SCENARIO`),
+  Boost.Test, Qt Test (`QTEST_MAIN`), files in `test/` / `tests/` or named `*_test.cpp`, and the files of test targets.
+* **Unused code:** private members and file-local functions and types nothing references (virtual functions,
+  operators, destructors, constructors and annotated members are left alone).
+
+Frameworks recognised from the code itself:
+
+* **Qt:** signals and slots (`slots` are handlers, `emit` a call), `connect` with member pointers or `SIGNAL()` /
+  `SLOT()` (the connecting code subscribes to the signal; a signal does not make its class depend on its receivers),
+  `Q_PROPERTY` with its READ / WRITE / NOTIFY members, `Q_INVOKABLE` members (called from QML), widgets as components.
+* **Unreal Engine:** `UCLASS` / `USTRUCT` / `UPROPERTY` / `UFUNCTION` as attributes; functions Blueprints or the network
+  call (`BlueprintCallable`, `BlueprintNativeEvent`, `Server`, `Client`…) and game modes as entry points; the body of
+  `Name_Implementation` as `Name`'s; `UINTERFACE`'s I-class as an interface.
+
+```bash
+codemap path/to/project            # a folder with CMakeLists.txt, a .sln / .vcxproj, a .uproject, or sources
+codemap path/to/repo --lang cpp    # only the C and C++ of a repository
+CODEMAP_CPP_STATS=1 codemap path/to/project   # how many calls were resolved, and how much the parser could not read
+```
+
 ### Several languages, and the samples
 
-* A repository with C#, TypeScript and Python gives one map with all of them side by side. The levels are then called
+* A repository with C#, TypeScript, Python and C++ gives one map with all of them side by side. The levels are then called
   "Projects / Packages", "Types / Files / Modules"… Maps of different languages have no edges between them yet (e.g.
   HTTP calls from TypeScript to C# controllers).
 * [`samples/Shop`](../samples/Shop): a C# solution (DDD, DI, events, a deliberate cycle and dead code).
@@ -156,6 +224,9 @@ CODEMAP_PYTHON=/path/to/python codemap path/to/project
   `codemap samples` gives one map of it and the C# solution.
 * [`samples/shop-py`](../samples/shop-py): the same shop in Python (a FastAPI API, a Django back office, a Flask app and
   a Celery worker on a shared domain library), with a deliberate cycle, dead code and a captive dependency.
+* [`samples/shop-cpp`](../samples/shop-cpp): the same shop in C++ (CMake targets for the domain, the application and
+  the infrastructure, a command line and a Qt window, GoogleTest and Catch2 tests), beside a C library and an Unreal
+  module, with a deliberate cycle and dead code.
 * [`samples/Booking`](../samples/Booking): an ASP.NET Core API and a TypeScript client in one folder. It is a test bed
   that contains the edge cases of C# and TypeScript mapping, each listed with what its map must show.
 
@@ -273,6 +344,18 @@ costs. `FindingsAnalysis.Compute(graph)` gives the same in code.
   * correctness: mutable default arguments, `== None`, `is` with a literal, `assert (x, "msg")`, duplicate dict keys,
     a function defined twice, f-strings without placeholders, `x = x`, `x == x`, constant conditions;
   * dead code: unreachable code, unused imports and variables; and, as information, variables named like built-ins.
+* **C and C++** (CodeMap's own rules, narrowed on real code to stay quiet):
+  * correctness: `if (x = y)`, `if (x);` before a block, a `case` that runs on into the next (not with
+    `[[fallthrough]]`, a fallthrough macro or comment), a virtual function called in a constructor or destructor,
+    returning the address of a local, `sizeof` of a pointer used as a buffer size, a `char*` compared with `==` to a
+    literal, `x = x`, `x == x`, duplicate `case`, constant conditions, `==` on floating-point numbers, `gets` / `strcpy` /
+    `sprintf`, `using namespace` in a header;
+  * resources and concurrency: a class with virtual functions and no virtual destructor, `delete` / `delete[]` that
+    does not match `new` / `new[]` (also across a constructor and destructor), a local from `new` never let go, a lock
+    (`std::lock_guard<…>(m);`) that unlocks at once;
+  * exceptions: an empty or swallowing `catch`, catching by value, throwing a pointer, an exception made without
+    `throw`;
+  * dead code: unreachable code (not across a branch of `#if` left out).
 
 Test code and generated code are not checked. The checks do not change the health score, which measures structure.
 
@@ -357,12 +440,13 @@ src/CodeMap.Mcp       the MCP server for AI agents (`codemap mcp`): session, too
 src/CodeMap.Cli       the `codemap` tool (dotnet tool or standalone executable), embeds the built viewer
 analyzers/typescript  TypeScript / JavaScript plugin (Node.js + TypeScript compiler API), copied to plugins/typescript
 analyzers/python      Python plugin (Python's own ast, standard library only), copied to plugins/python
+analyzers/cpp         C / C++ plugin (Node.js + tree-sitter as WebAssembly), copied to plugins/cpp
 vscode/               VS Code extension: the map in a webview, code ↔ map navigation, live refresh, MCP for the editor's agent
 viewer/               3D map: Vite + three.js + d3-force-3d + d3-hierarchy, built into a single HTML file
 tests/CodeMap.Tests   xUnit tests of the analyzer, exporters and MCP server; Golden/ holds saved maps of the samples,
                       the Shop findings and diagrams, and the viewer's call flows the C# port must match
 tests/mcp-smoke.mjs   `codemap mcp` as an agent uses it (CI and every release)
-samples/              Shop (C#), shop-ts (TypeScript), shop-py (Python), Booking (C# and TypeScript: the mapping edge cases)
+samples/              Shop (C#), shop-ts (TypeScript), shop-py (Python), shop-cpp (C and C++), Booking (C# and TypeScript: the mapping edge cases)
 docs/                 format specification, JSON Schema, the plugin protocol, these pages
 ```
 
@@ -376,4 +460,4 @@ docs/                 format specification, JSON Schema, the plugin protocol, th
 * Code ownership (authors from git) as the colour of districts.
 * A Visual Studio extension with the map in an editor panel (VS Code already has one).
 * Edges between languages: HTTP calls from TypeScript (`fetch`, `HttpClient`) to C# controller routes.
-* More languages as plugins (Python, Java, Go): the protocol is in [plugins.md](plugins.md).
+* More languages as plugins (Java, Go, Rust): the protocol is in [plugins.md](plugins.md).

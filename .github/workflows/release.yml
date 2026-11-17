@@ -107,6 +107,7 @@ jobs:
           grep -q '"T:Shop.Domain.Orders.Order"' smoke-mixed/samples.codemap.json
           grep -q '"ts:project:@shop/domain"' smoke-mixed/samples.codemap.json
           grep -q '"py:project:shop-domain"' smoke-mixed/samples.codemap.json
+          grep -q '"cpp:project:shop_domain"' smoke-mixed/samples.codemap.json
           "$exe" analyzers/python/test/fixtures/mini -o smoke-py -f json -q
           grep -q '"py:mini:src/mini/orders/service.py#OrderService.place"' smoke-py/mini.codemap.json
           "$exe" analyzers/cpp/test/fixtures/mini -o smoke-cpp -f json -q

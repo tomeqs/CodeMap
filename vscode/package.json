@@ -1,7 +1,7 @@
 {
   "name": "codemap-3d",
   "displayName": "CodeMap 3D",
-  "description": "Interactive 3D map of your C#, TypeScript / JavaScript and Python code: dependencies, architecture layers, DI lifetimes, call flows and sequence diagrams, one click away from the code. Includes an MCP server that lets AI agents read and improve the structure.",
+  "description": "Interactive 3D map of your C#, TypeScript / JavaScript, Python, C and C++ code: dependencies, architecture layers, DI lifetimes, call flows and sequence diagrams, one click away from the code. Includes an MCP server that lets AI agents read and improve the structure.",
   "version": "0.4.2",
   "publisher": "tomeqs",
   "license": "MIT",
@@ -36,7 +36,13 @@
     "python",
     "fastapi",
     "django",
-    "flask"
+    "flask",
+    "c++",
+    "cpp",
+    "c",
+    "cmake",
+    "qt",
+    "unreal engine"
   ],
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -52,7 +58,8 @@
     "onMcpServerDefinitionProvider:codemap.mcp",
     "workspaceContains:**/*.{sln,slnx,slnf,csproj}",
     "workspaceContains:**/{package.json,tsconfig.json,jsconfig.json}",
-    "workspaceContains:**/{pyproject.toml,setup.py,setup.cfg,requirements.txt,Pipfile}"
+    "workspaceContains:**/{pyproject.toml,setup.py,setup.cfg,requirements.txt,Pipfile}",
+    "workspaceContains:**/{CMakeLists.txt,*.vcxproj,*.uproject,meson.build}"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -117,19 +124,19 @@
       "explorer/context": [
         {
           "command": "codemap.open",
-          "when": "explorerResourceIsFolder || resourceExtname =~ /^\\.(sln|slnx|slnf|csproj)$/ || resourceFilename =~ /^((package|jsconfig|tsconfig(\\.[\\w-]+)?)\\.json|pyproject\\.toml|setup\\.py|requirements\\.txt)$/",
+          "when": "explorerResourceIsFolder || resourceExtname =~ /^\\.(sln|slnx|slnf|csproj)$/ || resourceFilename =~ /^((package|jsconfig|tsconfig(\\.[\\w-]+)?)\\.json|pyproject\\.toml|setup\\.py|requirements\\.txt|CMakeLists\\.txt|[^/\\\\]+\\.(vcxproj|uproject))$/",
           "group": "navigation@90"
         }
       ],
       "editor/context": [
         {
           "command": "codemap.revealInMap",
-          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python)$/",
+          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp)$/",
           "group": "navigation@90"
         },
         {
           "command": "codemap.callFlow",
-          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python)$/",
+          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp)$/",
           "group": "navigation@91"
         }
       ],
@@ -148,11 +155,11 @@
       "commandPalette": [
         {
           "command": "codemap.revealInMap",
-          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python)$/"
+          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp)$/"
         },
         {
           "command": "codemap.callFlow",
-          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python)$/"
+          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp)$/"
         }
       ]
     },
@@ -161,7 +168,7 @@
         "command": "codemap.revealInMap",
         "key": "ctrl+alt+m",
         "mac": "cmd+alt+m",
-        "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact)$/"
+        "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp)$/"
       }
     ],
     "configuration": {

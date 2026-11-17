@@ -6,8 +6,9 @@ namespace CodeMap.Tests;
 
 /// <summary>
 /// samples/shop-ts (the shop in TypeScript: NestJS API, Express gateway, Angular web on a domain library), samples/shop-py
-/// (the shop in Python: FastAPI, Django, Flask, Celery on a domain library) and samples/ as a whole (with the C# Shop and
-/// Booking): what they are there to show stays on the map.
+/// (the shop in Python: FastAPI, Django, Flask, Celery on a domain library), samples/shop-cpp (the shop in C++: CMake
+/// targets, Qt, tests, a C library, an Unreal module) and samples/ as a whole (with the C# Shop and Booking): what they are
+/// there to show stays on the map.
 /// </summary>
 public class SampleTests
 {
@@ -129,15 +130,75 @@ public class SampleTests
         Assert.Equal(("mutable-default", "apps/legacy/legacy/catalog.py", "py:legacy:legacy/catalog.py#show_product"), (diagnostic.Rule, diagnostic.Location.File, diagnostic.Node));
     }
 
-    [NodeFact(typescript: true, python: true)]
-    public void The_samples_folder_is_one_map_of_csharp_typescript_and_python()
+    [NodeFact(cpp: true)]
+    public void The_cpp_shop_has_its_targets_classes_flows_cycle_and_dead_code()
+    {
+        var graph = CodeMapAnalyzer.Analyze(Path.Combine(Samples, "shop-cpp"), Registry, new AnalyzerOptions { Git = false, CodeChecks = true });
+        void Edge(string source, string kind, string target) => graph.AssertEdge(source, kind, target);
+        bool Tagged(string id, string tag) => graph.Node(id).Tags.Contains(tag);
+        const string domain = "cpp:shop_domain:shop::domain::";
+        const string app = "cpp:shop_app:shop::app::";
+        const string infra = "cpp:shop_infra:shop::infra::";
+
+        Assert.Empty(graph.Analysis.Warnings);
+        Assert.Equal(new[] { "ShopKiosk", "legacy", "shop_app", "shop_cli", "shop_domain", "shop_infra", "shop_qt", "shop_tests" },
+            graph.Nodes.Where(n => n.Kind == NodeKinds.Project).Select(n => n.Name).Order(StringComparer.Ordinal));
+        Edge("cpp:project:shop_cli", EdgeKinds.ProjectReference, "cpp:project:shop_infra");
+        Edge("cpp:project:shop_infra", EdgeKinds.ProjectReference, "cpp:project:shop_app");
+        Edge("cpp:project:shop_app", EdgeKinds.ProjectReference, "cpp:project:shop_domain");
+        Edge("cpp:project:shop_qt", EdgeKinds.PackageReference, "cpp:lib:Qt6::Widgets");
+        Assert.True(Tagged("cpp:project:shop_tests", Tags.TestProject));
+        Assert.True(Tagged("cpp:project:shop_cli", Tags.EntryPoint));
+
+        // A class in a header with its definitions in a source file, a helper of that file, an overload by arity
+        var order = graph.Node(domain + "Order");
+        Assert.Equal("libs/domain/include/shop/domain/order.h", order.Location!.File);
+        Assert.Contains(order.ExtraLocations!, l => l.File == "libs/domain/src/order.cpp");
+        Assert.Equal("private", graph.Node(domain + "Order::roundCents(std::int64_t)").Accessibility);
+        Edge(domain + "Order::total()", EdgeKinds.Calls, domain + "Order::roundCents(std::int64_t)");
+        Edge(domain + "Order::addLine(const Product&)", EdgeKinds.Calls, domain + "Order::addLine(const Product&,int)");
+        Edge("cpp:shop_domain:file:libs/domain/include/shop/domain/discounts#shop::domain::discountFor(Tier,const Money&)", EdgeKinds.Accepts, domain + "Money");
+
+        // From main through the interface to the fake gateway
+        Edge(infra + "FakePaymentGateway", EdgeKinds.Implements, app + "PaymentGateway");
+        var flows = new CodeMap.Insights.CallFlow(new CodeMap.Insights.GraphIndex(graph));
+        var flow = flows.Build(new[] { "cpp:shop_cli:file:apps/cli/main#(global)::main(int,char**)" });
+        Assert.Contains(flow.Methods, m => m.Id == app + "PaymentService::charge(domain::Order&)");
+        Assert.Contains(flow.Methods, m => m.Id == infra + "FakePaymentGateway::charge(const std::string&,const domain::Money&)");
+        Assert.Contains(flow.Methods, m => m.Id == domain + "Order::markPaid()");
+
+        // Orders and payments need each other; one private method nobody calls
+        Assert.Contains(graph.Analysis.Cycles, c => c.Level == "type" && c.Nodes.SequenceEqual(new[] { app + "OrderService", app + "PaymentService" }));
+        Assert.Equal(new[] { domain + "Order::legacyTotal()" }, graph.Analysis.UnusedCandidates);
+
+        // Qt, tests, C, Unreal
+        Assert.True(Tagged("cpp:shop_qt:CartWindow", Tags.Component));
+        Assert.True(Tagged("cpp:shop_qt:CartWindow::refresh()", Tags.Handler));
+        Edge("cpp:shop_qt:CartWindow::CartWindow(QWidget*)", EdgeKinds.Subscribes, "cpp:shop_qt:CartWindow::itemsChanged(int)");
+        Edge("cpp:shop_qt:CartWindow::add(const shop::domain::Product&)", EdgeKinds.Calls, "cpp:shop_qt:CartWindow::itemsChanged(int)");
+        Assert.True(Tagged("cpp:shop_tests:file:tests/order_test#(global)::OrderTest.AddsTheSameProductToOneLine()", Tags.Test));
+        Edge("cpp:shop_tests:file:tests/order_test#(global)::OrderTest.AddsTheSameProductToOneLine()", EdgeKinds.Accesses, "cpp:shop_tests:OrderTest::order");
+        Edge("cpp:legacy:file:legacy/ledger#(global)::postings", EdgeKinds.Uses, "cpp:legacy:file:legacy/ledger#(global)::credit(long,long)");
+        Assert.True(Tagged("cpp:ShopKiosk:AKioskActor::Sell(int32)", Tags.EntryPoint));
+        Assert.DoesNotContain(graph.Nodes, n => n.Kind == NodeKinds.Project && n.Language == "csharp"); // ShopKiosk.Build.cs is not C#
+
+        // --checks: the case that runs on into the next one
+        var diagnostic = Assert.Single(graph.Analysis.Diagnostics!);
+        Assert.Equal(("implicit-fallthrough", "libs/domain/src/discounts.cpp"), (diagnostic.Rule, diagnostic.Location.File));
+        Assert.Equal("cpp:shop_domain:file:libs/domain/include/shop/domain/discounts#shop::domain::discountFor(Tier,const Money&)", diagnostic.Node);
+    }
+
+    [NodeFact(typescript: true, python: true, cpp: true)]
+    public void The_samples_folder_is_one_map_of_csharp_typescript_python_and_cpp()
     {
         var graph = CodeMapAnalyzer.Analyze(Samples, Registry, NoGit);
-        Assert.Equal(new[] { "csharp", "python", "typescript" }, graph.Source.Languages!.Select(l => l.Id));
+        Assert.Equal(new[] { "csharp", "cpp", "python", "typescript" }, graph.Source.Languages!.Select(l => l.Id));
         var projects = graph.Nodes.Where(n => n.Kind == NodeKinds.Project).ToList();
         Assert.Equal(9, projects.Count(p => p.Language == "csharp"));     // Shop 5, Booking 4
         Assert.Equal(7, projects.Count(p => p.Language == "typescript")); // shop-ts 4, Booking 3
         Assert.Equal(5, projects.Count(p => p.Language == "python"));     // shop-py
+        Assert.Equal(8, projects.Count(p => p.Language == "cpp"));        // shop-cpp
+        Assert.Contains(graph.Nodes, n => n.Id == "cpp:shop_domain:shop::domain::Order");
         Assert.Contains(graph.Nodes, n => n.Id == "py:shop-domain:src/shop_domain/orders.py#Order");
         Assert.Contains(graph.Nodes, n => n.Id == "T:Shop.Domain.Orders.Order");
         Assert.Contains(graph.Nodes, n => n.Id == "ts:@shop/domain:src/orders/order.ts#Order");

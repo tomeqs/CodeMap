@@ -3,8 +3,8 @@
 // work, no errors – once per renderer.
 //
 //   npm run test:smoke [-- --renderers webgl,webgpu] [--headed] [--only 'name part'] [--dist other/build]
-//                      [--samples dir]  with shop-ts.codemap.json, shop-py.codemap.json and samples.codemap.json, the
-//                                       analyzer's maps of samples/shop-ts, samples/shop-py and of samples/ (C#,
+//                      [--samples dir]  with shop-ts.codemap.json, shop-py.codemap.json, shop-cpp.codemap.json and samples.codemap.json,
+//                                       the analyzer's maps of samples/shop-ts, samples/shop-py, samples/shop-cpp and of samples/ (C#,
 //                                       TypeScript and Python in one map); CI passes it
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
@@ -1081,7 +1081,8 @@ async function graphicsFallbacks() {
 
 /**
  * The analyzer's own maps: samples/shop-ts (NestJS API, Express gateway, Angular web on a domain library),
- * samples/shop-py (FastAPI, Django, Flask, Celery on a domain library) and samples/ (those and the C# Shop in one map).
+ * samples/shop-py (FastAPI, Django, Flask, Celery on a domain library), samples/shop-cpp (CMake targets, Qt, tests, a C library)
+ * and samples/ (those and the C# Shop in one map).
  */
 async function sampleTests(query) {
   const views = async (app, list) => {
@@ -1171,8 +1172,30 @@ async function sampleTests(query) {
   });
   await python.page.close();
 
+  const cpp = await open(browser, query(fixture(resolve(samples, 'shop-cpp.codemap.json'))));
+  await test('samples/shop-cpp: CMake targets, namespaces, types; the flow from main through an interface; Qt and tests', async () => {
+    await settled(cpp.page, 60000);
+    const info = await cpp.page.evaluate(() => {
+      const app = window.codemap;
+      const buttons = [...document.querySelectorAll('#level-toggle [data-level]')].map((b) => b.textContent);
+      app.setLevel('type');
+      app.setView('galaxy');
+      app.showFlow(['cpp:shop_cli:file:apps/cli/main#(global)::main(int,char**)']);
+      const main = [...(app.flow?.nodes.keys() ?? [])];
+      return { buttons, main, entries: app.getEntryPoints().map((e) => e.node.id) };
+    });
+    assert.deepEqual(info.buttons, ['Projects', 'Namespaces', 'Types', 'Members', 'Auto']);
+    // main → OrderService::pay → PaymentService::charge → PaymentGateway::charge (pure virtual) → FakePaymentGateway::charge
+    assert.ok(info.main.includes('cpp:shop_infra:shop::infra::FakePaymentGateway::charge(const std::string&,const domain::Money&)'), `main: ${info.main}`);
+    assert.ok(info.main.includes('cpp:shop_domain:shop::domain::Order::markPaid()'), `main: ${info.main}`);
+    assert.ok(info.entries.includes('cpp:shop_cli:file:apps/cli/main#(global)'), `entries: ${info.entries}`);
+    await views(cpp, ['galaxy', 'city', 'layers', 'di', 'flow', 'matrix']);
+    assert.deepEqual(cpp.errors, []);
+  });
+  await cpp.page.close();
+
   const mixed = await open(browser, query(fixture(resolve(samples, 'samples.codemap.json'))));
-  await test('samples/: C#, TypeScript and Python in one map, in each language\'s words', async () => {
+  await test('samples/: C#, TypeScript, Python and C++ in one map, in each language\'s words', async () => {
     await settled(mixed.page, 60000);
     const info = await mixed.page.evaluate(() => {
       const app = window.codemap;
@@ -1183,7 +1206,7 @@ async function sampleTests(query) {
       };
     });
     assert.deepEqual(info.buttons, ['Projects / Packages', 'Namespaces / Packages / Folders', 'Types / Modules / Files', 'Members / Declarations', 'Auto']);
-    assert.deepEqual(info.languages.sort(), ['csharp', 'python', 'typescript']);
+    assert.deepEqual(info.languages.sort(), ['cpp', 'csharp', 'python', 'typescript']);
     assert.ok(info.entries.includes('T:Shop.Api.Controllers.OrdersController'), `entries: ${info.entries}`);
     assert.ok(info.entries.includes('ts:@shop/api:src/orders/orders.controller.ts#OrdersController'), `entries: ${info.entries}`);
     assert.ok(info.entries.includes('py:shop-api:src/shop_api/routers/orders.py'), `entries: ${info.entries}`);

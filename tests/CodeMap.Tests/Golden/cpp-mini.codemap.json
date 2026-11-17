@@ -1,0 +1,1361 @@
+{
+  "format": "codemap",
+  "version": "1.1",
+  "generator": {
+    "name": "codemap",
+    "version": "(version)"
+  },
+  "generatedAt": "(time)",
+  "source": {
+    "path": "(repo)/analyzers/cpp/test/fixtures/mini",
+    "root": "(repo)/analyzers/cpp/test/fixtures/mini",
+    "kind": "directory",
+    "name": "mini",
+    "languages": [
+      {
+        "id": "cpp",
+        "name": "C/C++",
+        "levels": {
+          "project": [
+            "Project",
+            "Projects"
+          ],
+          "namespace": [
+            "Namespace",
+            "Namespaces"
+          ],
+          "type": [
+            "Type",
+            "Types"
+          ],
+          "member": [
+            "Member",
+            "Members"
+          ]
+        },
+        "external": "libraries"
+      }
+    ]
+  },
+  "stats": {
+    "projects": 4,
+    "namespaces": 4,
+    "types": 9,
+    "members": 23,
+    "packages": 2,
+    "externalTypes": 0,
+    "edges": 30,
+    "files": 10,
+    "lines": 149,
+    "cycles": 0,
+    "edges.accepts": 3,
+    "edges.accesses": 9,
+    "edges.calls": 6,
+    "edges.uses": 3,
+    "edges.packageReference": 2,
+    "edges.projectReference": 2,
+    "edges.holds": 2,
+    "edges.instantiates": 2,
+    "edges.returns": 1
+  },
+  "nodes": [
+    {
+      "id": "cpp:project:legacy",
+      "kind": "project",
+      "name": "legacy",
+      "fullName": "legacy",
+      "language": "cpp",
+      "signature": "Makefile",
+      "location": {
+        "file": "legacy/Makefile",
+        "line": 1,
+        "endLine": 1
+      },
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 0,
+        "complexity": 3,
+        "distance": 1,
+        "files": 2,
+        "instability": 0,
+        "lines": 30,
+        "loc": 16,
+        "types": 2
+      }
+    },
+    {
+      "id": "cpp:project:shop_cli",
+      "kind": "project",
+      "name": "shop_cli",
+      "fullName": ".",
+      "language": "cpp",
+      "signature": "CMake · executable",
+      "location": {
+        "file": "CMakeLists.txt",
+        "line": 8,
+        "endLine": 8
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 1,
+        "complexity": 2,
+        "distance": 0,
+        "files": 1,
+        "instability": 1,
+        "lines": 6,
+        "loc": 4,
+        "types": 1
+      }
+    },
+    {
+      "id": "cpp:project:shop_domain",
+      "kind": "project",
+      "name": "shop_domain",
+      "fullName": ".",
+      "language": "cpp",
+      "signature": "CMake · library",
+      "location": {
+        "file": "CMakeLists.txt",
+        "line": 5,
+        "endLine": 5
+      },
+      "metrics": {
+        "abstractness": 0.2,
+        "ca": 2,
+        "ce": 0,
+        "complexity": 12,
+        "distance": 0.8,
+        "files": 6,
+        "instability": 0,
+        "lines": 106,
+        "loc": 52,
+        "types": 5
+      }
+    },
+    {
+      "id": "cpp:project:shop_tests",
+      "kind": "project",
+      "name": "shop_tests",
+      "fullName": ".",
+      "language": "cpp",
+      "signature": "CMake · test",
+      "location": {
+        "file": "CMakeLists.txt",
+        "line": 12,
+        "endLine": 12
+      },
+      "tags": [
+        "test-project"
+      ],
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 1,
+        "complexity": 1,
+        "distance": 0,
+        "files": 1,
+        "instability": 1,
+        "lines": 7,
+        "loc": 4,
+        "types": 1
+      }
+    },
+    {
+      "id": "cpp:ns:legacy/(global)",
+      "kind": "namespace",
+      "name": "(global)",
+      "fullName": "(global)",
+      "parent": "cpp:project:legacy",
+      "project": "cpp:project:legacy",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 0,
+        "complexity": 3,
+        "distance": 1,
+        "instability": 0,
+        "loc": 16,
+        "types": 2
+      }
+    },
+    {
+      "id": "cpp:ns:shop_cli/app/",
+      "kind": "namespace",
+      "name": "app/",
+      "fullName": "app/",
+      "parent": "cpp:project:shop_cli",
+      "project": "cpp:project:shop_cli",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 1,
+        "complexity": 2,
+        "distance": 0,
+        "instability": 1,
+        "loc": 4,
+        "types": 1
+      }
+    },
+    {
+      "id": "cpp:ns:shop_domain/shop",
+      "kind": "namespace",
+      "name": "shop",
+      "fullName": "shop",
+      "parent": "cpp:project:shop_domain",
+      "project": "cpp:project:shop_domain",
+      "metrics": {
+        "abstractness": 0.2,
+        "ca": 2,
+        "ce": 0,
+        "complexity": 12,
+        "distance": 0.8,
+        "instability": 0,
+        "loc": 52,
+        "types": 5
+      }
+    },
+    {
+      "id": "cpp:ns:shop_tests/tests/",
+      "kind": "namespace",
+      "name": "tests/",
+      "fullName": "tests/",
+      "parent": "cpp:project:shop_tests",
+      "project": "cpp:project:shop_tests",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 1,
+        "complexity": 1,
+        "distance": 0,
+        "instability": 1,
+        "loc": 4,
+        "types": 1
+      }
+    },
+    {
+      "id": "cpp:legacy:file:legacy/ledger#(global)",
+      "kind": "module",
+      "level": "type",
+      "name": "ledger",
+      "fullName": "legacy/ledger",
+      "parent": "cpp:ns:legacy/(global)",
+      "project": "cpp:project:legacy",
+      "accessibility": "public",
+      "signature": "ledger.h + ledger.c",
+      "location": {
+        "file": "legacy/ledger.h",
+        "line": 1,
+        "endLine": 19
+      },
+      "extraLocations": [
+        {
+          "file": "legacy/ledger.c",
+          "line": 1,
+          "endLine": 11
+        }
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 1,
+        "complexity": 3,
+        "instability": 1,
+        "loc": 12,
+        "maxComplexity": 2,
+        "members": 3,
+        "methods": 2
+      }
+    },
+    {
+      "id": "cpp:legacy:ledger",
+      "kind": "struct",
+      "name": "ledger",
+      "fullName": "ledger",
+      "parent": "cpp:ns:legacy/(global)",
+      "project": "cpp:project:legacy",
+      "accessibility": "public",
+      "signature": "struct ledger",
+      "location": {
+        "file": "legacy/ledger.h",
+        "line": 8,
+        "endLine": 11
+      },
+      "metrics": {
+        "ca": 1,
+        "ce": 0,
+        "complexity": 0,
+        "fields": 2,
+        "instability": 0,
+        "loc": 4,
+        "members": 2
+      }
+    },
+    {
+      "id": "cpp:shop_cli:file:app/main#app/",
+      "kind": "module",
+      "level": "type",
+      "name": "main",
+      "fullName": "app/main",
+      "parent": "cpp:ns:shop_cli/app/",
+      "project": "cpp:project:shop_cli",
+      "accessibility": "public",
+      "signature": "main.cpp",
+      "location": {
+        "file": "app/main.cpp",
+        "line": 1,
+        "endLine": 6
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 1,
+        "complexity": 2,
+        "instability": 1,
+        "loc": 4,
+        "maxComplexity": 2,
+        "members": 1,
+        "methods": 1
+      }
+    },
+    {
+      "id": "cpp:shop_domain:file:include/shop/money#shop",
+      "kind": "module",
+      "level": "type",
+      "name": "money",
+      "fullName": "shop (money)",
+      "parent": "cpp:ns:shop_domain/shop",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "signature": "money.h + money.cpp",
+      "location": {
+        "file": "include/shop/money.h",
+        "line": 1,
+        "endLine": 8
+      },
+      "extraLocations": [
+        {
+          "file": "src/money.cpp",
+          "line": 1,
+          "endLine": 13
+        }
+      ],
+      "metrics": {
+        "ca": 1,
+        "ce": 0,
+        "complexity": 2,
+        "instability": 0,
+        "loc": 6,
+        "maxComplexity": 1,
+        "members": 2,
+        "methods": 2
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Order",
+      "kind": "class",
+      "name": "Order",
+      "fullName": "shop::Order",
+      "parent": "cpp:ns:shop_domain/shop",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "signature": "class Order",
+      "location": {
+        "file": "include/shop/order.h",
+        "line": 7,
+        "endLine": 24
+      },
+      "extraLocations": [
+        {
+          "file": "src/order.cpp",
+          "line": 12,
+          "endLine": 36
+        }
+      ],
+      "metrics": {
+        "ca": 2,
+        "ce": 3,
+        "complexity": 10,
+        "constructors": 1,
+        "fields": 2,
+        "instability": 0.6,
+        "loc": 37,
+        "maxComplexity": 3,
+        "members": 8,
+        "methods": 5
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Order::Line",
+      "kind": "struct",
+      "name": "Line",
+      "fullName": "shop::Order::Line",
+      "parent": "cpp:shop_domain:shop::Order",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "private",
+      "signature": "struct Line",
+      "location": {
+        "file": "include/shop/order.h",
+        "line": 17,
+        "endLine": 20
+      },
+      "metrics": {
+        "ca": 1,
+        "ce": 1,
+        "complexity": 0,
+        "fields": 2,
+        "instability": 0.5,
+        "loc": 4,
+        "members": 2
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::PaymentGateway",
+      "kind": "interface",
+      "name": "PaymentGateway",
+      "fullName": "shop::PaymentGateway",
+      "parent": "cpp:ns:shop_domain/shop",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "signature": "class PaymentGateway",
+      "location": {
+        "file": "include/shop/payment.h",
+        "line": 5,
+        "endLine": 9
+      },
+      "metrics": {
+        "ca": 0,
+        "ce": 0,
+        "complexity": 0,
+        "instability": 0,
+        "loc": 5,
+        "maxComplexity": 0,
+        "members": 2,
+        "methods": 2
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Product",
+      "kind": "struct",
+      "name": "Product",
+      "fullName": "shop::Product",
+      "parent": "cpp:ns:shop_domain/shop",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "signature": "struct Product",
+      "location": {
+        "file": "include/shop/product.h",
+        "line": 7,
+        "endLine": 10
+      },
+      "doc": "A product on sale.",
+      "metrics": {
+        "ca": 2,
+        "ce": 0,
+        "complexity": 0,
+        "fields": 2,
+        "instability": 0,
+        "loc": 4,
+        "members": 2
+      }
+    },
+    {
+      "id": "cpp:shop_tests:file:tests/order_test#tests/",
+      "kind": "module",
+      "level": "type",
+      "name": "order_test",
+      "fullName": "tests/order_test",
+      "parent": "cpp:ns:shop_tests/tests/",
+      "project": "cpp:project:shop_tests",
+      "accessibility": "public",
+      "signature": "order_test.cpp",
+      "location": {
+        "file": "tests/order_test.cpp",
+        "line": 1,
+        "endLine": 7
+      },
+      "tags": [
+        "test"
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 1,
+        "complexity": 1,
+        "instability": 1,
+        "loc": 4,
+        "maxComplexity": 1,
+        "members": 1,
+        "methods": 1
+      }
+    },
+    {
+      "id": "cpp:legacy:file:legacy/ledger#(global)::clamp(long)",
+      "kind": "function",
+      "level": "member",
+      "name": "clamp",
+      "fullName": "clamp",
+      "parent": "cpp:legacy:file:legacy/ledger#(global)",
+      "project": "cpp:project:legacy",
+      "accessibility": "private",
+      "modifiers": [
+        "static"
+      ],
+      "signature": "static long clamp(long amount)",
+      "location": {
+        "file": "legacy/ledger.c",
+        "line": 3,
+        "endLine": 6
+      },
+      "metrics": {
+        "complexity": 2,
+        "fanIn": 1,
+        "loc": 4,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "cpp:legacy:file:legacy/ledger#(global)::ledger_add(ledger_t*,long)",
+      "kind": "function",
+      "level": "member",
+      "name": "ledger_add",
+      "fullName": "ledger_add",
+      "parent": "cpp:legacy:file:legacy/ledger#(global)",
+      "project": "cpp:project:legacy",
+      "accessibility": "public",
+      "signature": "int ledger_add(ledger_t* ledger, long amount)",
+      "location": {
+        "file": "legacy/ledger.c",
+        "line": 8,
+        "endLine": 11
+      },
+      "extraLocations": [
+        {
+          "file": "legacy/ledger.h",
+          "line": 13,
+          "endLine": 13
+        }
+      ],
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 1,
+        "loc": 4,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "cpp:legacy:file:legacy/ledger#(global)::ledger_t",
+      "kind": "typeAlias",
+      "level": "member",
+      "name": "ledger_t",
+      "fullName": "ledger_t",
+      "parent": "cpp:legacy:file:legacy/ledger#(global)",
+      "project": "cpp:project:legacy",
+      "accessibility": "public",
+      "signature": "typedef struct ledger { int entries; long balance; } ledger_t",
+      "location": {
+        "file": "legacy/ledger.h",
+        "line": 8,
+        "endLine": 11
+      },
+      "metrics": {
+        "loc": 4
+      }
+    },
+    {
+      "id": "cpp:legacy:ledger::balance",
+      "kind": "field",
+      "level": "member",
+      "name": "balance",
+      "fullName": "ledger::balance",
+      "parent": "cpp:legacy:ledger",
+      "project": "cpp:project:legacy",
+      "accessibility": "public",
+      "signature": "long balance",
+      "location": {
+        "file": "legacy/ledger.h",
+        "line": 10,
+        "endLine": 10
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "cpp:legacy:ledger::entries",
+      "kind": "field",
+      "level": "member",
+      "name": "entries",
+      "fullName": "ledger::entries",
+      "parent": "cpp:legacy:ledger",
+      "project": "cpp:project:legacy",
+      "accessibility": "public",
+      "signature": "int entries",
+      "location": {
+        "file": "legacy/ledger.h",
+        "line": 9,
+        "endLine": 9
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "cpp:shop_cli:file:app/main#app/::main(int,char**)",
+      "kind": "function",
+      "level": "member",
+      "name": "main",
+      "fullName": "main",
+      "parent": "cpp:shop_cli:file:app/main#app/",
+      "project": "cpp:project:shop_cli",
+      "accessibility": "public",
+      "signature": "int main(int argc, char** argv)",
+      "location": {
+        "file": "app/main.cpp",
+        "line": 3,
+        "endLine": 6
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "complexity": 2,
+        "fanOut": 2,
+        "loc": 4,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "cpp:shop_domain:file:include/shop/money#shop::add(long,long)",
+      "kind": "function",
+      "level": "member",
+      "name": "add",
+      "fullName": "shop::add",
+      "parent": "cpp:shop_domain:file:include/shop/money#shop",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "signature": "long add(long a, long b)",
+      "location": {
+        "file": "src/money.cpp",
+        "line": 9,
+        "endLine": 11
+      },
+      "extraLocations": [
+        {
+          "file": "include/shop/money.h",
+          "line": 6,
+          "endLine": 6
+        }
+      ],
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "loc": 3,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "cpp:shop_domain:file:include/shop/money#shop::roundCents(double)",
+      "kind": "function",
+      "level": "member",
+      "name": "roundCents",
+      "fullName": "shop::roundCents",
+      "parent": "cpp:shop_domain:file:include/shop/money#shop",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "signature": "long roundCents(double value)",
+      "location": {
+        "file": "src/money.cpp",
+        "line": 5,
+        "endLine": 7
+      },
+      "extraLocations": [
+        {
+          "file": "include/shop/money.h",
+          "line": 5,
+          "endLine": 5
+        }
+      ],
+      "metrics": {
+        "complexity": 1,
+        "loc": 3,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Order::Line::product",
+      "kind": "field",
+      "level": "member",
+      "name": "product",
+      "fullName": "shop::Order::Line::product",
+      "parent": "cpp:shop_domain:shop::Order::Line",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "signature": "Product product",
+      "location": {
+        "file": "include/shop/order.h",
+        "line": 18,
+        "endLine": 18
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Order::Line::quantity",
+      "kind": "field",
+      "level": "member",
+      "name": "quantity",
+      "fullName": "shop::Order::Line::quantity",
+      "parent": "cpp:shop_domain:shop::Order::Line",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "signature": "int quantity",
+      "location": {
+        "file": "include/shop/order.h",
+        "line": 19,
+        "endLine": 19
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Order::Order(int)",
+      "kind": "constructor",
+      "level": "member",
+      "name": "Order",
+      "fullName": "shop::Order::Order",
+      "parent": "cpp:shop_domain:shop::Order",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "modifiers": [
+        "explicit"
+      ],
+      "signature": "explicit Order(int id)",
+      "location": {
+        "file": "src/order.cpp",
+        "line": 12,
+        "endLine": 12
+      },
+      "extraLocations": [
+        {
+          "file": "include/shop/order.h",
+          "line": 9,
+          "endLine": 9
+        }
+      ],
+      "metrics": {
+        "complexity": 1,
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Order::addLine(const Product&,int)",
+      "kind": "method",
+      "level": "member",
+      "name": "addLine",
+      "fullName": "shop::Order::addLine",
+      "parent": "cpp:shop_domain:shop::Order",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "signature": "void addLine(const Product& product, int quantity = 1)",
+      "location": {
+        "file": "src/order.cpp",
+        "line": 14,
+        "endLine": 16
+      },
+      "extraLocations": [
+        {
+          "file": "include/shop/order.h",
+          "line": 11,
+          "endLine": 11
+        }
+      ],
+      "doc": "Adds a line of a product.",
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 1,
+        "loc": 3,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Order::addLine(const Product&,int,double)",
+      "kind": "method",
+      "level": "member",
+      "name": "addLine",
+      "fullName": "shop::Order::addLine",
+      "parent": "cpp:shop_domain:shop::Order",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "signature": "void addLine(const Product& product, int quantity, double discount)",
+      "location": {
+        "file": "src/order.cpp",
+        "line": 20,
+        "endLine": 24
+      },
+      "extraLocations": [
+        {
+          "file": "include/shop/order.h",
+          "line": 12,
+          "endLine": 12
+        }
+      ],
+      "metrics": {
+        "complexity": 3,
+        "loc": 5,
+        "parameters": 3
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Order::clampQuantity(int)",
+      "kind": "method",
+      "level": "member",
+      "name": "clampQuantity",
+      "fullName": "shop::Order::clampQuantity",
+      "parent": "cpp:shop_domain:shop::Order",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "private",
+      "modifiers": [
+        "static"
+      ],
+      "signature": "int clampQuantity(int quantity)",
+      "location": {
+        "file": "src/order.cpp",
+        "line": 6,
+        "endLine": 8
+      },
+      "metrics": {
+        "complexity": 2,
+        "fanIn": 1,
+        "loc": 3,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Order::create()",
+      "kind": "method",
+      "level": "member",
+      "name": "create",
+      "fullName": "shop::Order::create",
+      "parent": "cpp:shop_domain:shop::Order",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "modifiers": [
+        "static"
+      ],
+      "signature": "static Order* create()",
+      "location": {
+        "file": "src/order.cpp",
+        "line": 34,
+        "endLine": 36
+      },
+      "extraLocations": [
+        {
+          "file": "include/shop/order.h",
+          "line": 14,
+          "endLine": 14
+        }
+      ],
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "loc": 3,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Order::id_",
+      "kind": "field",
+      "level": "member",
+      "name": "id_",
+      "fullName": "shop::Order::id_",
+      "parent": "cpp:shop_domain:shop::Order",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "private",
+      "signature": "int id_",
+      "location": {
+        "file": "include/shop/order.h",
+        "line": 22,
+        "endLine": 22
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Order::lines_",
+      "kind": "field",
+      "level": "member",
+      "name": "lines_",
+      "fullName": "shop::Order::lines_",
+      "parent": "cpp:shop_domain:shop::Order",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "private",
+      "signature": "std::vector<Line> lines_",
+      "location": {
+        "file": "include/shop/order.h",
+        "line": 23,
+        "endLine": 23
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Order::total()",
+      "kind": "method",
+      "level": "member",
+      "name": "total",
+      "fullName": "shop::Order::total",
+      "parent": "cpp:shop_domain:shop::Order",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "modifiers": [
+        "const"
+      ],
+      "signature": "long total() const",
+      "location": {
+        "file": "src/order.cpp",
+        "line": 26,
+        "endLine": 32
+      },
+      "extraLocations": [
+        {
+          "file": "include/shop/order.h",
+          "line": 13,
+          "endLine": 13
+        }
+      ],
+      "metrics": {
+        "complexity": 2,
+        "fanIn": 2,
+        "fanOut": 1,
+        "loc": 7,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::PaymentGateway::charge(long)",
+      "kind": "method",
+      "level": "member",
+      "name": "charge",
+      "fullName": "shop::PaymentGateway::charge",
+      "parent": "cpp:shop_domain:shop::PaymentGateway",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "modifiers": [
+        "abstract",
+        "virtual"
+      ],
+      "signature": "virtual bool charge(long cents) = 0",
+      "location": {
+        "file": "include/shop/payment.h",
+        "line": 8,
+        "endLine": 8
+      },
+      "metrics": {
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::PaymentGateway::~PaymentGateway()",
+      "kind": "method",
+      "level": "member",
+      "name": "~PaymentGateway",
+      "fullName": "shop::PaymentGateway::~PaymentGateway",
+      "parent": "cpp:shop_domain:shop::PaymentGateway",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "modifiers": [
+        "virtual"
+      ],
+      "signature": "virtual ~PaymentGateway() = default",
+      "location": {
+        "file": "include/shop/payment.h",
+        "line": 7,
+        "endLine": 7
+      },
+      "metrics": {
+        "loc": 1,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Product::name",
+      "kind": "field",
+      "level": "member",
+      "name": "name",
+      "fullName": "shop::Product::name",
+      "parent": "cpp:shop_domain:shop::Product",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "signature": "std::string name",
+      "location": {
+        "file": "include/shop/product.h",
+        "line": 8,
+        "endLine": 8
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "cpp:shop_domain:shop::Product::price",
+      "kind": "field",
+      "level": "member",
+      "name": "price",
+      "fullName": "shop::Product::price",
+      "parent": "cpp:shop_domain:shop::Product",
+      "project": "cpp:project:shop_domain",
+      "namespace": "shop",
+      "accessibility": "public",
+      "signature": "long price = 0",
+      "location": {
+        "file": "include/shop/product.h",
+        "line": 9,
+        "endLine": 9
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "cpp:shop_tests:file:tests/order_test#tests/::OrderTest.StartsEmpty()",
+      "kind": "function",
+      "level": "member",
+      "name": "OrderTest.StartsEmpty",
+      "fullName": "OrderTest.StartsEmpty",
+      "parent": "cpp:shop_tests:file:tests/order_test#tests/",
+      "project": "cpp:project:shop_tests",
+      "accessibility": "public",
+      "signature": "TEST(OrderTest, StartsEmpty)",
+      "location": {
+        "file": "tests/order_test.cpp",
+        "line": 4,
+        "endLine": 7
+      },
+      "tags": [
+        "test"
+      ],
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 1,
+        "loc": 4,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "cpp:lib:GTest::gtest_main",
+      "kind": "package",
+      "name": "GTest::gtest_main",
+      "language": "cpp",
+      "external": true
+    },
+    {
+      "id": "cpp:lib:fmt::fmt",
+      "kind": "package",
+      "name": "fmt::fmt",
+      "language": "cpp",
+      "external": true
+    }
+  ],
+  "edges": [
+    {
+      "source": "cpp:legacy:file:legacy/ledger#(global)::ledger_add(ledger_t*,long)",
+      "target": "cpp:legacy:ledger",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "cpp:legacy:file:legacy/ledger#(global)::ledger_add(ledger_t*,long)",
+      "target": "cpp:legacy:ledger::balance",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "cpp:legacy:file:legacy/ledger#(global)::ledger_add(ledger_t*,long)",
+      "target": "cpp:legacy:ledger::entries",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "cpp:legacy:file:legacy/ledger#(global)::ledger_add(ledger_t*,long)",
+      "target": "cpp:legacy:file:legacy/ledger#(global)::clamp(long)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "cpp:legacy:file:legacy/ledger#(global)::ledger_t",
+      "target": "cpp:legacy:ledger",
+      "kind": "uses",
+      "weight": 1
+    },
+    {
+      "source": "cpp:project:shop_cli",
+      "target": "cpp:lib:fmt::fmt",
+      "kind": "packageReference",
+      "weight": 1
+    },
+    {
+      "source": "cpp:project:shop_cli",
+      "target": "cpp:project:shop_domain",
+      "kind": "projectReference",
+      "weight": 1
+    },
+    {
+      "source": "cpp:project:shop_tests",
+      "target": "cpp:lib:GTest::gtest_main",
+      "kind": "packageReference",
+      "weight": 1
+    },
+    {
+      "source": "cpp:project:shop_tests",
+      "target": "cpp:project:shop_domain",
+      "kind": "projectReference",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_cli:file:app/main#app/::main(int,char**)",
+      "target": "cpp:shop_domain:shop::Order::create()",
+      "kind": "calls",
+      "weight": 1,
+      "line": 4
+    },
+    {
+      "source": "cpp:shop_cli:file:app/main#app/::main(int,char**)",
+      "target": "cpp:shop_domain:shop::Order::total()",
+      "kind": "calls",
+      "weight": 1,
+      "line": 5
+    },
+    {
+      "source": "cpp:shop_cli:file:app/main#app/::main(int,char**)",
+      "target": "cpp:shop_domain:shop::Order",
+      "kind": "uses",
+      "weight": 2
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::Line::product",
+      "target": "cpp:shop_domain:shop::Product",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::Order(int)",
+      "target": "cpp:shop_domain:shop::Order::id_",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::addLine(const Product&,int)",
+      "target": "cpp:shop_domain:shop::Product",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::addLine(const Product&,int)",
+      "target": "cpp:shop_domain:shop::Order::lines_",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::addLine(const Product&,int)",
+      "target": "cpp:shop_domain:shop::Order::clampQuantity(int)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 15
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::addLine(const Product&,int,double)",
+      "target": "cpp:shop_domain:shop::Product",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::addLine(const Product&,int,double)",
+      "target": "cpp:shop_domain:shop::Order::lines_",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::create()",
+      "target": "cpp:shop_domain:shop::Order",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 35
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::create()",
+      "target": "cpp:shop_domain:shop::Order",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::lines_",
+      "target": "cpp:shop_domain:shop::Order::Line",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::total()",
+      "target": "cpp:shop_domain:shop::Order::Line::product",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::total()",
+      "target": "cpp:shop_domain:shop::Order::Line::quantity",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::total()",
+      "target": "cpp:shop_domain:shop::Order::lines_",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::total()",
+      "target": "cpp:shop_domain:shop::Product::price",
+      "kind": "accesses",
+      "weight": 1
+    },
+    {
+      "source": "cpp:shop_domain:shop::Order::total()",
+      "target": "cpp:shop_domain:file:include/shop/money#shop::add(long,long)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 29
+    },
+    {
+      "source": "cpp:shop_tests:file:tests/order_test#tests/::OrderTest.StartsEmpty()",
+      "target": "cpp:shop_domain:shop::Order::total()",
+      "kind": "calls",
+      "weight": 1,
+      "line": 6
+    },
+    {
+      "source": "cpp:shop_tests:file:tests/order_test#tests/::OrderTest.StartsEmpty()",
+      "target": "cpp:shop_domain:shop::Order",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 5
+    },
+    {
+      "source": "cpp:shop_tests:file:tests/order_test#tests/::OrderTest.StartsEmpty()",
+      "target": "cpp:shop_domain:shop::Order",
+      "kind": "uses",
+      "weight": 1
+    }
+  ],
+  "analysis": {
+    "cycles": [],
+    "hotspots": [],
+    "mostComplex": [
+      {
+        "id": "cpp:shop_domain:shop::Order",
+        "score": 10
+      },
+      {
+        "id": "cpp:legacy:file:legacy/ledger#(global)",
+        "score": 3
+      },
+      {
+        "id": "cpp:shop_cli:file:app/main#app/",
+        "score": 2
+      },
+      {
+        "id": "cpp:shop_domain:file:include/shop/money#shop",
+        "score": 2
+      },
+      {
+        "id": "cpp:shop_tests:file:tests/order_test#tests/",
+        "score": 1
+      }
+    ],
+    "mostDepended": [
+      {
+        "id": "cpp:shop_domain:shop::Order",
+        "score": 2
+      },
+      {
+        "id": "cpp:shop_domain:shop::Product",
+        "score": 2
+      },
+      {
+        "id": "cpp:legacy:ledger",
+        "score": 1
+      },
+      {
+        "id": "cpp:shop_domain:file:include/shop/money#shop",
+        "score": 1
+      },
+      {
+        "id": "cpp:shop_domain:shop::Order::Line",
+        "score": 1
+      }
+    ],
+    "unusedCandidates": [],
+    "layers": [
+      {
+        "level": "project",
+        "layers": [
+          [
+            "cpp:project:legacy",
+            "cpp:project:shop_domain"
+          ],
+          [
+            "cpp:project:shop_cli",
+            "cpp:project:shop_tests"
+          ]
+        ],
+        "upward": []
+      },
+      {
+        "level": "namespace",
+        "layers": [
+          [
+            "cpp:ns:legacy/(global)",
+            "cpp:ns:shop_domain/shop"
+          ],
+          [
+            "cpp:ns:shop_cli/app/",
+            "cpp:ns:shop_tests/tests/"
+          ]
+        ],
+        "upward": []
+      }
+    ],
+    "changeCoupling": [],
+    "warnings": []
+  }
+}
