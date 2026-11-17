@@ -161,7 +161,8 @@ export function flatten(source, cplusplus) {
   const active = () => stack.every((f) => f.active);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const m = !inComment && line.includes('#') ? DIRECTIVE.exec(line) : null;
+    // `.` does not match \r: a file with Windows line ends is matched without it.
+    const m = !inComment && line.includes('#') ? DIRECTIVE.exec(line.replace(/\r$/, '')) : null;
     if (m) {
       let j = i;
       let rest = m[2];
