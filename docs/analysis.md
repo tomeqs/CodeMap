@@ -178,10 +178,12 @@ aliases sit in a holder per header and source pair (`orders.h` + `orders.cpp`).
   definition as its place and the declaration as an extra one; a class keeps its `.cpp` files as extra places (so git
   history counts them), and the file-local helpers of a class's source (`static` or anonymous-namespace functions)
   are its private static members.
-* **Before parsing:** one branch of each `#if` is read (reading all of them unbalances the braces), and macros that
-  only decorate declarations are left out: export macros (`class SHOP_API Order`), the project's own `#define`s that
-  stand for nothing or a keyword (`SQLITE_PRIVATE`), namespace macros expanded (`FMT_BEGIN_NAMESPACE`). Files that are
-  still mostly unreadable are named in a warning.
+* **Before parsing:** one branch of each `#if` is read (reading all of them unbalances the braces; a switch that turns
+  a feature off, `#ifdef SQLITE_OMIT_…`, is taken as not set), and macros that only decorate declarations are left
+  out: export macros (`class SHOP_API Order`), the project's own `#define`s that stand for nothing, a keyword or an
+  attribute (`SQLITE_PRIVATE`, `GUARDED_BY(mu)`). The project's macros that stand for a namespace
+  (`FMT_BEGIN_NAMESPACE`, `SPDLOG_NAMESPACE`), a template header, `try` or `catch` are expanded. Files that are still
+  mostly unreadable are named in a warning.
 * **Resolution:** the types of expressions come from what the code declares: locals, parameters, fields and globals
   (through `const`, references, pointers and smart pointers), `auto` from its initializer, a call from its callee's
   return type, a range-for variable from its container. Names are looked up as C++ does (the class and its bases,
@@ -196,7 +198,9 @@ aliases sit in a holder per header and source pair (`orders.h` + `orders.cpp`).
 * **Tests:** GoogleTest (`TEST`, `TEST_F`: the test runs as its fixture), Catch2 and doctest (`TEST_CASE`, `SCENARIO`),
   Boost.Test, Qt Test (`QTEST_MAIN`), files in `test/` / `tests/` or named `*_test.cpp`, and the files of test targets.
 * **Unused code:** private members and file-local functions and types nothing references (virtual functions,
-  operators, destructors, constructors and annotated members are left alone).
+  operators, destructors, constructors and annotated members are left alone). A private member whose name is called
+  or read on something whose type is not known (template code), or that a macro names, is tagged `maybe-used`
+  rather than reported.
 
 Frameworks recognised from the code itself:
 
@@ -205,12 +209,14 @@ Frameworks recognised from the code itself:
   `Q_PROPERTY` with its READ / WRITE / NOTIFY members, `Q_INVOKABLE` members (called from QML), widgets as components.
 * **Unreal Engine:** `UCLASS` / `USTRUCT` / `UPROPERTY` / `UFUNCTION` as attributes; functions Blueprints or the network
   call (`BlueprintCallable`, `BlueprintNativeEvent`, `Server`, `Client`…) and game modes as entry points; the body of
-  `Name_Implementation` as `Name`'s; `UINTERFACE`'s I-class as an interface.
+  `Name_Implementation` as `Name`'s; `UINTERFACE`'s I-class as an interface; console variables and commands
+  (`TAutoConsoleVariable`) as entry points.
 
 ```bash
 codemap path/to/project            # a folder with CMakeLists.txt, a .sln / .vcxproj, a .uproject, or sources
 codemap path/to/repo --lang cpp    # only the C and C++ of a repository
 CODEMAP_CPP_STATS=1 codemap path/to/project   # how many calls were resolved, and how much the parser could not read
+CODEMAP_CPP_UNRESOLVED=calls.json codemap path/to/project   # the calls to the code's own names left unresolved
 ```
 
 ### Several languages, and the samples

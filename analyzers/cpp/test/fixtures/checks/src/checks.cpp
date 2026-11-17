@@ -148,3 +148,24 @@ int macros(int kind) {
 bool exact(double k, float f, double d) {
     return floor(k) == k || d == (double)f || d == HUGE_VAL || d != -INFINITY;
 }
+
+int lexer(int c, int mode) {
+    switch (c) {
+    case 1:
+        while (true) {
+            if (mode) return 1;
+        }
+    case 2:
+        switch (mode) {
+        case 0: return 2;
+        default: return 3;
+        }
+    case 3:
+        while (true) {
+            if (mode) break;
+        }
+    case 4:
+        return 4;
+    }
+    return 0;
+}

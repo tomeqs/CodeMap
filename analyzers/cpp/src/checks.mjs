@@ -429,6 +429,22 @@ function assertionLike(node) {
 }
 
 /** Whether control cannot go on after a statement. */
+/** `while (true)`, `while (1)`, `for (;;)`, `do … while (true)`. */
+function endless(loop) {
+  if (loop.type === 'for_statement') return !loop.childForFieldName('condition');
+  const condition = loop.childForFieldName('condition')?.text.replace(/[()\s]/g, '');
+  return condition === 'true' || condition === '1';
+}
+
+/** A break that leaves this statement: not one of a loop or switch inside it, nor of a lambda. */
+function breaksOut(node) {
+  if (!node) return false;
+  if (node.type === 'break_statement') return true;
+  if (/^(while|for|for_range_loop|do|switch)_statement$/.test(node.type) || node.type === 'lambda_expression') return false;
+  for (let i = 0; i < node.namedChildCount; i++) if (breaksOut(node.namedChild(i))) return true;
+  return false;
+}
+
 function terminates(node) {
   if (!node) return false;
   if (EXITS.has(node.type)) return true;
@@ -440,6 +456,17 @@ function terminates(node) {
   }
 
   if (node.type === 'labeled_statement') return terminates(node.namedChildren[node.namedChildren.length - 1]);
+
+  // `while (true) { … return …; }` with no break out of it (nlohmann's lexer: a case that loops until it returns).
+  if (node.type === 'while_statement' || node.type === 'for_statement' || node.type === 'do_statement') return endless(node) && !breaksOut(node.childForFieldName('body'));
+
+  // A switch with a default whose last case does not complete, and no break out of it: every way leaves.
+  if (node.type === 'switch_statement') {
+    const cases = node.childForFieldName('body')?.namedChildren.filter((c) => c.type === 'case_statement') ?? [];
+    if (!cases.some((c) => !c.childForFieldName('value')) || breaksOut(node.childForFieldName('body'))) return false;
+    const statements = cases[cases.length - 1].namedChildren.filter((c) => c !== cases[cases.length - 1].childForFieldName('value') && c.type !== 'comment');
+    return statements.length > 0 && terminates(statements[statements.length - 1]);
+  }
 
   if (node.type === 'if_statement') {
     const alternative = node.childForFieldName('alternative');
