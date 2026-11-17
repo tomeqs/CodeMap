@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
 
 - **C and C++: code that was read wrongly.** Found by reviewing 0.5.0.
   - Constants named like export macros (`AF_LOCAL`, `RTLD_LOCAL`, an enumerator `VIS_HIDDEN`) were erased from expressions and enums, and a class named in capitals and marked `final` (`class AABB final`) was missing from the map.
