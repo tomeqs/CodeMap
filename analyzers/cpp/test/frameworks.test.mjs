@@ -21,6 +21,9 @@ test('GoogleTest, Catch2, doctest and Boost.Test tests are test functions; a fix
     `${TESTS}gtest_test#tests/::CounterTest.Counts()`,
     `${TESTS}catch_test#tests/::counter resets()`,
     `${TESTS}catch_test#tests/::counter counts()`,
+    // A test over a list of types (the types are no call arguments), and the test after it.
+    `${TESTS}catch_test#tests/::counter holds any number()`,
+    `${TESTS}catch_test#tests/::counter after a typed test()`,
     `${TESTS}boost_test#tests/::counts_up()`,
   ]) {
     assert.equal(map.node(id).kind, 'function', id);

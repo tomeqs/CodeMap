@@ -16,3 +16,14 @@ TEST_SUITE("doctest suite") {
         counter.setValue(2);
     }
 }
+
+TEST_CASE_TEMPLATE("counter holds any number", T, int32_t, uint64_t) // NOLINT
+{
+    Counter counter;
+    counter.setValue(1);
+}
+
+TEST_CASE("counter after a typed test") {
+    Counter counter;
+    counter.reset();
+}

@@ -169,3 +169,16 @@ int lexer(int c, int mode) {
     }
     return 0;
 }
+
+int attributed(int kind) {
+    int total = 0;
+    switch (kind) {
+    case 1:
+        total = 1;
+        __attribute__((fallthrough));
+    case 2:
+        total = 2;
+        break;
+    }
+    return total;
+}

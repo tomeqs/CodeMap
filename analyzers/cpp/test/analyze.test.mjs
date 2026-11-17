@@ -172,6 +172,23 @@ test('the name of a parameter pack is not part of the function id', () => {
   }
 });
 
+test('a byte order mark does not hide the first line of a file', () => {
+  // Behind the mark, the #include on line 1 was not seen, so the source was not paired with its header and its
+  // own functions went to a second module.
+  const { dir, dispose } = scratch({
+    'include/orders.h': 'int total();\n',
+    'src/orders.cpp': '\uFEFF#include "orders.h"\nint helper() { return 1; }\nint total() { return helper(); }\n',
+    'CMakeLists.txt': 'add_library(shop src/orders.cpp)\ntarget_include_directories(shop PUBLIC include)\n',
+  });
+  try {
+    const map = run(dir);
+    assert.deepEqual(map.nodes.filter((n) => n.kind === 'module').map((n) => n.id), ['cpp:shop:file:include/orders#(global)']);
+    assert.equal(map.node('cpp:shop:file:include/orders#(global)::helper()').parent, 'cpp:shop:file:include/orders#(global)');
+  } finally {
+    dispose();
+  }
+});
+
 test('ids do not depend on the folder analyzed', () => {
   const whole = run('mini');
   const part = run(join(fixtures, 'mini', 'src'), { root: join(fixtures, 'mini') });

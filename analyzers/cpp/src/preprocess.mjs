@@ -39,13 +39,40 @@ const WORDS = [
   'WINAPI', 'APIENTRY', 'CALLBACK', 'STDMETHODCALLTYPE', '__cdecl', '__stdcall', '__fastcall', '__thiscall', '__vectorcall', '__forceinline',
   '__declspec', '_In_', '_Out_', '_Inout_', '_In_opt_', '_Out_opt_', '_Inout_opt_', '_Ret_maybenull_', '_Check_return_', '_Success_',
 ];
-/** Export macros by their usual names, defined by the build (-DSHOP_API=…) so not found in the code. */
-const EXPORT_MACRO = /\b[A-Z][A-Z0-9_]*_(API|EXPORT|EXPORTS|DLL|DLLEXPORT|DECL|EXTERN|PUBLIC|LOCAL|HIDDEN)\b/g;
+/**
+ * Export macros by their usual names, defined by the build (-DSHOP_API=…) so not found in the code. Only where
+ * one decorates a declaration, which is before a name (`SHOP_API void f()`, `extern SHOP_API int x`): constants
+ * end the same way (`AF_LOCAL`, `RTLD_LOCAL`, an enumerator `VIS_HIDDEN`) and are followed by an operator.
+ */
+const EXPORT_MACRO = /\b[A-Z][A-Z0-9_]*_(API|EXPORT|EXPORTS|DLL|DLLEXPORT|DECL|EXTERN|PUBLIC|LOCAL|HIDDEN)\b(?=\s+(?!(?:and|or|xor|not|bitand|bitor|and_eq|or_eq|xor_eq|not_eq)\b)[A-Za-z_~])/g;
+/** `class SHOP_API Order`: an all-capitals word between the keyword and the name (not `class AABB final`). */
+const CLASS_EXPORT_MACRO = /\b(class|struct|union)(\s+)([A-Z][A-Z0-9_]+)(?=\s+(?!final\b)[A-Za-z_]\w*\s*(?:final\s*)?[:{])/g;
+/**
+ * Words of the languages. A macro named like one (`#define private public` in a test, `#define inline __inline`)
+ * is not applied: it would rewrite the keyword in every file read.
+ */
+const RESERVED = new Set(('alignas alignof and and_eq asm auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval '
+  + 'constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false '
+  + 'final float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq override private protected public '
+  + 'register reinterpret_cast requires restrict return short signed sizeof static static_assert static_cast struct switch template this thread_local throw true '
+  + 'try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq').split(' '));
 /** Keywords a decoration macro may stand for; put back when they fit in the macro's place. */
 const KEYWORDS = new Set(['static', 'extern', 'inline', 'const', 'volatile', 'constexpr', 'virtual', 'explicit', 'register', 'thread_local', 'override', 'final', 'noexcept']);
 const DECORATION = /^(?:\s*(?:__attribute__\s*\(\(.*\)\)|__declspec\s*\([^)]*\)|\[\[.*\]\]|__cdecl|__stdcall|__fastcall|WINAPI|__extension__|__inline|__forceinline|static|extern|inline|const|volatile|constexpr|virtual|explicit|override|final|noexcept|thread_local))*\s*$/;
 /** One step of a macro that opens or closes namespaces: `namespace a {`, `inline namespace NAME(TAGS, VERSION) {`, `extern "C" {`, `}`. */
 const NAMESPACE_STEP = /^\s*(?:(inline\s+)?namespace(?:\s+([A-Za-z_][\w:]*)(\s*\((?:[^()]|\([^()]*\))*\))?)?\s*\{|(extern\s*"C(?:\+\+)?"\s*\{)|(\}\s*;?))/;
+
+/** The body of a `#define`, with its continuation lines; a backslash may also escape a character ("\n"). */
+const BODY = '((?:[^\\n\\\\]|\\\\\\r?\\n|\\\\.)*)';
+const OBJECT_DEFINE = new RegExp(`^[ \\t]*#[ \\t]*define[ \\t]+([A-Za-z_]\\w*)(?![\\w(])[ \\t]*${BODY}$`, 'gm');
+const FUNCTION_DEFINE = new RegExp(`^[ \\t]*#[ \\t]*define[ \\t]+([A-Za-z_]\\w*)\\([^)\\n]*\\)${BODY}$`, 'gm');
+const ANY_DEFINE = new RegExp(`^[ \\t]*#[ \\t]*define[ \\t]+[A-Za-z_]\\w*(?:\\([^)\\n]*\\))?${BODY}$`, 'gm');
+/** `#ifndef NAME` (or `#if !defined(NAME)`) on the line before a `#define`. */
+const GUARD_BEFORE = /#[ \t]*(?:ifndef[ \t]+(\w+)|if[ \t]+!\s*defined\s*\(?\s*(\w+)\s*\)?)[^\n]*\r?\n\s*$/;
+
+const COMPILER_ATTRIBUTES = ['__attribute__', '__declspec'];
+/** The words, one regular expression for all of them. */
+const WORDS_RE = new RegExp('\\b(' + WORDS.join('|') + ')\\b', 'g');
 
 const blank = (s) => s.replace(/[^\n\r]/g, ' ');
 
@@ -70,11 +97,15 @@ export function collectMacros(texts) {
   };
   for (const text of texts) {
     if (!text.includes('define')) continue;
-    const re = /^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)(?![\w(])[ \t]*((?:[^\n\\]|\\\r?\n)*)$/gm;
+    const re = OBJECT_DEFINE;
+    re.lastIndex = 0;
     let m;
     while ((m = re.exec(text))) {
       const name = m[1];
+      if (RESERVED.has(name)) continue;
       const body = m[2].replace(/\\\r?\n/g, ' ').replace(/\/\*.*?\*\/|\/\/.*$/g, '').trim();
+      // An include guard is no decoration: nothing uses its name, and a large repository has one per header.
+      if (body === '' && isIncludeGuard(text, m.index, re.lastIndex, name)) continue;
       if (/^[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*$/.test(body)) identifiers.set(name, identifiers.has(name) && identifiers.get(name) !== body ? null : body);
       const expansion = body && (namespaceExpansion(body) ?? templateHeader(body) ?? keywordMacro(body, name));
       if (expansion) {
@@ -89,8 +120,10 @@ export function collectMacros(texts) {
     }
 
     // `#define GUARDED_BY(x) THREAD_ANNOTATION_ATTRIBUTE__(guarded_by(x))`: an attribute, read later.
-    const fn = /^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)\([^)\n]*\)((?:[^\n\\]|\\\r?\n)*)$/gm;
+    const fn = FUNCTION_DEFINE;
+    fn.lastIndex = 0;
     while ((m = fn.exec(text))) {
+      if (RESERVED.has(m[1])) continue;
       const body = m[2].replace(/\\\r?\n/g, ' ').replace(/\/\*.*?\*\/|\/\/.*$/g, '').trim();
       if (!functionLike.has(m[1])) functionLike.set(m[1], []);
       functionLike.get(m[1]).push(body);
@@ -101,7 +134,7 @@ export function collectMacros(texts) {
     const call = /^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)\([ \t]*([A-Za-z_]\w*)[ \t]*\)[ \t]*catch[ \t]*\([ \t]*([A-Za-z_]\w*)[ \t]*\)[ \t]*$/gm;
     while ((m = call.exec(text))) {
       const [, name, param, arg] = m;
-      if (arg === param && !namespaces.has(name)) namespaces.set(name, 'catch'.padEnd(name.length));
+      if (arg === param && !namespaces.has(name) && !RESERVED.has(name)) namespaces.set(name, 'catch'.padEnd(name.length));
     }
   }
 
@@ -140,6 +173,16 @@ export function collectMacros(texts) {
 }
 
 /**
+ * `#ifndef NAME` / `#define NAME` with the header's code after it. The same two lines followed at once by `#endif`
+ * give a macro its default instead (`#ifndef SHOP_API` / `#define SHOP_API` / `#endif`): that one decorates.
+ */
+function isIncludeGuard(text, defineStart, defineEnd, name) {
+  const before = GUARD_BEFORE.exec(text.slice(Math.max(0, defineStart - 200), defineStart));
+  if (!before || (before[1] ?? before[2]) !== name) return false;
+  return !/^\s*#[ \t]*endif\b/.test(text.slice(defineEnd, defineEnd + 200));
+}
+
+/**
  * Function-like macros that stand for an attribute in every definition (Clang's thread safety annotations:
  * `void Compact() EXCLUSIVE_LOCKS_REQUIRED(mutex_);`, `int count GUARDED_BY(mu_);`), directly or through another
  * such macro. Left in, the grammar reads them as a method or a field of their own.
@@ -168,8 +211,9 @@ function attributeMacros(functionLike) {
  */
 function macroWords(texts) {
   const words = new Set();
-  const re = /^[ \t]*#[ \t]*define[ \t]+[A-Za-z_]\w*(?:\([^)\n]*\))?((?:[^\n\\]|\\\r?\n)*)$/gm;
+  const re = ANY_DEFINE;
   for (const text of texts) {
+    re.lastIndex = 0;
     let m;
     while ((m = re.exec(text))) for (const w of m[1].match(/\b[A-Za-z_]\w*\b/g) ?? []) words.add(w);
   }
@@ -235,14 +279,13 @@ export function preprocess(source, { cplusplus = true, macros = null } = {}) {
   const annotations = [];
   const sections = [];
 
-  text = blankCalls(text, ['__attribute__', '__declspec'], null);
+  // `__attribute__((fallthrough));` stays: it is what tells a case that runs on from one that forgot its break.
+  text = blankCalls(text, COMPILER_ATTRIBUTES, null, (name, args) => /^\(\s*\(\s*_*fallthrough_*\s*\)\s*\)$/.test(args));
   // Qt's string connections: SIGNAL(valueChanged(int)) / SLOT(setValue(int)) read as the name in quotes.
   text = text.replace(/\b(SIGNAL|SLOT|Q_SIGNAL_MACRO)\s*\(\s*(\w+)\s*\(([^()]*)\)\s*\)/g, (all, macro, name) => `"${name}"`.padEnd(all.length, ' '));
   text = blankCalls(text, ANNOTATIONS_WITH_ARGS, annotations);
 
-  // Words, one regular expression for all of them.
-  const words = new RegExp('\\b(' + WORDS.join('|') + ')\\b', 'g');
-  text = replaceOutsideDirectives(text, words, (word, offset, all) => {
+  text = replaceOutsideDirectives(text, WORDS_RE, (word, offset, all) => {
     if (KEPT.has(word)) annotations.push({ line: lineAt(all, offset), name: word, args: '' });
     return ' '.repeat(word.length);
   });
@@ -261,9 +304,10 @@ export function preprocess(source, { cplusplus = true, macros = null } = {}) {
   text = text.replace(/\b(emit|Q_EMIT)(?=\s+[A-Za-z_][\w:.>-]*\s*\()/g, (w) => ' '.repeat(w.length));
 
   // Export macros: `class SHOP_API Order`, and by their usual names anywhere outside directives.
-  text = text.replace(/\b(class|struct|union)(\s+)([A-Z][A-Z0-9_]+)(?=\s+[A-Za-z_]\w*\s*(?:final\s*)?[:{])/g, (all, keyword, gap, macro) => keyword + gap + ' '.repeat(macro.length));
+  text = text.replace(CLASS_EXPORT_MACRO, (all, keyword, gap, macro) => keyword + gap + ' '.repeat(macro.length));
   text = replaceOutsideDirectives(text, EXPORT_MACRO, (word) => ' '.repeat(word.length));
 
+  text = blankTypeLists(text);
   if (macros?.attributes?.length) text = blankCalls(text, macros.attributes, null);
   if (macros) text = applyMacros(text, macros);
   const macroArguments = [];
@@ -271,10 +315,52 @@ export function preprocess(source, { cplusplus = true, macros = null } = {}) {
   return { text, annotations: annotations.sort((a, b) => a.line - b.line), sections, macroArguments };
 }
 
+/** doctest and Catch2 tests run for each of a list of types. */
+const TYPED_TESTS = /\b(?:TEST_CASE_TEMPLATE|TEMPLATE_TEST_CASE|TEMPLATE_PRODUCT_TEST_CASE|TEMPLATE_LIST_TEST_CASE)[ \t]*\(/g;
+
+/**
+ * `TEST_CASE_TEMPLATE("name", T, int32_t, uint64_t) { … }`: the types after the title are blanked. Types are not
+ * arguments a call can have, so the grammar lost the test's block and the tests after it (nlohmann/json).
+ */
+function blankTypeLists(text) {
+  if (!text.includes('TEST_CASE')) return text;
+  TYPED_TESTS.lastIndex = 0;
+  let out = '';
+  let last = 0;
+  let m;
+  while ((m = TYPED_TESTS.exec(text))) {
+    if (inDirective(text, m.index)) continue;
+    let depth = 0;
+    let end = m.index + m[0].length - 1;
+    let afterTitle = -1;
+    for (; end < text.length; end++) {
+      const c = text[end];
+      if (c === '(') depth++;
+      else if (c === ')' && --depth === 0) break;
+      else if (c === '"') {
+        end = skipString(text, end);
+        if (depth === 1) afterTitle = end + 1;
+      }
+    }
+
+    if (end >= text.length) break;
+    if (afterTitle !== -1 && afterTitle < end) {
+      out += text.slice(last, afterTitle) + blank(text.slice(afterTitle, end));
+      last = end;
+    }
+
+    TYPED_TESTS.lastIndex = end + 1;
+  }
+
+  return last === 0 ? text : out + text.slice(last);
+}
+
 /**
  * A macro used as a statement or a declaration of its own, without a semicolon (`FMT_PRAGMA_MSVC(…)`,
  * `Q_DECLARE_METATYPE(Order)`, `DECLARE_LOG_CATEGORY(Shop)` on a line of its own): the grammar takes it for a
- * call missing its `;` and loses what follows. A macro that opens a body (`TEST(A, B) {`) is left alone.
+ * call missing its `;` and loses what follows. A macro that opens a body (`TEST(A, B) {`) is left alone, and so is
+ * a call that is part of an expression: one that follows an operator, a comma or an open parenthesis
+ * (`foo(a,⏎ MAX(b, c)⏎);`), or that the next line goes on from (`EXPECT_TRUE(ok)⏎ << "why";`).
  */
 function blankStatementMacros(text, names) {
   const re = /^([ \t]*)([A-Z][A-Z0-9_]{2,})[ \t]*\(/gm;
@@ -296,8 +382,12 @@ function blankStatementMacros(text, names) {
     if (end >= text.length || text[end] !== ')') continue;
     const after = /^[ \t]*(\/\/[^\n]*)?(\r?\n|$)/.exec(text.slice(end + 1, end + 400));
     if (!after) continue; // `;`, `{` or more code follows on the line
-    const next = /^\s*(\S)/.exec(text.slice(end + 1, end + 400));
-    if (next && (next[1] === '{' || next[1] === ':' || next[1] === ',' || next[1] === '.' || next[1] === '-' || next[1] === '+' || next[1] === '=')) continue;
+    const next = tokenAfter(text, end + 1);
+    // `[[nodiscard]] int f();` after the macro is a new declaration; `[i]` goes on from the call.
+    if (CONTINUES.has(next[0]) && next !== '[[') continue;
+    // What is already written is in `out` (as long as the text it stands for: blanking keeps the length).
+    const before = tokenBefore(m.index, (i) => (i < last ? out : text).charCodeAt(i), (from, to) => (from < last ? out.slice(from, Math.min(to, last)) : '') + (to > last ? text.slice(Math.max(from, last), to) : ''));
+    if (!STATEMENT_START.has(before)) continue;
     out += text.slice(last, m.index + m[1].length) + blank(text.slice(m.index + m[1].length, end + 1));
     // The names it is given are used by the code it expands to (SQLite's IOMETHODS(…, afpClose, …)).
     for (const w of text.slice(open + 1, end).replace(/"(?:\\.|[^"\\])*"/g, '').match(/\b[A-Za-z_]\w*\b/g) ?? []) names.push(w);
@@ -308,15 +398,106 @@ function blankStatementMacros(text, names) {
   return last === 0 ? text : out + text.slice(last);
 }
 
+/** What may follow a macro standing as a statement: not what goes on with the expression it would be part of. */
+const CONTINUES = new Set(['{', ':', ',', '.', '-', '+', '=', '<', '>', '&', '|', '?', '*', '/', '%', '^', '!', '[', ')', ']', ';', '"']);
+/** What a statement or a declaration comes after ('' is the start of the file; `>` ends `template <…>`). */
+const STATEMENT_START = new Set(['', ';', '{', '}', ':', '>']);
+
+/** The first two characters of the code after an offset, past spaces and comments ('' at the end). */
+function tokenAfter(text, from) {
+  let i = from;
+  const limit = Math.min(text.length, from + 4000);
+  while (i < limit) {
+    const c = text[i];
+    if (c === ' ' || c === '\t' || c === '\n' || c === '\r') i++;
+    else if (c === '/' && text[i + 1] === '/') {
+      const end = text.indexOf('\n', i);
+      i = end === -1 ? text.length : end;
+    } else if (c === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2);
+      i = end === -1 ? text.length : end + 2;
+    } else return text.slice(i, i + 2);
+  }
+
+  return '';
+}
+
+/**
+ * The last character of the code before `lineStart`, past blank lines (blanked macros and directives are long runs
+ * of them), comments and preprocessor lines: '' at the start of the file. `codeAt` and `slice` read the text as it
+ * stands after the blanking done so far.
+ */
+function tokenBefore(lineStart, codeAt, slice) {
+  let end = lineStart;
+  let inComment = false; // `end` is inside a comment that began before it
+  for (let round = 0; round < 64; round++) {
+    if (!inComment) {
+      for (let c = codeAt(end - 1); end > 0 && (c === 32 || c === 9 || c === 10 || c === 13); c = codeAt(end - 1)) end--;
+    }
+
+    if (end <= 0) return '';
+    let from = Math.max(0, end - 8000);
+    let code = slice(from, end);
+    // Whole lines only: half a comment or half a directive would read as code.
+    const firstLine = from > 0 ? code.indexOf('\n') : -1;
+    if (firstLine !== -1) {
+      code = code.slice(firstLine + 1);
+      from += firstLine + 1;
+    }
+
+    if (inComment) {
+      const open = code.lastIndexOf('/*');
+      if (open === -1) {
+        end = from;
+        continue;
+      }
+
+      code = code.slice(0, open);
+      inComment = false;
+    }
+
+    // The window may open inside a comment that began before it.
+    const close = code.indexOf('*/');
+    const open = code.indexOf('/*');
+    const cut = from > 0 && close !== -1 && (open === -1 || close < open);
+    if (cut) code = code.slice(close + 2);
+    code = code
+      .replace(/"(?:\\.|[^"\\\n])*"/g, '""')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/\/\/.*$/gm, '')
+      .replace(/^[ \t]*#.*$/gm, '')
+      .trimEnd();
+    if (code) return code[code.length - 1];
+    if (from === 0) return '';
+    end = from;
+    inComment = cut;
+  }
+
+  return ' ';
+}
+
 /** Keeps one branch of each `#if` chain, blanks the directives and the rest; lines stay. */
 export function flatten(source, cplusplus) {
   if (!source.includes('#')) return source;
   const lines = source.split('\n');
   const stack = [];
   let inComment = false;
+  // A comment that began on a directive's line (blanked) and runs on: its tail goes too, or it is read as code.
+  let tail = false;
   const active = () => stack.every((f) => f.active);
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    let line = lines[i];
+    if (tail) {
+      const close = line.indexOf('*/');
+      if (close === -1) {
+        lines[i] = blank(line);
+        continue;
+      }
+
+      line = lines[i] = blank(line.slice(0, close + 2)) + line.slice(close + 2);
+      tail = false;
+    }
+
     // `.` does not match \r: a file with Windows line ends is matched without it.
     const m = !inComment && line.includes('#') ? DIRECTIVE.exec(line.replace(/\r$/, '')) : null;
     if (m) {
@@ -328,7 +509,7 @@ export function flatten(source, cplusplus) {
       }
 
       const keyword = m[1];
-      const condition = rest.replace(/\/\*.*?\*\/|\/\/.*$/g, '').replace(/\\/g, ' ').trim();
+      const condition = rest.replace(/\/\*.*?\*\/|\/\/.*$|\/\*.*$/g, '').replace(/\\/g, ' ').trim();
       if (keyword === 'if' || keyword === 'ifdef' || keyword === 'ifndef') {
         const want = wanted(keyword, condition, cplusplus);
         stack.push({ taken: want, active: want });
@@ -348,7 +529,11 @@ export function flatten(source, cplusplus) {
         stack.pop();
       }
 
-      for (let k = i; k <= j; k++) lines[k] = blank(lines[k]);
+      for (let k = i; k <= j; k++) {
+        tail = commentState(lines[k], tail);
+        lines[k] = blank(lines[k]);
+      }
+
       i = j;
       continue;
     }
@@ -395,9 +580,17 @@ function commentState(line, inComment) {
   return inComment;
 }
 
-/** Blanks `NAME(…)` (balanced, over lines) for the given names; records them as annotations when asked. */
-function blankCalls(text, names, annotations) {
-  const re = new RegExp('\\b(' + names.join('|') + ')\\s*\\(', 'g');
+const CALLS = new WeakMap();
+
+/**
+ * Blanks `NAME(…)` (balanced, over lines) for the given names; records them as annotations when asked. `keep`
+ * may leave a call in the text, by its name and its arguments with their parentheses.
+ */
+function blankCalls(text, names, annotations, keep = null) {
+  // One regular expression per list of names, not per file.
+  let re = CALLS.get(names);
+  if (!re) CALLS.set(names, re = new RegExp('\\b(' + names.join('|') + ')\\s*\\(', 'g'));
+  re.lastIndex = 0;
   let out = '';
   let last = 0;
   let m;
@@ -414,6 +607,11 @@ function blankCalls(text, names, annotations) {
 
     if (end >= text.length) break;
     const name = m[1];
+    if (keep?.(name, text.slice(m.index + m[0].length - 1, end + 1))) {
+      re.lastIndex = end + 1;
+      continue;
+    }
+
     if (annotations && KEPT.has(name)) {
       const args = text.slice(m.index + m[0].length, end).replace(/\s+/g, ' ').trim();
       annotations.push({ line: lineAt(text, m.index), name, args });
@@ -451,18 +649,23 @@ function replaceOutsideDirectives(text, re, replace) {
   });
 }
 
-/** The project's decoration macros blanked (or their keyword put back), namespace and template macros expanded on their line. */
-export function applyMacros(text, { decorations, namespaces }) {
-  const names = [...decorations.keys(), ...namespaces.keys()];
-  if (!names.length) return text;
-  const re = new RegExp('\\b(' + names.sort((a, b) => b.length - a.length).join('|') + ')\\b', 'g');
-  return text.replace(re, (name, _group, offset, all) => {
-    if (inDirective(all, offset)) return name;
-    const expansion = namespaces.get(name);
-    if (expansion !== undefined) return expansion;
-    const keyword = decorations.get(name);
-    return keyword && keyword.length <= name.length ? keyword.padEnd(name.length, ' ') : ' '.repeat(name.length);
-  });
+/**
+ * The project's decoration macros blanked (or their keyword put back), namespace and template macros expanded on
+ * their line. The regular expression of all the names and the table of what each becomes are made once for the
+ * analysis: compiling the expression for every file cost far more than running it.
+ */
+export function applyMacros(text, macros) {
+  const table = macros.table ??= replacements(macros);
+  if (!table.size) return text;
+  const re = macros.pattern ??= new RegExp('\\b(?:' + [...table.keys()].sort((x, y) => y.length - x.length).join('|') + ')\\b', 'g');
+  return text.replace(re, (name, offset, all) => (inDirective(all, offset) ? name : table.get(name)));
+}
+
+function replacements({ decorations, namespaces }) {
+  const table = new Map();
+  for (const [name, keyword] of decorations) table.set(name, keyword && keyword.length <= name.length ? keyword.padEnd(name.length, ' ') : ' '.repeat(name.length));
+  for (const [name, expansion] of namespaces) table.set(name, expansion);
+  return table;
 }
 
 function lineAt(text, offset) {

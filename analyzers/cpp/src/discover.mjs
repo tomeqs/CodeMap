@@ -157,7 +157,9 @@ export function lineCount(text) {
 
 export function readText(path) {
   try {
-    return readFileSync(path, 'utf8');
+    const text = readFileSync(path, 'utf8');
+    // A byte order mark is not code: behind it, a first-line #include or #define does not start its line.
+    return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
   } catch {
     return null;
   }
