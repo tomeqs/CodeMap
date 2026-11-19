@@ -1,4 +1,4 @@
-import { expr, readBody as readRefs } from './bodies.mjs';
+import { expr, implicitOf, readBody as readRefs } from './bodies.mjs';
 import { complexityOf } from './complexity.mjs';
 
 /**
@@ -291,9 +291,9 @@ function readFunction(node, doc, kind, owner) {
 function readParameter(node, subscript) {
   // Nodes are new objects on every call: told apart by id. With an external name, the local one is the second.
   const externalNode = node.childForFieldName('external_name');
-  const external = externalNode?.text;
+  const external = externalNode ? unquote(externalNode.text) : undefined;
   const names = node.namedChildren.filter((c) => c.type === 'simple_identifier' && c.id !== externalNode?.id);
-  const local = names[0]?.text ?? '_';
+  const local = names[0] ? unquote(names[0].text) : '_';
   const type = [...node.namedChildren].reverse().find((c) => c.type !== 'simple_identifier' && c.type !== 'parameter_modifiers' && !/comment/.test(c.type));
   return {
     label: external ?? (subscript ? '_' : local),
@@ -340,6 +340,9 @@ function readProperties(node, doc, defaultKind, owner) {
     const kind = p.computed ? 'property' : defaultKind === 'property' ? 'property' : defaultKind;
     const bodies = [p.computed && p.computed.type !== 'protocol_property_requirements' ? p.computed : null, p.value].filter(Boolean);
     const { refs, locals } = bodies.length ? readRefs(bodies) : { refs: [], locals: {} };
+    // `let made: Line = .init()`: the implicit member is the declared type's.
+    const implicit = p.type && p.value ? implicitOf(p.type, expr(p.value)) : null;
+    if (implicit) refs.push({ ev: 'call', e: implicit, line: p.value.startPosition.row + 1 });
     return {
       refs,
       locals,

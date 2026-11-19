@@ -90,7 +90,8 @@ class Resolver {
   }
 
   edge(source, target, kind, line = 0) {
-    if (source && target && source !== target) this.graph.addEdge(source, target, kind, line);
+    // A call of itself is recursion, kept as the graph keeps it; any other edge to itself is not one.
+    if (source && target && (source !== target || kind === 'calls')) this.graph.addEdge(source, target, kind, line);
   }
 
   visible(project) {
@@ -296,18 +297,19 @@ class Resolver {
   typeOf(e, scope, depth = 0) {
     if (!e || depth > 24) return null;
     switch (e[0]) {
+      case 'v': {
+        const key = e[1];
+        if (scope.resolving.has(key)) return null;
+        if (scope.cache.has(key)) return scope.cache.get(key);
+        scope.resolving.add(key);
+        const type = this.typeOf(scope.locals[key], scope, depth + 1);
+        scope.resolving.delete(key);
+        scope.cache.set(key, type);
+        return type;
+      }
+
       case 'n': {
         const name = e[1];
-        if (Object.prototype.hasOwnProperty.call(scope.locals, name)) {
-          if (scope.resolving.has(name)) return null;
-          if (scope.cache.has(name)) return scope.cache.get(name);
-          scope.resolving.add(name);
-          const type = this.typeOf(scope.locals[name], scope, depth + 1);
-          scope.resolving.delete(name);
-          scope.cache.set(name, type);
-          return type;
-        }
-
         if (scope.owner) {
           const member = this.membersNamed(scope.owner, name).find((m) => isVariable(m));
           if (member) return this.typeOfMember(member);
@@ -428,9 +430,9 @@ class Resolver {
     const fits = (type, parameter, candidate) => this.fits(type, parameter, candidate);
     const pick = (candidates) => choose(candidates, labels, args, typeOfArg, fits);
     const pickInit = (entry) => chooseInit(entry, labels, args, typeOfArg, fits);
+    if (fn[0] === 'v') return {}; // a closure held in a local
     if (fn[0] === 'n') {
       const name = fn[1];
-      if (Object.prototype.hasOwnProperty.call(scope.locals, name)) return {};
       if (scope.owner) {
         const member = pick(this.membersNamed(scope.owner, name).filter(isCallable));
         if (member) return { member, receiver: scope.owner.external ? null : { entry: scope.owner } };
@@ -550,14 +552,18 @@ class Resolver {
 
   /** A type's members that fulfil its protocols' requirements implement them; an override overrides. */
   implementations(entry) {
-    if (entry.kind === 'protocol' || entry.external) return;
+    if (entry.kind === 'protocol') return;
     for (const protocol of this.protocolsOf(entry)) {
       for (const requirement of protocol.members) {
         if (requirement.extension) continue; // a default of a protocol extension, not a requirement
-        const own = this.membersNamed(entry, requirement.decl.name).find((m) => m.entry !== protocol && m.entry.kind !== 'protocol' && sameShape(m.decl, requirement.decl));
+        // An extension of a type from outside (`extension Int: Printable`) fulfils them with its own members.
+        const candidates = entry.external ? entry.members.filter((m) => m.decl.name === requirement.decl.name) : this.membersNamed(entry, requirement.decl.name);
+        const own = candidates.find((m) => m.entry !== protocol && m.entry.kind !== 'protocol' && sameShape(m.decl, requirement.decl));
         if (own?.id && requirement.id) this.edge(own.id, requirement.id, 'implements');
       }
     }
+
+    if (entry.external) return;
 
     const parent = this.superclassOf(entry);
     if (!parent) return;
@@ -650,8 +656,10 @@ class Resolver {
         } else this.miss(fn, call);
         if (call.member?.id) this.edge(source, call.member.id, 'calls', ref.line);
         if (call.type?.id && !call.delegated) this.edge(source, call.type.id, 'instantiates', ref.line);
-        if (call.viaType?.id) this.edge(source, call.viaType.id, 'uses', ref.line);
-        if (call.enumCase?.id) this.edge(source, call.enumCase.id, 'uses', ref.line);
+        // A type named by itself (Order.make(), Failure.bad(…)) is a use already, from its name.
+        const named = fn[0] === 'm' && fn[1][0] === 'n';
+        if (call.viaType?.id && !named) this.edge(source, call.viaType.id, 'uses', ref.line);
+        if (call.enumCase?.id && !named) this.edge(source, call.enumCase.id, 'uses', ref.line);
         if (call.member) this.implicitArguments(source, ref, call.member, scope);
         return;
       }
@@ -665,7 +673,7 @@ class Resolver {
           const entry = receiver.meta;
           const member = this.membersNamed(entry, name).find((m) => isVariable(m));
           if (member?.id) this.edge(source, member.id, 'accesses', ref.line);
-          if (entry.id) this.edge(source, entry.id, 'uses', ref.line);
+          if (entry.id && e[1][0] !== 'n') this.edge(source, entry.id, 'uses', ref.line);
           return;
         }
 
@@ -720,9 +728,9 @@ class Resolver {
         const e = ref.e;
         let type = null;
         if (e[0] === 'c') {
+          // Its calls come from the call reference of the same expression; here only what it throws.
           const call = this.resolveCall(e, scope);
-          type = call.type ?? call.enumCase ?? null;
-          if (call.member?.id) this.edge(source, call.member.id, 'calls', ref.line);
+          type = call.type ?? call.enumCase ?? (call.member ? this.returnOf(call.member, call.receiver)?.entry : null) ?? null;
         } else {
           const t = this.typeOf(e, scope);
           type = t?.entry ?? t?.meta ?? null;
@@ -740,11 +748,9 @@ class Resolver {
   implicitArguments(source, ref, member, scope) {
     const [, , labels, args] = ref.e;
     const params = member.decl.params ?? [];
-    let p = 0;
+    const binding = bindArguments(params, labels) ?? [];
     for (let i = 0; i < (args ?? []).length; i++) {
-      while (p < params.length && params[p].label !== labels[i] && params[p].optional) p++;
-      const param = params[p];
-      p++;
+      const param = params[binding[i]];
       if (!param?.type || !args[i]) continue;
       // [.init(…)] for a parameter of an array type: the element's type.
       const inArray = args[i][0] === 'arr';
@@ -823,7 +829,7 @@ function choose(candidates, labels, args, typeOfArg, accepts = (t, p) => argumen
   if (!candidates.length) return null;
   const seen = new Set();
   const fitting = candidates.filter((c) => {
-    if (!takesLabels(c.decl.params ?? [], labels)) return false;
+    if (!bindArguments(c.decl.params ?? [], labels)) return false;
     const shape = `${c.decl.kind === 'constructor' ? 'init' : 'fn'}|${(c.decl.labels ?? []).join(':')}|${(c.decl.params ?? []).map((p) => compact(p.type)).join(',')}`;
     if (seen.has(shape)) return false;
     seen.add(shape);
@@ -834,7 +840,14 @@ function choose(candidates, labels, args, typeOfArg, accepts = (t, p) => argumen
   if (exact.length === 1) return exact[0];
   const pool = exact.length ? exact : fitting;
   const types = (args ?? []).map((a) => (a && typeOfArg ? typeOfArg(a) : null));
-  const typed = pool.filter((c) => types.every((t, i) => !t || !c.decl.params[i]?.type || accepts(t, c.decl.params[i].type, c)));
+  const typed = pool.filter((c) => {
+    // Each argument against the parameter it goes to (not the one at its index: defaults may be left out).
+    const binding = bindArguments(c.decl.params ?? [], labels) ?? [];
+    return types.every((t, i) => {
+      const param = c.decl.params[binding[i]];
+      return !t || !param?.type || accepts(t, param.type, c);
+    });
+  });
   if (typed.length === 1) return typed[0];
   // A requirement and its default, or a method and the protocol's: the same member to the map's eyes.
   const own = (typed.length ? typed : pool).filter((c) => c.entry?.kind !== 'protocol');
@@ -861,20 +874,27 @@ function compact(type) {
 }
 
 /**
- * Whether parameters take a call's labels: in order, parameters with defaults may be left out. Trailing closures
- * ('?') come last and fill parameters after the labelled ones, those without a default first.
+ * The parameter each argument of a call goes to, or null when the parameters do not take its labels: in order,
+ * parameters with defaults may be left out, a variadic one takes the unlabelled arguments after it. Trailing closures
+ * ('?') come last and fill the parameters after the labelled ones, those without a default first.
  */
-function takesLabels(params, labels) {
+function bindArguments(params, labels) {
   const trailing = labels.filter((l) => l === '?').length;
   const explicit = labels.slice(0, labels.length - trailing);
+  const binding = [];
   let i = 0;
   for (let j = 0; j < explicit.length; ) {
     const p = params[i];
-    if (!p) return false;
+    if (!p) return null;
     if (p.label === explicit[j] || explicit[j] === '?') {
-      i++;
+      binding.push(i);
       j++;
-      if (p.variadic) while (j < explicit.length && explicit[j] === '_' && p.label === '_') j++;
+      if (p.variadic) while (j < explicit.length && explicit[j] === '_') {
+        binding.push(i);
+        j++;
+      }
+
+      i++;
       continue;
     }
 
@@ -883,12 +903,15 @@ function takesLabels(params, labels) {
       continue;
     }
 
-    return false;
+    return null;
   }
 
-  const rest = params.slice(i);
-  const required = rest.filter((p) => !p.optional).length;
-  return trailing ? required <= trailing && trailing <= rest.length : required === 0;
+  const rest = params.map((p, k) => k).slice(i);
+  const required = rest.filter((k) => !params[k].optional);
+  if (trailing ? required.length > trailing || trailing > rest.length : required.length) return null;
+  // The trailing closures: the parameters without a default, then the others in order.
+  const filled = [...required, ...rest.filter((k) => params[k].optional)].slice(0, trailing).sort((a, b) => a - b);
+  return [...binding, ...filled];
 }
 
 /** The types a declaration's generic constraints name (`<T: Codable>`, `where Element: Order`). */

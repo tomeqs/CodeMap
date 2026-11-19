@@ -95,3 +95,61 @@ import { scratch } from './helpers.mjs';
 function scratchPackage(files) {
   return scratch({ 'Package.swift': '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "P", path: ".")])\n', ...files });
 }
+
+test('from the self-review: subscripts, variadics, defaults, recursion, case patterns, scopes, labels, implicit members', () => {
+  const { dir, dispose } = scratchPackage({
+    'Box.swift': `
+struct Line { func total() -> Int { 1 } }
+enum Kind { case outlet, other }
+enum Failure: Error { case bad(String) }
+protocol Printable { func describe() -> String }
+extension Int: Printable { func describe() -> String { "" } }
+
+final class Box {
+  private var lines: [Line] = []
+  var outlet = 0
+  var cnt = 0
+  let made: Line = .init()
+
+  func first() -> Int { lines[0].total() }
+  func sum(of values: Int...) -> Int { 0 }
+  func total() -> Int { sum(of: 1, 2, 3) }
+  func f(a: Int = 0, b: String) {}
+  func f(a: Int = 0, b: Int) {}
+  func callF() { f(b: "x") }
+  func fact(_ n: Int) -> Int { n <= 1 ? 1 : n * fact(n - 1) }
+  func pick(_ k: Kind) -> Int {
+    switch k {
+    case .outlet: return outlet
+    case .other: return 0
+    }
+  }
+  func shadow() -> Int {
+    let a = [1].map { cnt in cnt + 1 }
+    return cnt + a.count
+  }
+  func esc(\`default\` v: Int) {}
+  func callEsc() { esc(default: 1) }
+  func boom() throws { throw Failure.bad("x") }
+}
+`,
+  });
+  try {
+    const fragment = run(dir);
+    const has = (source, kind, target) => assert.ok(fragment.hasEdge(`swift:P:${source}`, kind, `swift:P:${target}`), `no ${source} -${kind}-> ${target}; from it: ${fragment.edgesFrom(`swift:P:${source}`).join(', ')}`);
+    has('Box.first()', 'accesses', 'Box.lines'); // lines[0] through implicit self
+    has('Box.total()', 'calls', 'Box.sum(of:)'); // a labelled variadic
+    has('Box.callF()', 'calls', 'Box.f(a:String,b:String)'.replace('a:String', 'a:Int')); // the argument against the parameter it goes to
+    has('Box.fact(_:)', 'calls', 'Box.fact(_:)'); // recursion
+    has('Box.pick(_:)', 'accesses', 'Box.outlet'); // `case .outlet:` is not a local
+    has('Box.shadow()', 'accesses', 'Box.cnt'); // a closure's parameter is its own
+    has('Box.callEsc()', 'calls', 'Box.esc(default:)'); // a label in backticks
+    has('Box.made', 'instantiates', 'Line'); // let made: Line = .init()
+    has('extension:Int.describe()', 'implements', 'Printable.describe()'); // an extension of a type from outside
+    const uses = fragment.edges.filter((e) => e.source === 'swift:P:Box.boom()' && e.kind === 'uses' && e.target === 'swift:P:Failure');
+    assert.deepEqual(uses.map((e) => e.weight), [1]); // one use, not two
+    has('Box.boom()', 'throws', 'Failure');
+  } finally {
+    dispose();
+  }
+});
