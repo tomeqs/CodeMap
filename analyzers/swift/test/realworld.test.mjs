@@ -375,3 +375,23 @@ final class GameController {
   assert.ok(map.node('swift:P:GameState.isGameEnabled').tags?.includes('maybe-used'));
   assert.ok(map.hasEdge('swift:P:GameController.update()', 'accesses', 'swift:P:extension:Set.subscript(contains:)'));
 });
+
+test('a /* in an interpolated string does not start a comment', () => {
+  // Vapor: `"\(start)-\(end)/*"`, then a doc comment with `bytes */size` 15 lines on: everything between was one
+  // comment to the grammar, and the file was mostly unreadable.
+  const { map } = mapWithMisses({
+    'Range.swift': `enum Value {
+  case within(Int, Int)
+  func header() -> String {
+    switch self {
+    case .within(let start, let end):
+      return "\\(start)-\\(end)/*"
+    }
+  }
+  /// Answered with \`Content-Range: bytes */size\`.
+  func size() -> Int { 1 }
+}
+`,
+  });
+  assert.ok(map.has('swift:P:Value.size()'));
+});
