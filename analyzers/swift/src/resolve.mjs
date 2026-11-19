@@ -36,7 +36,8 @@ export function resolveReferences(model, graph, { log = () => {}, stats = false,
 const KEYWORDS = new Set(['some', 'any', 'inout', 'Self', 'where', 'borrowing', 'consuming', 'throws', 'rethrows', 'async', 'escaping', 'sending', 'isolated', 'each', 'repeat', 'Type', 'Protocol']);
 const SEQUENCE_SAME = new Set(['filter', 'sorted', 'reversed', 'shuffled', 'prefix', 'suffix', 'dropFirst', 'dropLast']);
 /** Methods of arrays whose closure gets an element (reduce's second parameter). */
-const ELEMENT_CLOSURES = new Set(['map', 'flatMap', 'compactMap', 'forEach', 'filter', 'first', 'last', 'firstIndex', 'lastIndex', 'contains', 'allSatisfy', 'drop', 'prefix', 'sorted', 'min', 'max', 'reduce', 'partition', 'removeAll', 'split', 'sort']);
+const ELEMENT_CLOSURES = new Set(['map', 'flatMap', 'compactMap', 'forEach', 'filter', 'first', 'last', 'firstIndex', 'lastIndex', 'contains', 'allSatisfy', 'drop', 'prefix', 'sorted', 'min', 'max', 'reduce', 'partition', 'removeAll', 'split', 'sort', 'elementsEqual', 'lexicographicallyPrecedes', 'starts']);
+const COMPARATORS = new Set(['sorted', 'sort', 'min', 'max', 'elementsEqual', 'lexicographicallyPrecedes', 'starts']);
 const SEQUENCE_ELEMENT = new Set(['first', 'last', 'randomElement', 'min', 'max', 'popLast', 'removeFirst', 'removeLast']);
 
 class Resolver {
@@ -398,7 +399,11 @@ class Resolver {
     const fn = call[1];
     if (fn[0] === 'm') {
       const receiver = this.typeOf(fn[1], scope, depth + 1);
-      if (receiver?.array && ELEMENT_CLOSURES.has(fn[2])) return fn[2] === 'reduce' ? (i === 1 ? receiver.array : null) : i === 0 ? receiver.array : null;
+      if (receiver?.array && ELEMENT_CLOSURES.has(fn[2])) {
+        // reduce(init) { partial, element in }; comparators (sorted(by:), min(by:)) get two elements.
+        if (fn[2] === 'reduce') return i === 1 ? receiver.array : null;
+        return i === 0 || (i === 1 && COMPARATORS.has(fn[2])) ? receiver.array : null;
+      }
       if (receiver?.dict && ELEMENT_CLOSURES.has(fn[2])) return null;
     }
 
@@ -960,7 +965,7 @@ function closureParameters(text) {
   let depth = 0;
   for (let i = 0; i < t.length; i++) {
     if (t[i] === '(') depth++;
-    else if (t[i] === ')' && --depth === 0) return splitTop(t.slice(1, i), ',').map((p) => p.replace(/^\w+\s*:\s*/, '').replace(/^(inout|borrowing|consuming)\s+/, ''));
+    else if (t[i] === ')' && --depth === 0) return splitTop(t.slice(1, i), ',').map((p) => p.replace(/^(\w+\s+)?\w+\s*:\s*/, '').replace(/^(inout|borrowing|consuming)\s+/, ''));
   }
 
   return null;

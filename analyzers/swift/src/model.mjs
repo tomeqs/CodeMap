@@ -334,10 +334,10 @@ class Model {
         extraLocations: others.map((p) => this.location(p.file, p.member.line, p.member.endLine)).filter(Boolean),
         attributes: [...new Set(member.places.flatMap((p) => p.member.attributes))],
         doc: decl.doc,
-        tags: tagsOf(file.test || decl.preview ? ['test'] : [], decl.topLevel ? ['entrypoint'] : []),
+        tags: tagsOf(file.test || decl.preview ? ['test'] : [], decl.topLevel && runsTopLevel(file) ? ['entrypoint'] : []),
         metrics: memberMetrics(decl),
       });
-      if (decl.topLevel) node.tags = tagsOf(node.tags ?? [], ['entrypoint']);
+      if (decl.topLevel && runsTopLevel(file)) node.tags = tagsOf(node.tags ?? [], ['entrypoint']);
       node.metrics.loc += decl.endLine - decl.line + 1;
       this.keepTypes(child, decl);
     }
@@ -369,6 +369,11 @@ export function placeOf(file) {
   if (rel.startsWith('..')) rel = toPosix(relative(dirname(project.dir), file.path));
   const folder = dirname(rel) === '.' ? '' : dirname(rel);
   return { folder, component: rel.replace(/\.swift$/, '') };
+}
+
+/** Top-level code runs in main.swift, in an executable target, and in a script (a folder of Swift files). */
+function runsTopLevel(file) {
+  return basename(file.path) === 'main.swift' || file.project.executable || file.project.kind === 'folder';
 }
 
 /** What makes two declarations one member: a stored and a computed property of one name (#if branches) are one. */

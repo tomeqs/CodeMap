@@ -51,6 +51,9 @@ export function extractFile(tree) {
       case 'directive':
       case 'diagnostic':
         return;
+      case 'ERROR':
+        // What the parser could not follow is not code that runs.
+        return;
       default: {
         // Code at the top of the file (main.swift, scripts).
         const line = node.startPosition.row + 1;
@@ -216,11 +219,15 @@ const KEPT = new Set(['open', 'package', 'fileprivate']);
 export function readModifiers(node) {
   const modifiers = new Set();
   const attributes = [];
+  let arguments_ = null;
   let access = null;
   const take = (child) => {
     if (child.type === 'attribute') {
       const name = child.namedChildren.find((c) => c.type === 'user_type')?.text ?? child.text.replace(/^@/, '').replace(/\(.*$/s, '');
       attributes.push(name);
+      // @Environment(Store.self): the argument says what the property holds.
+      const argument = /\(([^]*)\)\s*$/.exec(child.text)?.[1];
+      if (argument) (arguments_ ??= {})[name] = argument.trim();
     } else if (child.type === 'visibility_modifier') {
       const text = child.text.replace(/\s+/g, '');
       if (/\(set\)$/.test(text)) modifiers.add(text);
@@ -240,7 +247,7 @@ export function readModifiers(node) {
     else if (!/comment/.test(child.type)) break;
   }
 
-  return { access, modifiers: [...modifiers], attributes };
+  return { access, modifiers: [...modifiers], attributes, attributeArguments: arguments_ };
 }
 
 function readFunction(node, doc, kind, owner) {
@@ -317,7 +324,7 @@ function readParameter(node, subscript) {
 }
 
 function readProperties(node, doc, defaultKind, owner) {
-  const { access, modifiers, attributes } = readModifiers(node);
+  const { access, modifiers, attributes, attributeArguments } = readModifiers(node);
   const out = [];
   const binding = (n) => n.type === 'value_binding_pattern' && n.text.trim() === 'let';
   const isLet = node.children.some(binding) || node.childrenForFieldName('name').some((p) => p.namedChildren.some(binding));
@@ -369,6 +376,7 @@ function readProperties(node, doc, defaultKind, owner) {
       access,
       modifiers: [...shared],
       attributes,
+      attributeArguments: attributeArguments ?? undefined,
       doc,
       signature: signatureOf(node, p.computed ?? p.value ?? null),
       line: node.startPosition.row + 1,
