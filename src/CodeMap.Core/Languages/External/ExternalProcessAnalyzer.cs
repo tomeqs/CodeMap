@@ -19,6 +19,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
     private readonly FolderFilter _folders;
     private readonly System.Text.RegularExpressions.Regex[] _excluded;
     private readonly MarkerNames _markers;
+    private readonly (System.Text.RegularExpressions.Regex Folder, string File)[] _bundles;
 
     public ExternalProcessAnalyzer(PluginManifest manifest)
     {
@@ -27,6 +28,8 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
         _folders = new FolderFilter(manifest.Detect.IgnoreDirs, manifest.Detect.IgnoreMarkers);
         _excluded = manifest.Detect.ExcludeFiles.Select(FolderFilter.Wildcard).ToArray();
         _markers = new MarkerNames(manifest.Detect.Markers);
+        _bundles = manifest.Detect.Bundles.Select(PluginManifest.BundleParts).Where(p => p != null)
+            .Select(p => (FolderFilter.Wildcard(p!.Value.Folder), p.Value.File)).ToArray();
         var seconds = Environment.GetEnvironmentVariable("CODEMAP_PLUGIN_TIMEOUT");
         if (int.TryParse(seconds, out var s) && s > 0) Timeout = TimeSpan.FromSeconds(s);
     }
@@ -41,6 +44,46 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
     {
         var name = Path.GetFileName(path);
         return Manifest.Detect.Inputs.Any(pattern => Matches(pattern, name));
+    }
+
+    /// <summary>
+    /// A folder named as a bundle of the manifest (App.xcodeproj) that holds its file (project.pbxproj); names are
+    /// compared without case, as everywhere else in detection.
+    /// </summary>
+    public bool IsBundle(string directory)
+    {
+        if (_bundles.Length == 0) return false;
+        var full = Path.TrimEndingDirectorySeparator(directory);
+        var name = Path.GetFileName(full);
+        return _bundles.Any(b => b.Folder.IsMatch(name) && HasFile(full, b.File));
+
+        static bool HasFile(string folder, string file)
+        {
+            try
+            {
+                return Directory.Exists(folder) && Directory.EnumerateFiles(folder, file, new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive }).Any();
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                return false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// A bundle's own file (App.xcodeproj/project.pbxproj), or a bundle folder itself (one created, renamed or moved
+    /// in). Not one inside another bundle: Xcode keeps a project.xcworkspace in every App.xcodeproj.
+    /// </summary>
+    private bool IsBundlePart(string path)
+    {
+        if (_bundles.Length == 0) return false;
+        var name = Path.GetFileName(path);
+        var folder = Path.GetDirectoryName(path);
+        if (IsBundle(path)) return !InBundleFolder(folder);
+        return folder != null && _bundles.Any(b => string.Equals(b.File, name, StringComparison.OrdinalIgnoreCase) && b.Folder.IsMatch(Path.GetFileName(folder)))
+            && !InBundleFolder(Path.GetDirectoryName(folder));
+
+        bool InBundleFolder(string? dir) => dir != null && _bundles.Any(b => b.Folder.IsMatch(Path.GetFileName(dir)));
     }
 
     /// <summary>
@@ -70,11 +113,12 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
                 continue;
             }
 
-            inProject |= files.Any(f => markers.Contains(Path.GetFileName(f)));
+            var bundles = dirs.Where(IsBundle).ToList();
+            inProject |= files.Any(f => markers.Contains(Path.GetFileName(f))) || bundles.Count > 0;
             if (inProject && files.Any(f => IsSource(f, sources))) return true;
             foreach (var sub in dirs)
             {
-                if (!_folders.Skips(sub)) pending.Push((sub, inProject));
+                if (!_folders.Skips(sub) && !bundles.Contains(sub)) pending.Push((sub, inProject)); // a bundle is a project file, not code
             }
         }
 
@@ -85,7 +129,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
     /// A folder inside a project (src/ of a package) has its marker above it. Looks up to the repository root
     /// (a folder with .git, checked too) and stops before the home folder, as the plugins do.
     /// </summary>
-    private static bool MarkerAbove(string directory, MarkerNames markers)
+    private bool MarkerAbove(string directory, MarkerNames markers)
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         for (var dir = Directory.GetParent(Path.GetFullPath(directory)); dir != null; dir = dir.Parent)
@@ -94,6 +138,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
             try
             {
                 if (dir.EnumerateFiles().Any(f => markers.Contains(f.Name))) return true;
+                if (_bundles.Length > 0 && dir.EnumerateDirectories().Any(d => IsBundle(d.FullName))) return true;
                 if (Directory.Exists(Path.Combine(dir.FullName, ".git")) || File.Exists(Path.Combine(dir.FullName, ".git"))) return false;
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
@@ -108,6 +153,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
     public IEnumerable<(string File, string Kind)> MarkersIn(string directory) =>
         Directory.EnumerateFiles(directory)
             .Where(f => _markers.Contains(Path.GetFileName(f)))
+            .Concat(_bundles.Length == 0 ? Enumerable.Empty<string>() : Directory.EnumerateDirectories(directory).Where(IsBundle))
             .Select(f => (f, "project"));
 
     public bool IsWatched(string path)
@@ -115,7 +161,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
         var name = Path.GetFileName(path);
         var sources = new HashSet<string>(Manifest.Detect.Sources, StringComparer.OrdinalIgnoreCase);
         if (sources.Contains(Path.GetExtension(name))) return IsSource(path, sources); // not what excludeFiles names (.d.ts, .min.js…)
-        return _markers.Contains(name) || Manifest.Detect.Inputs.Any(p => Matches(p, name)); // tsconfig.app.json…
+        return _markers.Contains(name) || Manifest.Detect.Inputs.Any(p => Matches(p, name)) || IsBundlePart(path); // tsconfig.app.json…, App.xcodeproj/project.pbxproj
     }
 
     public IReadOnlyCollection<string> IgnoredFolders => Manifest.Detect.IgnoreDirs;
@@ -127,8 +173,8 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
     public CodeGraph Analyze(string path, AnalyzerOptions options, CancellationToken ct)
     {
         var log = options.Log ?? (_ => { });
-        var full = Path.GetFullPath(path);
-        var root = Directory.Exists(full) ? full : Path.GetDirectoryName(full)!;
+        var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        var root = Directory.Exists(full) && !IsBundle(full) ? full : Path.GetDirectoryName(full)!; // App.xcodeproj: rooted at its folder
         var (executable, arguments) = ResolveCommand();
 
         var temp = Path.Combine(Path.GetTempPath(), "codemap-" + Manifest.Id + "-" + Guid.NewGuid().ToString("N"));

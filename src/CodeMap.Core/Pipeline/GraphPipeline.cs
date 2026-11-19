@@ -124,6 +124,7 @@ public static class GraphPipeline
 
         if (Directory.Exists(full))
         {
+            if (registry.BundleOwner(full) is { } owner) return new List<ILanguageAnalyzer> { owner }; // App.xcodeproj: a project, not a folder
             var found = registry.Languages.Where(l => l.Detect(full, ct)).ToList();
             if (found.Count > 0) return found;
             throw new ArgumentException($"No {string.Join(" or ", registry.Languages.Select(l => l.Info.Markers))} found in '{path}'.");

@@ -53,6 +53,19 @@ public sealed class LanguageRegistry
 
     public ILanguageAnalyzer? Find(string id) => _languages.FirstOrDefault(l => l.Info.Id == id);
 
+    /// <summary>The language whose project this folder is (App.xcodeproj), or null for an ordinary folder.</summary>
+    public ILanguageAnalyzer? BundleOwner(string directory) => _languages.FirstOrDefault(l => l.IsBundle(directory));
+
+    /// <summary>
+    /// The folder an input is rooted at, the one watched for changes: a folder itself, the folder of a file or of a
+    /// project that is a folder (App.xcodeproj).
+    /// </summary>
+    public string RootOf(string path)
+    {
+        var full = Path.GetFullPath(path);
+        return File.Exists(full) || BundleOwner(full) != null ? Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(full))! : full;
+    }
+
     /// <summary>Only these languages (by id, e.g. "csharp,typescript").</summary>
     public LanguageRegistry Only(IEnumerable<string> ids)
     {
