@@ -339,7 +339,7 @@ class Resolver {
           if (member) return this.typeOfMember(member);
         }
 
-        const global = this.globalNamed(name, scope.project);
+        const global = this.globalNamed(name, scope.project, scope.ctx.file);
         if (global) return this.typeOfMember(global);
         const entry = this.lookupType(name, scope.ctx);
         if (entry) return { meta: entry };
@@ -474,13 +474,22 @@ class Resolver {
     return null;
   }
 
-  globalNamed(name, project) {
+  globalNamed(name, project, file) {
     for (const p of this.visible(project)) {
-      const found = this.globals.get(p.id)?.get(name)?.[0];
+      const found = this.inFile(this.globals.get(p.id)?.get(name), file)[0];
       if (found) return found;
     }
 
     return null;
+  }
+
+  /**
+   * Free functions or globals of a name that code in `file` can call: a private (or fileprivate) one only from its own
+   * file, and the file's own first. 33 files of one target each with a `private let readMe` mean 33 globals.
+   */
+  inFile(list, file) {
+    const here = (m) => Boolean(file) && m.holder?.file?.path === file.path;
+    return (list ?? []).filter((m) => m.decl.access !== 'private' || here(m)).sort((a, b) => Number(here(b)) - Number(here(a)));
   }
 
   /**
@@ -508,13 +517,11 @@ class Resolver {
       const type = this.lookupType(name, scope.ctx);
       if (type) return { type, member: pickInit(type), receiver: { entry: type } };
       const functions = [];
-      for (const p of this.visible(scope.project)) functions.push(...(this.functions.get(p.id)?.get(name) ?? []));
+      for (const p of this.visible(scope.project)) functions.push(...this.inFile(this.functions.get(p.id)?.get(name), scope.ctx.file));
       const member = pick(functions);
       if (member || functions.length) return { member };
-      for (const p of this.visible(scope.project)) {
-        const global = this.globals.get(p.id)?.get(name)?.[0];
-        if (global) return { closure: global };
-      }
+      const global = this.globalNamed(name, scope.project, scope.ctx.file);
+      if (global) return { closure: global };
 
       // Nothing the caller can see has this name: Swift's or a framework's (`assert(…)`, `XCTAssertNoThrow(…)`), and
       // a capitalized one makes an instance of that type (`DispatchSemaphore(value: 0)`).
@@ -800,7 +807,7 @@ class Resolver {
           }
         }
 
-        const global = this.globalNamed(name, scope.project);
+        const global = this.globalNamed(name, scope.project, scope.ctx.file);
         if (global?.id) {
           this.edge(source, global.id, 'accesses', ref.line);
           return;
@@ -813,9 +820,11 @@ class Resolver {
         }
 
         for (const p of this.visible(scope.project)) {
-          const fn = this.functions.get(p.id)?.get(name);
-          if (fn?.length === 1 && fn[0].id) {
-            this.edge(source, fn[0].id, 'calls', ref.line);
+          const fn = this.inFile(this.functions.get(p.id)?.get(name), scope.ctx.file);
+          const own = fn.filter((m) => m.holder?.file?.path === scope.ctx.file?.path);
+          const one = own.length === 1 ? own[0] : fn.length === 1 ? fn[0] : null;
+          if (one?.id) {
+            this.edge(source, one.id, 'calls', ref.line);
             return;
           }
         }

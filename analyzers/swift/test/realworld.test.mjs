@@ -310,3 +310,19 @@ test("what another target adds to a type of the map is the type's, for the targe
   assert.ok(map.hasEdge('swift:CoreTests:AppTests.testIt()', 'accesses', 'swift:Testing:extension:Application.testName'));
   assert.ok(!map.hasEdge('swift:Other:file:Use.use(_:)', 'calls', 'swift:Testing:extension:Application.testing(_:_:)'), 'Other does not see Testing');
 });
+
+test('a private global or function is its own file’s: files of one target each with `private let readMe`', () => {
+  // swift-composable-architecture's case studies: 33 files each declare `private let readMe` and use it; all uses went
+  // to the first file's, so the other 32 (and their files' holders) were reported unused.
+  const { map } = mapWithMisses({
+    'A.swift': 'private let readMe = "a"\nprivate func make() -> Int { 1 }\nstruct AView {\n  var text: String { readMe }\n  func build() -> Int { make() }\n}\n',
+    'B.swift': 'private let readMe = "b"\nprivate func make() -> Int { 2 }\nstruct BView {\n  var text: String { readMe }\n  func build() -> Int { make() }\n}\n',
+    'C.swift': 'let shared = "c"\nstruct CView {\n  var text: String { shared }\n}\n',
+  });
+  assert.ok(map.hasEdge('swift:P:AView.text', 'accesses', 'swift:P:file:A.readMe'));
+  assert.ok(map.hasEdge('swift:P:BView.text', 'accesses', 'swift:P:file:B.readMe'));
+  assert.ok(!map.hasEdge('swift:P:BView.text', 'accesses', 'swift:P:file:A.readMe'));
+  assert.ok(map.hasEdge('swift:P:AView.build()', 'calls', 'swift:P:file:A.make()'));
+  assert.ok(map.hasEdge('swift:P:BView.build()', 'calls', 'swift:P:file:B.make()'));
+  assert.ok(map.hasEdge('swift:P:CView.text', 'accesses', 'swift:P:file:C.shared'));
+});
