@@ -1,0 +1,115 @@
+{
+  "protocol": 1,
+  "id": "swift",
+  "idPrefix": "swift:",
+  "name": "Swift",
+  "version": "0.1.0",
+  "command": [
+    "node",
+    "--max-old-space-size=8192",
+    "./src/cli.mjs"
+  ],
+  "runtime": {
+    "name": "node",
+    "minVersion": 18,
+    "envVar": "CODEMAP_NODE",
+    "help": "Swift needs Node.js 18 or newer (https://nodejs.org); or set CODEMAP_NODE to the node executable."
+  },
+  "inputs": "a Package.swift, .xcodeproj, .xcworkspace, Project.swift, project.yml, .podspec, Podfile or .swift file",
+  "markers": "Package.swift, .xcodeproj, Project.swift, project.yml, .podspec, Podfile or .swift files",
+  "detect": {
+    "markers": [
+      "Package.swift",
+      "Project.swift",
+      "project.yml",
+      "*.podspec",
+      "Podfile"
+    ],
+    "bundles": [
+      "*.xcodeproj/project.pbxproj",
+      "*.xcworkspace/contents.xcworkspacedata"
+    ],
+    "sources": [
+      ".swift"
+    ],
+    "inputs": [
+      "Package.swift",
+      "Project.swift",
+      "project.yml",
+      "*.podspec",
+      "Podfile",
+      "*.swift"
+    ],
+    "excludeFiles": [
+      "*.generated.swift"
+    ],
+    "ignoreDirs": [
+      "DerivedData",
+      "Pods",
+      "Carthage",
+      "SourcePackages",
+      "xcuserdata"
+    ],
+    "ignoreMarkers": [
+      "pyvenv.cfg"
+    ],
+    "withoutMarker": true
+  },
+  "display": {
+    "levels": {
+      "project": [
+        "Target",
+        "Targets"
+      ],
+      "namespace": [
+        "Folder",
+        "Folders"
+      ],
+      "type": [
+        "Type",
+        "Types"
+      ],
+      "member": [
+        "Member",
+        "Members"
+      ]
+    },
+    "external": "packages"
+  },
+  "unused": {
+    "memberAccessibility": [
+      "private"
+    ],
+    "typeAccessibility": [
+      "private"
+    ],
+    "skipAttributed": true,
+    "skipMemberKinds": [
+      "constructor"
+    ],
+    "skipModifiers": [
+      "override"
+    ],
+    "skipNames": [
+      "deinit"
+    ],
+    "skipTags": [
+      "entrypoint",
+      "test",
+      "handler",
+      "maybe-used"
+    ],
+    "skipTypeTags": [
+      "entrypoint",
+      "test",
+      "component",
+      "generated"
+    ],
+    "skipParentKinds": [
+      "interface"
+    ],
+    "skipParentTags": [
+      "test"
+    ]
+  }
+}
