@@ -96,11 +96,39 @@ public class BundleProjectTests
         Assert.Equal(app, DirectoryBrowser.Browse(bundle, ws.Root, registry).Path); // like a project file: its folder
         Assert.Contains("*.stubproj", stub.Info.InputPatterns); // the app's path box analyzes it rather than opening it
 
-        // Live updates: its file, and the project folder itself when it is created or renamed.
+        // Live updates: its file, and a project folder created, renamed or moved in; not the rest of what it holds.
         Assert.True(SourceChangeFilter.IsRelevant(Path.Combine(bundle, "project.stubindex"), registry, ws.Root));
-        Assert.True(SourceChangeFilter.IsRelevant(Path.Combine(app, "New.stubproj"), registry, ws.Root));
         Assert.False(SourceChangeFilter.IsRelevant(Path.Combine(app, "Other", "project.stubindex"), registry, ws.Root));
         Assert.False(SourceChangeFilter.IsRelevant(Path.Combine(bundle, "xcuserdata", "state.bin"), registry, ws.Root));
+        Assert.False(SourceChangeFilter.IsRelevant(Path.Combine(app, "Notes.stubproj"), registry, ws.Root)); // no project in it
+        ws.File("App/New.stubproj/project.stubindex", "");
+        Assert.True(SourceChangeFilter.IsRelevant(Path.Combine(app, "New.stubproj"), registry, ws.Root));
+
+        // Xcode keeps a project.xcworkspace in every App.xcodeproj: a project folder inside one is not another project.
+        ws.File("App/App.stubproj/inner.stubproj/project.stubindex", "");
+        Assert.False(SourceChangeFilter.IsRelevant(Path.Combine(bundle, "inner.stubproj", "project.stubindex"), registry, ws.Root));
+        Assert.False(SourceChangeFilter.IsRelevant(Path.Combine(bundle, "inner.stubproj"), registry, ws.Root));
+    }
+
+    [Fact]
+    public void Project_folder_names_are_compared_without_case_and_entries_without_spaces_around_them()
+    {
+        using var ws = new TestWorkspace()
+            .File("App/APP.STUBPROJ/Project.StubIndex", "")
+            .File("App/a.stub", "")
+            .File("spaced/codemap-plugin.json", Manifest(" *.xcodeproj / project.pbxproj "))
+            .File("App/App.xcodeproj/project.pbxproj", "");
+        var (_, stub) = Stub();
+
+        var bundle = Path.Combine(ws.Root, "App", "APP.STUBPROJ");
+        Assert.True(stub.IsBundle(bundle));
+        Assert.True(stub.IsWatched(Path.Combine(bundle, "Project.StubIndex")));
+        Assert.True(stub.Detect(Path.Combine(ws.Root, "App"), CancellationToken.None));
+
+        var spaced = new ExternalProcessAnalyzer(PluginManifest.Load(Path.Combine(ws.Root, "spaced", PluginManifest.FileName)));
+        Assert.True(spaced.IsBundle(Path.Combine(ws.Root, "App", "App.xcodeproj")));
+        Assert.Equal(new[] { "*.x", "*.xcodeproj" }, spaced.Info.InputPatterns);
+        Assert.Equal("*.x, *.xcodeproj file", spaced.Info.Inputs); // the messages name it too
     }
 
     [Theory]
@@ -109,6 +137,7 @@ public class BundleProjectTests
     [InlineData("/project.stubindex")]
     [InlineData("a/b/c")]
     [InlineData("*.stubproj/*.index")]
+    [InlineData("*.stubproj/project.?")]
     [InlineData("../project.stubindex")]
     [InlineData("*.stubproj\\project.stubindex")]
     public void Bundle_entries_name_a_folder_and_a_file_in_it(string bundle)

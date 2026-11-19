@@ -238,17 +238,20 @@ public sealed class PluginManifest
     /// </summary>
     internal static (string Folder, string File)? BundleParts(string bundle)
     {
-        var parts = bundle.Split('/');
-        if (parts.Length != 2 || parts.Any(p => p.Trim().Length == 0 || p is "." or ".." || p.Contains('\\')) || parts[1].Contains('*')) return null;
+        var parts = bundle.Split('/').Select(p => p.Trim()).ToArray();
+        if (parts.Length != 2 || parts.Any(p => p.Length == 0 || p is "." or ".." || p.Contains('\\')) || parts[1].IndexOfAny(new[] { '*', '?' }) >= 0) return null;
         return (parts[0], parts[1]);
     }
+
+    /// <summary>The bundles' folder patterns ("*.xcodeproj").</summary>
+    private IEnumerable<string> BundleFolders => Detect.Bundles.Select(BundleParts).Where(p => p != null).Select(p => p!.Value.Folder);
 
     public LanguageInfo ToLanguageInfo() => new()
     {
         Id = Id,
         Name = Name,
-        Inputs = string.IsNullOrEmpty(Inputs) ? string.Join(", ", Detect.Inputs) + " file" : Inputs,
-        InputPatterns = Detect.Inputs.Concat(Detect.Bundles.Select(BundleParts).Where(p => p != null).Select(p => p!.Value.Folder)).ToList(),
+        Inputs = string.IsNullOrEmpty(Inputs) ? string.Join(", ", Detect.Inputs.Concat(BundleFolders)) + " file" : Inputs,
+        InputPatterns = Detect.Inputs.Concat(BundleFolders).ToList(),
         Markers = string.IsNullOrEmpty(Markers) ? string.Join(", ", Detect.Markers.Concat(Detect.Sources)) + " files" : Markers,
         Levels = Display?.Levels ?? new LevelLabels(),
         External = Display?.External ?? "external",

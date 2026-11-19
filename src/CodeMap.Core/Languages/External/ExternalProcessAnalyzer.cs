@@ -46,13 +46,44 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
         return Manifest.Detect.Inputs.Any(pattern => Matches(pattern, name));
     }
 
-    /// <summary>A folder named as a bundle of the manifest (App.xcodeproj) that holds its file (project.pbxproj).</summary>
+    /// <summary>
+    /// A folder named as a bundle of the manifest (App.xcodeproj) that holds its file (project.pbxproj); names are
+    /// compared without case, as everywhere else in detection.
+    /// </summary>
     public bool IsBundle(string directory)
     {
         if (_bundles.Length == 0) return false;
         var full = Path.TrimEndingDirectorySeparator(directory);
         var name = Path.GetFileName(full);
-        return _bundles.Any(b => b.Folder.IsMatch(name) && File.Exists(Path.Combine(full, b.File)));
+        return _bundles.Any(b => b.Folder.IsMatch(name) && HasFile(full, b.File));
+
+        static bool HasFile(string folder, string file)
+        {
+            try
+            {
+                return Directory.Exists(folder) && Directory.EnumerateFiles(folder, file, new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive }).Any();
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                return false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// A bundle's own file (App.xcodeproj/project.pbxproj), or a bundle folder itself (one created, renamed or moved
+    /// in). Not one inside another bundle: Xcode keeps a project.xcworkspace in every App.xcodeproj.
+    /// </summary>
+    private bool IsBundlePart(string path)
+    {
+        if (_bundles.Length == 0) return false;
+        var name = Path.GetFileName(path);
+        var folder = Path.GetDirectoryName(path);
+        if (IsBundle(path)) return !InBundleFolder(folder);
+        return folder != null && _bundles.Any(b => string.Equals(b.File, name, StringComparison.OrdinalIgnoreCase) && b.Folder.IsMatch(Path.GetFileName(folder)))
+            && !InBundleFolder(Path.GetDirectoryName(folder));
+
+        bool InBundleFolder(string? dir) => dir != null && _bundles.Any(b => b.Folder.IsMatch(Path.GetFileName(dir)));
     }
 
     /// <summary>
@@ -130,10 +161,7 @@ public sealed class ExternalProcessAnalyzer : ILanguageAnalyzer
         var name = Path.GetFileName(path);
         var sources = new HashSet<string>(Manifest.Detect.Sources, StringComparer.OrdinalIgnoreCase);
         if (sources.Contains(Path.GetExtension(name))) return IsSource(path, sources); // not what excludeFiles names (.d.ts, .min.js…)
-        if (_markers.Contains(name) || Manifest.Detect.Inputs.Any(p => Matches(p, name))) return true; // tsconfig.app.json…
-        // A bundle's file (App.xcodeproj/project.pbxproj); the bundle itself when it is created, renamed or deleted.
-        var folder = Path.GetFileName(Path.GetDirectoryName(path));
-        return _bundles.Any(b => (string.Equals(b.File, name, StringComparison.OrdinalIgnoreCase) && folder != null && b.Folder.IsMatch(folder)) || b.Folder.IsMatch(name));
+        return _markers.Contains(name) || Manifest.Detect.Inputs.Any(p => Matches(p, name)) || IsBundlePart(path); // tsconfig.app.json…, App.xcodeproj/project.pbxproj
     }
 
     public IReadOnlyCollection<string> IgnoredFolders => Manifest.Detect.IgnoreDirs;
