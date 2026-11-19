@@ -261,3 +261,38 @@ func use() {
   assert.ok(!map.hasEdge('swift:P:file:Store.use()', 'calls', 'swift:P:Runner.run(_:)'), 'the closure is an argument of run');
   assert.deepEqual(misses.filter((m) => m[1] === '*').map((m) => m[2]), []);
 });
+
+test('a tie between overloads goes to the one not marked @_disfavoredOverload; an async twin keeps the result of the other', () => {
+  // swift-nio: `pipeline.syncOperations.addHandler(handler)` has a deprecated twin marked @_disfavoredOverload (584
+  // missed), and `channel.close().wait()` met close(mode:file:line:)'s `async` twin, which returns nothing (727 missed).
+  const { map, misses } = mapWithMisses({
+    'Pipeline.swift': `public final class Future<T> {
+  public func wait() throws -> T { fatalError() }
+}
+public protocol Invoker {}
+extension Invoker {
+  public func close(mode: Int = 0, line: UInt = #line) async throws {}
+}
+extension Invoker {
+  public func close(mode: Int = 0, line: UInt = #line) -> Future<Void> { Future() }
+}
+public final class Operations {
+  public enum Position { case last }
+  public func addHandler(_ handler: AnyObject, name: String? = nil, position: Operations.Position = .last) {}
+  @available(*, deprecated)
+  @_disfavoredOverload
+  public func addHandler(_ handler: AnyObject, name: String? = nil, position: Int = 0) {}
+}
+final class Channel: Invoker {
+  let operations = Operations()
+  func shutdown(_ handler: AnyObject) throws {
+    operations.addHandler(handler)
+    try close().wait()
+  }
+}
+`,
+  });
+  assert.ok(map.hasEdge('swift:P:Channel.shutdown(_:)', 'calls', 'swift:P:Operations.addHandler(_:AnyObject,name:String?,position:Operations.Position)'));
+  assert.ok(map.hasEdge('swift:P:Channel.shutdown(_:)', 'calls', 'swift:P:Future.wait()'));
+  assert.deepEqual(misses.filter((m) => m[1] === '*').map((m) => m[2]), []);
+});

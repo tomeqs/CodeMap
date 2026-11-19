@@ -297,9 +297,12 @@ class Resolver {
   returnOf(member, receiver) {
     const decl = member.decl;
     if (decl.kind === 'constructor') return member.entry && !member.entry.external ? { entry: member.entry } : receiver;
-    if (!decl.returns) return null;
+    // Of the same labels and parameters, an `async` one with no result and one returning a future (swift-nio's
+    // close(mode:file:line:)) are one member: what it returns is the one that returns something.
+    const returns = decl.returns ?? member.places?.map((p) => p.member.returns).find(Boolean);
+    if (!returns) return null;
     const ctx = member.holder ? { entry: null, project: member.holder.file.project, file: member.holder.file } : this.ctxOf(member.entry);
-    return this.parseType(decl.returns, ctx, receiver?.entry ? receiver : null);
+    return this.parseType(returns, ctx, receiver?.entry ? receiver : null);
   }
 
   // ------------------------------------------------------------------------------------------- expressions
@@ -934,8 +937,12 @@ function choose(candidates, labels, args, typeOfArg, accepts = (t, p) => argumen
     });
   });
   if (typed.length === 1) return typed[0];
+  // What Swift is told to pick last (a deprecated twin marked @_disfavoredOverload), only when nothing else is left.
+  const remaining = typed.length ? typed : pool;
+  const favored = remaining.filter((c) => !c.decl.attributes?.includes('_disfavoredOverload'));
+  if (favored.length === 1) return favored[0];
   // A requirement and its default, or a method and the protocol's: the same member to the map's eyes.
-  const own = (typed.length ? typed : pool).filter((c) => c.entry?.kind !== 'protocol');
+  const own = (favored.length ? favored : remaining).filter((c) => c.entry?.kind !== 'protocol');
   return own.length === 1 ? own[0] : null;
 }
 
