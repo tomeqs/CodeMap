@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs';
 import { basename, dirname, relative, resolve } from 'node:path';
+import { runChecks } from './checks.mjs';
 import { discover, isGenerated, isTestFile, lineCount, readText, toPosix } from './discover.mjs';
 import { extractFile } from './extract/declarations.mjs';
 import { Graph } from './graph.mjs';
@@ -33,6 +34,7 @@ export function analyze(parser, request, log = () => {}) {
   const counts = { generated: 0, tests: 0, large: 0, failed: [], unreadable: [] };
 
   const files = [];
+  const diagnostics = [];
   let errorBytes = 0;
   let totalBytes = 0;
   let started = Date.now();
@@ -68,6 +70,8 @@ export function analyze(parser, request, log = () => {}) {
         totalBytes += text.length;
         if (text.length > 2000 && errors > text.length / 2) counts.unreadable.push(rel);
         file.facts = extractFile(tree);
+        // Problems inside the code (--checks), not in tests.
+        if (options.checks && !test) diagnostics.push(...runChecks(tree, file));
       } finally {
         tree.delete();
       }
@@ -114,7 +118,7 @@ export function analyze(parser, request, log = () => {}) {
     },
     nodes,
     edges,
-    analysis: options.checks ? { warnings, diagnostics: [] } : { warnings },
+    analysis: options.checks ? { warnings, diagnostics: sortDiagnostics(diagnostics) } : { warnings },
   };
 }
 
@@ -122,6 +126,19 @@ export function analyze(parser, request, log = () => {}) {
 function nameOf(target, only) {
   if (only && ['package', 'tuist', 'xcodegen', 'podfile'].includes(only.kind)) return basename(dirname(target));
   return basename(target).replace(/\.(xcodeproj|xcworkspace|podspec\.json|podspec|swift)$/i, '');
+}
+
+/** One report per rule and place, in file order. */
+function sortDiagnostics(list) {
+  const seen = new Set();
+  return list
+    .filter((d) => {
+      const key = `${d.rule}|${d.location.file}|${d.location.line}|${d.column}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => cmp(a.location.file, b.location.file) || a.location.line - b.location.line || a.column - b.column || cmp(a.rule, b.rule));
 }
 
 function errorShare(tree) {

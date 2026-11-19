@@ -243,6 +243,27 @@ public class CodeChecksTests
         Assert.Contains("Python", FindingRules.Find("code.empty-catch")!.Detection);
     }
 
+    [NodeFact(swift: true)]
+    public void Swift_checks_become_findings_on_nodes_of_the_map()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(PluginTests.SwiftFixture("checks"), registry, Checks);
+
+        var diagnostics = graph.Analysis.Diagnostics!;
+        Assert.Contains(diagnostics, d => d.Rule == "force-try" && d.Node == "swift:Checks:Widget.run(_:value:)");
+        Assert.Contains(diagnostics, d => d.Rule == "strong-self-in-stored-closure" && d.Node == "swift:Checks:Widget.bind()");
+        Assert.Contains(diagnostics, d => d.Rule == "implicitly-unwrapped-property" && d.Node == "swift:Checks:Widget.name");
+        Assert.Contains(diagnostics, d => d.Rule == "fatal-error-placeholder" && d.Node == "swift:Checks:Widget.later()");
+        Assert.DoesNotContain(diagnostics, d => d.Location.File.StartsWith("Tests/"));
+
+        // Every Swift rule is in the catalog, so findings say what it found and why it matters.
+        var findings = FindingsAnalysis.Compute(graph).Findings.Where(f => f.Rule.StartsWith("code.")).ToList();
+        Assert.Equal(13, findings.Select(f => f.Rule).Distinct().Count());
+        Assert.All(findings, f => Assert.NotNull(FindingRules.Find(f.Rule)));
+        Assert.Contains("Swift", FindingRules.Find("code.float-equality")!.Detection);
+        Assert.Contains("Swift", FindingRules.Find("code.unreachable-code")!.Detection);
+    }
+
     [NodeFact(cpp: true)]
     public void Cpp_checks_become_findings_on_nodes_of_the_map()
     {

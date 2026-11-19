@@ -24,9 +24,12 @@ export function isManifestSource(path) {
   return /(^|[/\\])Tuist[/\\]/.test(path);
 }
 
-/** Test code by folder or name: Tests/, *Tests.swift, *Test.swift, *Spec.swift. */
+/** Test code by folder or name: Tests/, IntegrationTests/, tests_…/, *Tests.swift, *Test.swift, *Spec.swift. */
 export function isTestFile(path) {
-  return /(^|\/)(tests?|unittests?|uitests?|specs?)\//i.test(path) || /(^|\/)[^/]*[a-z0-9](Tests?|Spec|Specs)\.swift$/.test(path);
+  return /(^|\/)(tests?|unittests?|uitests?|specs?)\//i.test(path)
+    || /(^|\/)[A-Za-z]*Tests\//.test(path) // IntegrationTests/, SnapshotTests/
+    || /(^|\/)tests?_[^/]*\//i.test(path) // swift-nio's tests_04_performance/
+    || /(^|\/)[^/]*[a-z0-9](Tests?|Spec|Specs)\.swift$/.test(path);
 }
 
 /** Files a tool wrote: by name (*.generated.swift, R.generated.swift) or a mark at the top. */
