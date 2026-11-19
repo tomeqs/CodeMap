@@ -11,7 +11,7 @@ namespace CodeMap.Tests;
 /// </summary>
 public sealed class NodeFactAttribute : FactAttribute
 {
-    public NodeFactAttribute(bool typescript = false, bool python = false, bool cpp = false)
+    public NodeFactAttribute(bool typescript = false, bool python = false, bool cpp = false, bool swift = false)
     {
         if (python && Environment.GetEnvironmentVariable("CODEMAP_REQUIRE_PYTHON") != "1" && PythonFactAttribute.Missing() is { } missing)
         {
@@ -25,6 +25,8 @@ public sealed class NodeFactAttribute : FactAttribute
             Skip = "Run npm install in analyzers/typescript.";
         else if (cpp && !Directory.Exists(Path.Combine(GoldenTests.RepoRoot(), "analyzers", "cpp", "node_modules", "web-tree-sitter")))
             Skip = "Run npm ci in analyzers/cpp.";
+        else if (swift && !Directory.Exists(Path.Combine(GoldenTests.RepoRoot(), "analyzers", "swift", "node_modules", "web-tree-sitter")))
+            Skip = "Run npm ci in analyzers/swift.";
     }
 }
 
@@ -330,6 +332,93 @@ public class PluginTests
     internal static string PythonFixture(string name) => Path.Combine(GoldenTests.RepoRoot(), "analyzers", "python", "test", "fixtures", name);
 
     internal static string CppFixture(string name) => Path.Combine(GoldenTests.RepoRoot(), "analyzers", "cpp", "test", "fixtures", name);
+
+    internal static string SwiftFixture(string name) => Path.Combine(GoldenTests.RepoRoot(), "analyzers", "swift", "test", "fixtures", name);
+
+    [NodeFact(swift: true)]
+    public void Swift_frameworks_mark_entry_points_tests_and_handlers_so_only_dead_code_reads_as_dead()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(SwiftFixture("frameworks"), registry, NoGit);
+
+        Assert.Empty(graph.Analysis.Warnings);
+        // What Interface Builder, the runtime and the frameworks reach is not dead: only what nothing reaches.
+        Assert.Equal(new[] { "swift:Shop:CartView.never", "swift:Shop:CartViewController.unusedHelper()" }, graph.Analysis.UnusedCandidates.Order(StringComparer.Ordinal));
+        Assert.Contains(Tags.EntryPoint, graph.Node("swift:Server:Entry").Tags);
+        Assert.Contains(Tags.Test, graph.Node("swift:ShopTests:CartTests.testAdds()").Tags);
+        Assert.Contains(Tags.Handler, graph.Node("swift:Shop:CartViewController.tap(_:)").Tags);
+        Assert.Contains(Tags.Component, graph.Node("swift:Shop:CartView").Tags);
+        Assert.Contains("route", graph.Node("swift:Server:OrdersController.index(req:)").Tags);
+        Assert.StartsWith("GET /api/v1/orders/:id", graph.Node("swift:Server:file:routes.show(req:)").Doc);
+        graph.AssertEdge("swift:Shop:CartView", EdgeKinds.Injects, "swift:Shop:Cart");
+
+        // A route is where a call flow starts: the handler, and on to what it makes.
+        var flow = new CodeMap.Insights.CallFlow(new CodeMap.Insights.GraphIndex(graph)).Build(new[] { "swift:Server:OrdersController.boot(routes:)" });
+        Assert.Contains(flow.Methods, m => m.Id == "swift:Server:OrdersController.create(req:)");
+    }
+
+    [NodeFact(swift: true)]
+    public void Swift_calls_reach_implementations_through_protocols_in_call_flows()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(SwiftFixture("resolve"), registry, NoGit);
+
+        Assert.Empty(graph.Analysis.Warnings);
+        const string services = "swift:Services:";
+        graph.AssertEdge(services + "OrderService.place(_:)", EdgeKinds.Calls, services + "PaymentGateway.charge(_:)");
+        graph.AssertEdge(services + "StripeGateway.charge(_:)", EdgeKinds.Implements, services + "PaymentGateway.charge(_:)");
+        graph.AssertEdge(services + "StripeGateway", EdgeKinds.Implements, services + "PaymentGateway");
+        graph.AssertEdge(services + "OrderService", EdgeKinds.Inherits, services + "BaseService");
+
+        // The flow from place(_:) goes through the protocol to the Stripe gateway and on to what it makes.
+        var flow = new CodeMap.Insights.CallFlow(new CodeMap.Insights.GraphIndex(graph)).Build(new[] { services + "OrderService.place(_:)" });
+        Assert.Contains(flow.Methods, m => m.Id == services + "StripeGateway.charge(_:)");
+        Assert.Contains(flow.Methods, m => m.Id == "swift:Domain:Receipt.init(amount:)");
+
+        // A dependency of another target: coupling between the targets' types counts it.
+        Assert.True(graph.Node(services + "OrderService").Metric("ce") > 0);
+    }
+
+    [NodeFact(swift: true)]
+    public void The_swift_plugin_maps_a_package_with_its_extensions_and_an_xcode_project_beside_it()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var fixture = SwiftFixture("package");
+        var swift = registry.Find("swift")!;
+        Assert.True(swift.Detect(fixture, CancellationToken.None));
+        Assert.Equal("Swift", swift.Info.Name);
+        Assert.Contains("*.xcodeproj", swift.Info.InputPatterns);
+
+        var graph = CodeMapAnalyzer.Analyze(fixture, registry, NoGit);
+
+        Assert.Equal(new[] { "1 generated file(s) were skipped." }, graph.Analysis.Warnings);
+        Assert.Equal(new[] { "swift" }, graph.Source.Languages!.Select(l => l.Id));
+        const string order = "swift:Domain:Order";
+        Assert.Equal(NodeLevels.Type, NodeLevels.Of(graph.Node(order)));
+        Assert.Equal("swift:ns:Domain/", graph.Node(order).Parent);
+        Assert.Equal("Sources/Domain/Order+Totals.swift", Assert.Single(graph.Node(order).ExtraLocations!).File);
+        Assert.Equal(NodeLevels.Member, NodeLevels.Of(graph.Node(order + ".add(_:quantity:)")));
+        Assert.Equal("Sources/Domain/Order+Totals.swift", graph.Node(order + ".description").Location!.File);
+        Assert.Equal(NodeLevels.Type, NodeLevels.Of(graph.Node("swift:Domain:extension:String")));
+        Assert.Equal(NodeKinds.Interface, graph.Node("swift:Domain:OrderRepository").Kind);
+        graph.AssertEdge("swift:project:Shop", EdgeKinds.ProjectReference, "swift:project:Domain");
+        graph.AssertEdge("swift:project:Shop", EdgeKinds.PackageReference, "swift:pkg:swift-log");
+        Assert.Contains(Tags.TestProject, graph.Node("swift:project:ShopTests").Tags);
+        Assert.Contains(Tags.EntryPoint, graph.Node("swift:shop-cli:file:main.main").Tags);
+        // The package holds Order.swift, which its .xcodeproj lists too: the Xcode target keeps only its own file.
+        Assert.Equal("App/AppDelegate.swift", graph.Nodes.Single(n => n.Id == "swift:Shop iOS:AppDelegate").Location!.File);
+
+        // The .xcodeproj alone, a folder: its own targets, rooted at the folder it is in.
+        var xcode = CodeMapAnalyzer.Analyze(Path.Combine(fixture, "Shop.xcodeproj"), registry, NoGit);
+        Assert.Equal(Path.GetFullPath(fixture), xcode.Source.Root);
+        Assert.Equal("Shop", xcode.Source.Name);
+        Assert.Equal(new[] { "swift:project:Shop iOS" }, xcode.Nodes.Where(n => n.Kind == NodeKinds.Project).Select(n => n.Id));
+        Assert.Equal("Sources/Domain/Order.swift", xcode.Node("swift:Shop iOS:Order").Location!.File);
+
+        // Every node passed the plugin checks: ids with the prefix, known levels, parents that exist.
+        Assert.All(graph.Nodes.Where(n => n.Language == null && n.Kind != NodeKinds.Package), n => Assert.StartsWith("swift:", n.Id));
+        Assert.DoesNotContain(graph.Analysis.Warnings, w => w.Contains("dropped or fixed"));
+    }
 
     [NodeFact(cpp: true)]
     public void The_cpp_plugin_maps_a_cmake_project_and_a_c_library()

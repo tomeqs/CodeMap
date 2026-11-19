@@ -1,0 +1,33 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	objectVersion = 77;
+	objects = {
+		A2000001 = {isa = PBXBuildFile; fileRef = F2000001 /* StoreApp.swift */; };
+		A2000002 = {isa = PBXBuildFile; fileRef = F2000002 /* ContentView.swift */; };
+		A2000003 = {isa = PBXBuildFile; fileRef = F2000003 /* StoreTests.swift */; };
+		F2000001 /* StoreApp.swift */ = {isa = PBXFileReference; path = StoreApp.swift; sourceTree = "<group>"; };
+		F2000002 /* ContentView.swift */ = {isa = PBXFileReference; path = ContentView.swift; sourceTree = "<group>"; };
+		F2000003 /* StoreTests.swift */ = {isa = PBXFileReference; path = StoreTests.swift; sourceTree = "<group>"; };
+		E2000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Preview/Sample.swift,
+			);
+			target = T2000001 /* Store */;
+		};
+		S2000001 /* Features */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (E2000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Features; sourceTree = "<group>"; };
+		G2000000 = {isa = PBXGroup; children = (G2000001 /* App */, S2000001 /* Features */, G2000002 /* StoreTests */, ); sourceTree = "<group>"; };
+		G2000001 /* App */ = {isa = PBXGroup; children = (F2000001, F2000002, ); path = App; sourceTree = "<group>"; };
+		G2000002 /* StoreTests */ = {isa = PBXGroup; children = (F2000003, ); path = StoreTests; sourceTree = "<group>"; };
+		P2000001 = {isa = PBXSourcesBuildPhase; files = (A2000001, A2000002, ); };
+		P2000002 = {isa = PBXSourcesBuildPhase; files = (A2000003, ); };
+		D2000001 /* Alamofire */ = {isa = XCSwiftPackageProductDependency; package = K2000001 /* XCRemoteSwiftPackageReference "Alamofire" */; productName = Alamofire; };
+		K2000001 /* XCRemoteSwiftPackageReference "Alamofire" */ = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/Alamofire/Alamofire.git"; requirement = {kind = upToNextMajorVersion; minimumVersion = 5.0.0; }; };
+		TD200001 = {isa = PBXTargetDependency; target = T2000001 /* Store */; };
+		T2000001 /* Store */ = {isa = PBXNativeTarget; buildPhases = (P2000001, ); dependencies = (); fileSystemSynchronizedGroups = (S2000001 /* Features */, ); name = Store; packageProductDependencies = (D2000001 /* Alamofire */, ); productType = "com.apple.product-type.application"; };
+		T2000002 /* StoreTests */ = {isa = PBXNativeTarget; buildPhases = (P2000002, ); dependencies = (TD200001, ); name = StoreTests; productType = "com.apple.product-type.bundle.unit-test"; };
+		R2000000 = {isa = PBXProject; mainGroup = G2000000; packageReferences = (K2000001, ); targets = (T2000001 /* Store */, T2000002 /* StoreTests */, ); };
+	};
+	rootObject = R2000000;
+}
