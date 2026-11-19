@@ -5,7 +5,9 @@ import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 
 const request = JSON.parse(readFileSync(0, 'utf8'));
-const files = statSync(request.target).isFile() ? [request.target] : readdirSync(request.target, { recursive: true }).map((f) => join(request.target, f)).filter((f) => f.endsWith('.stub'));
+// A project that is a folder (App.stubproj, see the manifest's bundles) holds no code: its project is the root's files.
+const folder = request.target.endsWith('.stubproj') ? request.root : request.target;
+const files = statSync(folder).isFile() ? [folder] : readdirSync(folder, { recursive: true }).map((f) => join(folder, f)).filter((f) => f.endsWith('.stub'));
 if (files.some((f) => basename(f) === 'fail.stub')) {
   console.error('boom: fail.stub says so');
   process.exit(3);

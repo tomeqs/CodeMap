@@ -23,7 +23,7 @@ public static class DirectoryBrowser
         var places = Places(startDirectory, registry);
         if (string.IsNullOrWhiteSpace(path)) path = startDirectory;
         var full = Path.GetFullPath(Environment.ExpandEnvironmentVariables(ExpandHome(path.Trim())));
-        if (File.Exists(full)) full = Path.GetDirectoryName(full)!;
+        if (File.Exists(full) || registry.BundleOwner(full) != null) full = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(full))!; // a project file or App.xcodeproj: its folder
         if (!Directory.Exists(full)) throw new DirectoryNotFoundException($"Folder not found: {path}");
 
         var entries = new List<BrowseEntry>();

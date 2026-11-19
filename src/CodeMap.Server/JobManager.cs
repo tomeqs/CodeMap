@@ -212,8 +212,8 @@ public sealed class JobManager : IDisposable
         if (path != null)
         {
             path = System.IO.Path.GetFullPath(path);
-            // Same rule as the project loader: a solution/project file is rooted at its folder.
-            root = File.Exists(path) ? System.IO.Path.GetDirectoryName(path)! : path;
+            // Same rule as the analysis: a solution/project file (and App.xcodeproj) is rooted at its folder.
+            root = LanguageRegistry.Default.RootOf(path);
             if (!Directory.Exists(root)) return false;
         }
         else if (_lastCompleted is { Root: not null } last)

@@ -83,6 +83,13 @@ public sealed class PluginManifest
         /// <summary>File name patterns the plugin takes as input ("*.ts", "package.json").</summary>
         public List<string> Inputs { get; set; } = new();
 
+        /// <summary>
+        /// Projects that are folders (Xcode's App.xcodeproj): a folder name pattern and the file such a folder holds,
+        /// "*.xcodeproj/project.pbxproj". Such a folder is taken as input like a project file, rooted at its parent,
+        /// and marks the folder it is in like a project file would; a folder of that name without the file is a folder.
+        /// </summary>
+        public List<string> Bundles { get; set; } = new();
+
         /// <summary>Folders never searched (node_modules, dist…); * wildcards allowed (*.egg-info).</summary>
         public List<string> IgnoreDirs { get; set; } = new();
 
@@ -200,6 +207,9 @@ public sealed class PluginManifest
         Detect.IgnoreDirs = Clean(Detect.IgnoreDirs);
         Detect.IgnoreMarkers = Clean(Detect.IgnoreMarkers);
         Detect.ExcludeFiles = Clean(Detect.ExcludeFiles);
+        Detect.Bundles = Clean(Detect.Bundles);
+        if (Detect.Bundles.FirstOrDefault(b => BundleParts(b) == null) is { } bundle)
+            return $"detect.bundles entry '{bundle}' must be a folder pattern and a file in it ('*.xcodeproj/project.pbxproj').";
         if (Detect.Sources.Count == 0 && Detect.Inputs.Count == 0) return "detect needs sources or inputs.";
         if (Detect.WithoutMarker && Detect.Sources.Count == 0) return "detect.withoutMarker needs sources.";
         Version ??= "";
@@ -222,12 +232,23 @@ public sealed class PluginManifest
         static List<string> Clean(List<string>? values) => values?.Where(v => !string.IsNullOrWhiteSpace(v)).ToList() ?? new List<string>();
     }
 
+    /// <summary>
+    /// A bundles entry split into its folder pattern and the file the folder holds ("*.xcodeproj", "project.pbxproj"),
+    /// or null when it is not one folder and one file name.
+    /// </summary>
+    internal static (string Folder, string File)? BundleParts(string bundle)
+    {
+        var parts = bundle.Split('/');
+        if (parts.Length != 2 || parts.Any(p => p.Trim().Length == 0 || p is "." or ".." || p.Contains('\\')) || parts[1].Contains('*')) return null;
+        return (parts[0], parts[1]);
+    }
+
     public LanguageInfo ToLanguageInfo() => new()
     {
         Id = Id,
         Name = Name,
         Inputs = string.IsNullOrEmpty(Inputs) ? string.Join(", ", Detect.Inputs) + " file" : Inputs,
-        InputPatterns = Detect.Inputs,
+        InputPatterns = Detect.Inputs.Concat(Detect.Bundles.Select(BundleParts).Where(p => p != null).Select(p => p!.Value.Folder)).ToList(),
         Markers = string.IsNullOrEmpty(Markers) ? string.Join(", ", Detect.Markers.Concat(Detect.Sources)) + " files" : Markers,
         Levels = Display?.Levels ?? new LevelLabels(),
         External = Display?.External ?? "external",

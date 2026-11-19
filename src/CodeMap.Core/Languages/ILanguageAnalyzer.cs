@@ -19,6 +19,12 @@ public interface ILanguageAnalyzer
     bool Detect(string directory, CancellationToken ct);
 
     /// <summary>
+    /// Whether a folder is a project of this language rather than a folder of code (Xcode's App.xcodeproj): it is
+    /// analyzed like a project file, rooted at the folder it is in.
+    /// </summary>
+    bool IsBundle(string directory) => false;
+
+    /// <summary>
     /// The raw graph of a file or folder:
     /// <list type="bullet">
     /// <item>nodes in a tree through <c>parent</c> (project → namespace → type → member), each with its <c>project</c>;</item>

@@ -82,6 +82,7 @@ jako Node), chyba że wskazano inny w ustawieniu `codemap.nodePath` albo w zmien
 | `detect.excludeFiles` | pliki z rozszerzeniem źródłowym, które nie są kodem, z `*` (`*.d.ts`, `*.min.js`, `*_pb2.py`) |
 | `detect.withoutMarker` | `true`: pliki źródłowe leżące wprost w analizowanym folderze liczą się też bez pliku projektu (folder skryptów); głębsze nadal go potrzebują, więc pojedynczy skrypt w repozytorium innego języka go nie przejmuje |
 | `detect.inputs` | wzorce nazw plików, które można podać wprost (`*.ts`, `package.json`). Plik bierze pierwszy język, który go przyjmuje; C# nie przyjmuje solucji (`.sln`, `.slnx`, `.slnf`), która wymienia projekty, ale żadnego `.csproj`, więc solucja Visual Studio z samymi projektami C++ (`.vcxproj`) trafia do języka, który ma `*.sln` w `inputs`; solucja mieszana zostaje przy C# z ostrzeżeniem, że projekty C++ są na mapie folderu |
+| `detect.bundles` | projekty, które są folderami: wzorzec nazwy folderu i plik, który taki folder zawiera, np. `"*.xcodeproj/project.pbxproj"`, `"*.xcworkspace/contents.xcworkspacedata"`. Taki folder można podać wprost jak plik projektu: trafia tylko do tego języka, `target` to on sam, a `root` to folder, w którym leży. Przy wykrywaniu działa jak plik projektu (`detect.markers`), a wykrywanie do niego nie wchodzi; przeglądarka folderów pokazuje go jako projekt, a odświeżanie na żywo śledzi jego plik. Folder o takiej nazwie bez tego pliku jest zwykłym folderem |
 | `detect.ignoreDirs` | foldery, do których wykrywanie, przeglądarka folderów i odświeżanie na żywo nie zaglądają, z `*` (`*.egg-info`); foldery z kropką są pomijane zawsze. Dotyczą wszystkich języków, więc nie wpisuj nazw, pod którymi inny język trzyma kod |
 | `detect.ignoreMarkers` | pliki, które wykluczają swój folder, jakkolwiek się nazywa (`pyvenv.cfg`: środowisko wirtualne Pythona) |
 | `display` | jak mapa nazywa poziomy tego języka i kod spoza analizy (trafia do `source.languages`) |
@@ -104,7 +105,8 @@ CodeMap uruchamia `command` w folderze wtyczki i pisze na **stdin** żądanie (U
 ```
 
 * `target`: plik lub folder do analizy; `root`: folder, względem którego mają być ścieżki (`location.file`).
-  CodeMap podaje jako `root` folder do analizy (albo folder pliku). Folder może leżeć wewnątrz projektu
+  CodeMap podaje jako `root` folder do analizy (albo folder pliku, albo folder, w którym leży projekt-folder z
+  `detect.bundles`, np. `App.xcodeproj`). Folder może leżeć wewnątrz projektu
   (np. `src/` pakietu): jego plik projektu jest wtedy wyżej i wtyczka powinna go znaleźć, żeby id były takie same
   jak przy analizie całego projektu. Ścieżek spoza `root` CodeMap nie pokazuje.
 * Wynik wtyczka zapisuje do pliku **`output`** (nie na stdout: duże grafy i przypadkowy `console.log` by go psuły).
