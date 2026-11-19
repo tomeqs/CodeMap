@@ -30,6 +30,16 @@ class Model {
     this.graph = graph;
     this.types = new Map(projects.map((p) => [p.id, new Map()])); // project id → Map(qualified → TypeEntry)
     this.holders = new Map(); // file → holder
+    this.visibleCache = new Map();
+  }
+
+  /** The target and every target it depends on, through others too: SwiftPM lets code import those as well. */
+  visible(project) {
+    if (this.visibleCache.has(project)) return this.visibleCache.get(project);
+    const out = [project];
+    for (let i = 0; i < out.length; i++) for (const other of out[i].references) if (!out.includes(other)) out.push(other);
+    this.visibleCache.set(project, out);
+    return out;
   }
 
   // ---------------------------------------------------------------------------------------------- types
@@ -251,9 +261,9 @@ class Model {
     return FRAMEWORK_CLASS.test(first.name) && !PROTOCOL_LIKE.test(first.name) ? first.text : undefined;
   }
 
-  /** A type of the target or of the targets it uses, by its name (Order, Order.Line). */
+  /** A type of the target or of the targets it uses (as the resolver sees them), by its name (Order, Order.Line). */
   findType(project, name) {
-    for (const p of [project, ...project.references]) {
+    for (const p of this.visible(project)) {
       const hit = this.types.get(p.id)?.get(name);
       if (hit && !hit.external) return hit;
     }

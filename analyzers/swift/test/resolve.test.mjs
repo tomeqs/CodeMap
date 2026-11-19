@@ -178,3 +178,31 @@ final class Top {
     dispose();
   }
 });
+
+test('from the self-review: if let x = y reads only y; a base class from an indirect dependency is the base type', () => {
+  const { dir, dispose } = scratch({
+    'Package.swift': '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "A"), .target(name: "B", dependencies: ["A"]), .target(name: "C", dependencies: ["B"])])\n',
+    'Sources/A/Store.swift': 'open class Store {\n  public init() {}\n}\n',
+    'Sources/B/Middle.swift': 'import A\npublic struct Middle {}\n',
+    'Sources/C/Top.swift': `import A
+final class Top: Store {
+  var current: Int?
+  var user = 0
+  func run() -> Int {
+    if let user = current { return user }
+    guard let current else { return 0 }
+    return current
+  }
+}
+`,
+  });
+  try {
+    const fragment = run(dir);
+    assert.ok(fragment.hasEdge('swift:C:Top.run()', 'accesses', 'swift:C:Top.current'));
+    assert.ok(!fragment.hasEdge('swift:C:Top.run()', 'accesses', 'swift:C:Top.user'), 'if let user = current does not read the property user');
+    assert.ok(fragment.hasEdge('swift:C:Top', 'inherits', 'swift:A:Store'));
+    assert.equal(fragment.node('swift:C:Top')?.baseType, 'Store');
+  } finally {
+    dispose();
+  }
+});

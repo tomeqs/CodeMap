@@ -244,6 +244,20 @@ test('C# files in a folder named like build output still change the map', () => 
   for (const file of ['build/bin/Debug/Build.cs', 'build/obj/x.cs']) assert.ok(!isSourceFile(file), file);
 });
 
+test('only Swift folders named exactly like their build or dependency folders are left out of live updates', () => {
+  // Pods/, Carthage/, .build/… were left out for every language and in any case: saving a web app's src/pods/ or a
+  // C# Pods/ namespace no longer refreshed the map.
+  const { isSourceFile } = require('../../src/extension');
+  for (const file of ['src/pods/index.ts', 'app/pods/views.py', 'src/Pods/PodService.cs', 'Tools\\Carthage\\Sync.cs', 'lib/carthage/x.cpp']) {
+    assert.ok(isSourceFile(file), file);
+  }
+
+  for (const file of ['Pods/Alamofire/Source/Session.swift', 'Pods/Firebase/Core/FIRApp.h', '.build/checkouts/swift-nio/Sources/CNIOAtomics/include/c.h',
+    'DerivedData/App/Build/x.swift', 'Carthage/Checkouts/x/Sources/y.swift', 'App.xcodeproj/xcuserdata/me.xcuserdatad/x.swift', 'SourcePackages/checkouts/a/Package.swift']) {
+    assert.ok(!isSourceFile(file), file);
+  }
+});
+
 test('a solution without C# projects (Visual Studio C++) is not offered as a C# map', () => {
   const { listsCSharpProjects } = require('../../src/extension');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codemap-sln-'));

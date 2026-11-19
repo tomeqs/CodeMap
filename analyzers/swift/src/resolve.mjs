@@ -56,7 +56,6 @@ class Resolver {
     this.unresolved = new Map();
     this.untyped = new Set(); // names used on receivers of unknown type
     this.superCache = new Map();
-    this.visibleCache = new Map();
     this.protocolCache = new Map();
     this.memberTypes = new Map();
     // Free functions, globals and type aliases of each target, and its extensions of types from outside, by name.
@@ -98,13 +97,9 @@ class Resolver {
     if (source && target && (source !== target || kind === 'calls')) this.graph.addEdge(source, target, kind, line);
   }
 
-  /** The target and every target it depends on, through others too: SwiftPM lets code import those as well. */
+  /** The target and every target it depends on, through others too (the model's, so both agree). */
   visible(project) {
-    if (this.visibleCache.has(project)) return this.visibleCache.get(project);
-    const out = [project];
-    for (let i = 0; i < out.length; i++) for (const other of out[i].references) if (!out.includes(other)) out.push(other);
-    this.visibleCache.set(project, out);
-    return out;
+    return this.model.visible(project);
   }
 
   // ------------------------------------------------------------------------------------------------ types

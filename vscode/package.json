@@ -65,8 +65,7 @@
     "workspaceContains:**/{pyproject.toml,setup.py,setup.cfg,requirements.txt,Pipfile}",
     "workspaceContains:**/{CMakeLists.txt,*.vcxproj,*.uproject,meson.build}",
     "workspaceContains:**/{Package.swift,Project.swift,project.yml,Podfile}",
-    "workspaceContains:**/*.xcodeproj/project.pbxproj",
-    "workspaceContains:**/*.swift"
+    "workspaceContains:**/*.xcodeproj/project.pbxproj"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
