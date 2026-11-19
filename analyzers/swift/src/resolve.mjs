@@ -25,8 +25,10 @@ export function resolveReferences(model, graph, { log = () => {}, stats = false,
   }
 
   if (unresolvedFile) {
-    // The names the map declares first: those are the misses that matter.
-    const lines = [...resolver.unresolved.entries()].sort((a, b) => Number(resolver.declared.has(b[0])) - Number(resolver.declared.has(a[0])) || b[1] - a[1]).map(([name, count]) => `${count}\t${resolver.declared.has(name) ? '*' : ' '}\t${name}`);
+    // The calls counted as the map's code first (marked *): those are the misses that matter. Each with a few places.
+    const lines = [...resolver.unresolved.values()]
+      .sort((a, b) => Number(b.ours) - Number(a.ours) || b.count - a.count)
+      .map(({ name, ours, count, places }) => `${count}\t${ours ? '*' : ' '}\t${name}\t${places.join(' ')}`);
     writeFileSync(unresolvedFile, lines.join('\n') + '\n');
   }
 
@@ -37,6 +39,11 @@ const KEYWORDS = new Set(['some', 'any', 'inout', 'Self', 'where', 'borrowing', 
 const SEQUENCE_SAME = new Set(['filter', 'sorted', 'reversed', 'shuffled', 'prefix', 'suffix', 'dropFirst', 'dropLast']);
 /** Methods of arrays whose closure gets an element (reduce's second parameter). */
 const ELEMENT_CLOSURES = new Set(['map', 'flatMap', 'compactMap', 'forEach', 'filter', 'first', 'last', 'firstIndex', 'lastIndex', 'contains', 'allSatisfy', 'drop', 'prefix', 'sorted', 'min', 'max', 'reduce', 'partition', 'removeAll', 'split', 'sort', 'elementsEqual', 'lexicographicallyPrecedes', 'starts']);
+/** Static members that, by Apple's convention, hold an instance of their own type. */
+const SINGLETONS = new Set(['shared', 'default', 'standard', 'main', 'current', 'autoupdatingCurrent']);
+/** What extensions of these add to an array or a dictionary. */
+const ARRAY_EXTENDED = ['Array', 'Sequence', 'Collection', 'BidirectionalCollection', 'RandomAccessCollection', 'MutableCollection', 'RangeReplaceableCollection'];
+const DICTIONARY_EXTENDED = ['Dictionary', 'Sequence', 'Collection'];
 const COMPARATORS = new Set(['sorted', 'sort', 'min', 'max', 'elementsEqual', 'lexicographicallyPrecedes', 'starts']);
 const SEQUENCE_ELEMENT = new Set(['first', 'last', 'randomElement', 'min', 'max', 'popLast', 'removeFirst', 'removeLast']);
 
@@ -443,6 +450,13 @@ class Resolver {
       return member ? this.typeOfMember(member) : null;
     }
 
+    if (receiver.metaExt) {
+      const member = this.outsideMembers(receiver.metaExt, name, scope.project).find((m) => isVariable(m));
+      if (member) return this.typeOfMember(member);
+      // UIApplication.shared, FileManager.default, Calendar.current: the type's own instance.
+      return SINGLETONS.has(name) ? { ext: receiver.metaExt } : null;
+    }
+
     return null;
   }
 
@@ -469,15 +483,26 @@ class Resolver {
     if (fn[0] === 'n') {
       const name = fn[1];
       if (scope.owner) {
-        const member = pick(this.membersNamed(scope.owner, name).filter(isCallable));
+        const members = this.membersNamed(scope.owner, name);
+        const member = pick(members.filter(isCallable));
         if (member) return { member, receiver: scope.owner.external ? null : { entry: scope.owner } };
+        // `completion?(result)`, `onDone()`: a closure held in a property.
+        const held = members.find(isVariable);
+        if (held) return { closure: held };
       }
 
       const type = this.lookupType(name, scope.ctx);
       if (type) return { type, member: pickInit(type), receiver: { entry: type } };
       const functions = [];
       for (const p of this.visible(scope.project)) functions.push(...(this.functions.get(p.id)?.get(name) ?? []));
-      return { member: pick(functions) };
+      const member = pick(functions);
+      if (member || functions.length) return { member };
+      for (const p of this.visible(scope.project)) {
+        const global = this.globals.get(p.id)?.get(name)?.[0];
+        if (global) return { closure: global };
+      }
+
+      return {};
     }
 
     if (fn[0] === 'm') {
@@ -498,9 +523,20 @@ class Resolver {
         return { member: pick(this.membersNamed(entry, name).filter(isCallable)), receiver, viaType: entry };
       }
 
-      if (receiver?.entry) return { member: pick(this.membersNamed(receiver.entry, name).filter(isCallable)), receiver };
+      if (receiver?.entry) {
+        const members = this.membersNamed(receiver.entry, name);
+        const member = pick(members.filter(isCallable));
+        const held = member ? null : members.find(isVariable);
+        return held ? { closure: held, receiver } : { member, receiver };
+      }
       if (receiver?.ext) return { member: pick(this.outsideMembers(receiver.ext, name, scope.project).filter(isCallable)), receiver };
       if (receiver?.metaExt) return { member: pick(this.outsideMembers(receiver.metaExt, name, scope.project).filter(isCallable)), receiver };
+      // `items.append(…)` is Array's; the map's own `extension Array` / `extension Collection` may add to it.
+      if (receiver?.array || receiver?.dict) {
+        const extended = receiver.array ? ARRAY_EXTENDED : DICTIONARY_EXTENDED;
+        return { member: pick(extended.flatMap((t) => this.outsideMembers(t, name, scope.project)).filter(isCallable)), receiver };
+      }
+
       return { unknownReceiver: !receiver };
     }
 
@@ -680,6 +716,12 @@ class Resolver {
 
         this.counts.calls++;
         const call = this.resolveCall(ref.e, scope);
+        // A closure held in a property or a global: the call reads it, and what it runs is not known.
+        if (call.closure) {
+          if (call.closure.id) this.edge(source, call.closure.id, 'accesses', ref.line);
+          return;
+        }
+
         const name = fn[0] === 'm' ? fn[2] : fn[0] === 'n' ? fn[1] : null;
         // A call on a type from outside the map (DispatchQueue.sync, an array's append) is not one of the map's code.
         const outside = call.receiver && !call.receiver.entry && !call.receiver.meta && !call.member;
@@ -688,7 +730,7 @@ class Resolver {
         if (call.member?.id || call.type?.id || call.enumCase) {
           this.counts.resolved++;
           if (ours) this.counts.oursResolved++;
-        } else this.miss(fn, call);
+        } else this.miss(fn, call, `${scope.ctx.file?.rel}:${ref.line}`, ours);
         if (call.member?.id) this.edge(source, call.member.id, 'calls', ref.line);
         if (call.type?.id && !call.delegated) this.edge(source, call.type.id, 'instantiates', ref.line);
         // A type named by itself (Order.make(), Failure.bad(…)) is a use already, from its name.
@@ -811,10 +853,14 @@ class Resolver {
     }
   }
 
-  miss(fn, call) {
+  miss(fn, call, place, ours) {
     const name = fn[0] === 'm' ? fn[2] : fn[0] === 'n' ? fn[1] : null;
     if (!name) return;
-    this.unresolved.set(name, (this.unresolved.get(name) ?? 0) + 1);
+    const key = `${ours ? '*' : ' '}${name}`;
+    const seen = this.unresolved.get(key) ?? { name, ours, count: 0, places: [] };
+    seen.count++;
+    if (seen.places.length < 3) seen.places.push(place);
+    this.unresolved.set(key, seen);
     if (fn[0] === 'm' && (call.unknownReceiver || call.receiver?.ext || call.receiver?.metaExt)) this.untyped.add(name);
   }
 

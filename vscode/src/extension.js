@@ -20,9 +20,9 @@ const NOT_SOURCE = /\.d\.[cm]?ts$|\.min\.js$|(^|[\\/])(moc_[^\\/]+|qrc_[^\\/]+|u
 // Folders a build writes to (CMake, Unreal Engine; TypeScript and Python leave their output in build/ too). C# reads
 // its projects wherever they are, and a build/ folder with the build's own project is common: its files there count.
 const BUILD_OUTPUT = /(^|[\\/])(build|cmake-build-[^\\/]+|CMakeFiles|_deps|Intermediate|Binaries|DerivedDataCache)[\\/]/i;
-// Where SwiftPM, Xcode, CocoaPods and Carthage keep builds and other people's code, by their exact names: a `pods/`
-// folder of a web app or a C# `Pods/` namespace is code of the map.
-const SWIFT_OUTPUT = /(^|[\\/])(\.build|DerivedData|Pods|Carthage|SourcePackages|xcuserdata)[\\/]/;
+// Where SwiftPM, Xcode, CocoaPods and Carthage keep builds and other people's code, by their exact names (a `pods/`
+// folder of a web app or a C# `Pods/` namespace is code of the map), and documentation catalogs' tutorial code.
+const SWIFT_OUTPUT = /(^|[\\/])(\.build|DerivedData|Pods|Carthage|SourcePackages|xcuserdata|[^\\/]+\.docc)[\\/]/;
 const CSHARP_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf)$/i;
 const EXCLUDE = '**/{node_modules,bin,obj,.git,.vs}/**';
 const SCRIPT_EXCLUDE = '**/{node_modules,bin,obj,dist,build,out,coverage,.git,.vs,.next,.angular}/**';
@@ -32,7 +32,7 @@ const PYTHON_EXCLUDE = '**/{node_modules,bin,obj,dist,build,__pycache__,site-pac
 const PYTHON_SOURCES = '**/*.py';
 const CPP_EXCLUDE = '**/{node_modules,bin,obj,build,out,third_party,3rdparty,external,vendor,Intermediate,Binaries,.git,.vs}/**';
 const CPP_SOURCES = '**/*.{c,cc,cpp,cxx}';
-const SWIFT_EXCLUDE = '**/{node_modules,.build,DerivedData,Pods,Carthage,SourcePackages,.git}/**';
+const SWIFT_EXCLUDE = '**/{node_modules,.build,DerivedData,Pods,Carthage,SourcePackages,.git,*.docc}/**';
 const SWIFT_SOURCES = '**/*.swift';
 // Xcode projects and workspaces are folders; a workspace inside a project (project.xcworkspace) is the project's own.
 const XCODE_PROJECTS = '**/*.xcodeproj/project.pbxproj';

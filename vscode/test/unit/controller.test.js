@@ -253,7 +253,8 @@ test('only Swift folders named exactly like their build or dependency folders ar
   }
 
   for (const file of ['Pods/Alamofire/Source/Session.swift', 'Pods/Firebase/Core/FIRApp.h', '.build/checkouts/swift-nio/Sources/CNIOAtomics/include/c.h',
-    'DerivedData/App/Build/x.swift', 'Carthage/Checkouts/x/Sources/y.swift', 'App.xcodeproj/xcuserdata/me.xcuserdatad/x.swift', 'SourcePackages/checkouts/a/Package.swift']) {
+    'DerivedData/App/Build/x.swift', 'Carthage/Checkouts/x/Sources/y.swift', 'App.xcodeproj/xcuserdata/me.xcuserdatad/x.swift', 'SourcePackages/checkouts/a/Package.swift',
+    'Sources/App/Documentation.docc/Resources/code-files/01-step.swift']) {
     assert.ok(!isSourceFile(file), file);
   }
 });
