@@ -1,0 +1,27 @@
+name: Weather
+options:
+  bundleIdPrefix: dev.weather # the prefix
+packages:
+  Charts:
+    url: https://github.com/danielgindi/Charts
+targets:
+  Weather:
+    type: application
+    platform: iOS
+    sources:
+      - path: Weather
+        excludes:
+          - "Generated/**"
+    dependencies:
+      - target: WeatherKit
+      - package: Charts
+  WeatherKit:
+    type: framework
+    platform: iOS
+    sources: [WeatherKit]
+  "WeatherTests":
+    type: bundle.unit-test
+    platform: iOS
+    sources: WeatherTests
+    dependencies:
+      - target: Weather

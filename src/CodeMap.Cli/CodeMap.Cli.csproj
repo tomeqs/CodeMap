@@ -12,7 +12,7 @@
     <Product>CodeMap</Product>
     <PackageId>CodeMap.Tool</PackageId>
     <Description>Maps C# solutions (and TypeScript / JavaScript and C / C++ with Node.js, Python with Python 3.9+) into a relationship graph (JSON, DGML, GraphML, Cypher) and an interactive 3D map.</Description>
-    <PackageTags>code-map;architecture;dependency-graph;visualization;csharp;roslyn;typescript;javascript;python;cpp;c;cmake;qt;unreal;nestjs;angular;dependency-injection;3d</PackageTags>
+    <PackageTags>code-map;architecture;dependency-graph;visualization;csharp;roslyn;typescript;javascript;python;cpp;c;cmake;qt;unreal;swift;swiftui;xcode;nestjs;angular;dependency-injection;3d</PackageTags>
     <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>
@@ -100,6 +100,28 @@
   </ItemGroup>
   <Target Name="CppPluginMissing" BeforeTargets="Build" Condition="!Exists('$(CppParser)tree-sitter.js')">
     <Warning Text="The C / C++ plugin is not included: run npm ci in analyzers/cpp to map C and C++ too." />
+  </Target>
+
+  <!--
+    The Swift language plugin (analyzers/swift) goes next to the program, in plugins/swift, with tree-sitter (vendor/)
+    and its Swift grammar (grammar/, built from source and kept in the repository; see its README). Node.js runs it.
+    Needs `npm ci` in analyzers/swift first; without it CodeMap is built without Swift.
+  -->
+  <PropertyGroup>
+    <SwiftPlugin>$(MSBuildThisFileDirectory)..\..\analyzers\swift\</SwiftPlugin>
+    <SwiftParser>$(SwiftPlugin)node_modules\web-tree-sitter\</SwiftParser>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(SwiftParser)tree-sitter.js')">
+    <Content Include="$(SwiftPlugin)codemap-plugin.json;$(SwiftPlugin)package.json" Link="plugins\swift\%(Filename)%(Extension)" />
+    <Content Include="$(SwiftPlugin)src\**\*.mjs" Link="plugins\swift\src\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="$(SwiftPlugin)grammar\tree-sitter-swift.wasm;$(SwiftPlugin)grammar\LICENSE;$(SwiftPlugin)grammar\README.md" Link="plugins\swift\grammar\%(Filename)%(Extension)" />
+    <Content Include="$(SwiftParser)tree-sitter.js;$(SwiftParser)tree-sitter.wasm;$(SwiftParser)package.json;$(SwiftParser)LICENSE" Link="plugins\swift\vendor\web-tree-sitter\%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Update="$(SwiftPlugin)**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" Pack="false" />
+  </ItemGroup>
+  <Target Name="SwiftPluginMissing" BeforeTargets="Build" Condition="!Exists('$(SwiftParser)tree-sitter.js')">
+    <Warning Text="The Swift plugin is not included: run npm ci in analyzers/swift to map Swift too." />
   </Target>
 
   <!-- Single-file 3D viewer, produced by `npm run build` in /viewer. -->

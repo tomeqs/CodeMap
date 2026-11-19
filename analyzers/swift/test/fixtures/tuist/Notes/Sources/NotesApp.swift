@@ -1,0 +1,3 @@
+import NotesKit
+
+struct NotesApp {}

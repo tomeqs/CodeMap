@@ -6,7 +6,8 @@
 //   analyzer/         – the codemap analyzer, framework-dependent: one copy for every OS, runs on the installed .NET,
 //                       with the TypeScript / JavaScript plugin in analyzer/plugins/typescript (runs on VS Code's Node.js)
 //                       the Python plugin in analyzer/plugins/python (runs on the Python the workspace uses)
-//                       and the C / C++ plugin in analyzer/plugins/cpp (runs on VS Code's Node.js too)
+//                       the C / C++ plugin in analyzer/plugins/cpp (runs on VS Code's Node.js too)
+//                       and the Swift plugin in analyzer/plugins/swift (on VS Code's Node.js as well)
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -20,11 +21,13 @@ fs.copyFileSync(path.join(repository, 'src', 'CodeMap.Cli', 'Assets', 'viewer.ht
 // The repository's license goes into the package too (vsce looks for it next to package.json).
 fs.copyFileSync(path.join(repository, 'LICENSE'), path.join(extension, 'LICENSE'));
 
-// The TypeScript and C / C++ plugins are published with the analyzer once their dependencies are installed (see
-// CodeMap.Cli.csproj): the TypeScript compiler, and tree-sitter with its C and C++ grammars.
+// The TypeScript, C / C++ and Swift plugins are published with the analyzer once their dependencies are installed (see
+// CodeMap.Cli.csproj): the TypeScript compiler, and tree-sitter with its C and C++ grammars (Swift's is in the
+// repository).
 const installed = [
   [path.join(repository, 'analyzers', 'typescript'), path.join('node_modules', 'typescript', 'lib', 'typescript.js')],
   [path.join(repository, 'analyzers', 'cpp'), path.join('node_modules', 'web-tree-sitter', 'tree-sitter.js')],
+  [path.join(repository, 'analyzers', 'swift'), path.join('node_modules', 'web-tree-sitter', 'tree-sitter.js')],
 ];
 for (const [plugin, marker] of installed) {
   if (!fs.existsSync(path.join(plugin, marker))) {
@@ -54,7 +57,10 @@ if (!fs.existsSync(path.join(analyzer, 'plugins', 'python', 'src', 'cli.py'))) {
 if (!fs.existsSync(path.join(analyzer, 'plugins', 'cpp', 'vendor', 'grammars', 'tree-sitter-cpp.wasm'))) {
   throw new Error('The C / C++ plugin is missing from analyzer/plugins/cpp.');
 }
+if (!fs.existsSync(path.join(analyzer, 'plugins', 'swift', 'grammar', 'tree-sitter-swift.wasm')) || !fs.existsSync(path.join(analyzer, 'plugins', 'swift', 'vendor', 'web-tree-sitter', 'tree-sitter.js'))) {
+  throw new Error('The Swift plugin is missing from analyzer/plugins/swift.');
+}
 
 const size = (dir) => fs.readdirSync(dir, { withFileTypes: true })
   .reduce((sum, f) => sum + (f.isDirectory() ? size(path.join(dir, f.name)) : fs.statSync(path.join(dir, f.name)).size), 0);
-console.log(`viewer.html and analyzer (${(size(analyzer) / 1024 / 1024).toFixed(1)} MB, with the TypeScript, Python and C / C++ plugins) are ready.`);
+console.log(`viewer.html and analyzer (${(size(analyzer) / 1024 / 1024).toFixed(1)} MB, with the TypeScript, Python, C / C++ and Swift plugins) are ready.`);

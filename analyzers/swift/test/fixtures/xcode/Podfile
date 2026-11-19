@@ -1,0 +1,18 @@
+platform :ios, '16.0'
+use_frameworks!
+
+target 'Store' do
+  pod 'Kingfisher', '~> 7.0'
+  pod 'Firebase/Analytics'
+
+  target 'StoreTests' do
+    inherit! :search_paths
+    pod 'Quick'
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    puts target.name
+  end
+end

@@ -1,0 +1,3 @@
+import WeatherKit
+
+struct WeatherApp {}
