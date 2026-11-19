@@ -13,8 +13,9 @@ import { complexityOf } from './complexity.mjs';
  * `#if` blocks are flat markers in the tree, so the declarations of every branch are read.
  */
 export function extractFile(tree) {
-  const facts = { imports: [], types: [], functions: [], variables: [], aliases: [], topLevel: null };
+  const facts = { imports: [], types: [], functions: [], variables: [], aliases: [], topLevel: null, previews: null };
   const statements = [];
+  const previews = [];
   eachDeclaration(tree.rootNode, (node, doc) => {
     switch (node.type) {
       case 'import_declaration': {
@@ -36,6 +37,14 @@ export function extractFile(tree) {
       case 'typealias_declaration':
         facts.aliases.push(readAlias(node, doc, null));
         return;
+      case 'macro_invocation':
+        // #Preview { … }: the views it shows are used by it.
+        if (/^#Preview\b/.test(node.text)) {
+          previews.push(node);
+          return;
+        }
+
+        break;
       case 'operator_declaration':
       case 'precedence_group_declaration':
       case 'macro_declaration':
@@ -54,6 +63,9 @@ export function extractFile(tree) {
     }
   });
   if (facts.topLevel) Object.assign(facts.topLevel, readRefs(statements));
+  if (previews.length) {
+    facts.previews = { line: previews[0].startPosition.row + 1, endLine: previews[previews.length - 1].endPosition.row + 1, ...readRefs(previews) };
+  }
   return facts;
 }
 

@@ -83,7 +83,7 @@
     "typeAccessibility": [
       "private"
     ],
-    "skipAttributed": true,
+    "skipAttributed": false,
     "skipMemberKinds": [
       "constructor"
     ],
@@ -97,6 +97,7 @@
       "entrypoint",
       "test",
       "handler",
+      "route",
       "maybe-used"
     ],
     "skipTypeTags": [
