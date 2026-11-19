@@ -247,7 +247,8 @@ on Linux or Windows too. The project files are read, never run.
   * a folder project for the files no target holds.
   A folder with both a `Package.swift` and an `.xcodeproj` of the same files (Alamofire) is mapped by the package; open
   the `.xcodeproj` itself to map its targets.
-* **Left out:** `.build`, `DerivedData`, `Pods`, `Carthage`, `SourcePackages`, `xcuserdata`; the manifests themselves
+* **Left out:** `.build`, `DerivedData`, `Pods`, `Carthage`, `SourcePackages`, `xcuserdata`, documentation catalogs'
+  tutorial code (`*.docc`); the manifests themselves
   (`Package.swift`, `Project.swift`, Tuist's helpers); generated files (`*.generated.swift`, R.swift, SwiftGen and
   Sourcery outputs, files marked `@generated` or "DO NOT EDIT").
 
@@ -304,7 +305,7 @@ codemap path/to/App                     # a folder with Package.swift, an .xcode
 codemap path/to/App/App.xcodeproj       # only the targets of an Xcode project
 codemap path/to/repo --lang swift       # only the Swift of a repository
 CODEMAP_SWIFT_STATS=1 codemap path/to/App   # how many calls were resolved, and how much the parser could not read
-CODEMAP_SWIFT_UNRESOLVED=calls.json codemap path/to/App   # the calls to the code's own names left unresolved
+CODEMAP_SWIFT_UNRESOLVED=calls.txt codemap path/to/App    # the names of calls left unresolved, the code's own first, with places
 ```
 
 ### Several languages, and the samples

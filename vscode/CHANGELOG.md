@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 - **Swift**, as a fifth language, with nothing to install: the analyzer reads it with tree-sitter on VS Code's own Node.js, so an iOS or macOS app maps without Xcode, a Swift toolchain or a build, on any platform.
   - Targets from Swift packages (`Package.swift` is read, not run), Xcode projects and workspaces (Xcode 16's synchronized folders too), Tuist, XcodeGen and CocoaPods. A folder with both a package and an `.xcodeproj` of the same files is mapped by the package.
@@ -9,6 +9,7 @@
   - XCTest and Swift Testing; SwiftUI views as components, `App` as an entry point, `@Environment` / `@EnvironmentObject` in the DI view, `#Preview`; UIKit / AppKit view controllers, `@IBAction` handlers, `@IBOutlet` and `@objc` members kept from the dead-code list; Vapor routes with their full paths (through `grouped`, `group` and route collections), middleware and Fluent models.
   - Checks inside functions (`--checks`): `try!`, `as!`, a dropped `try?`, an empty `catch`, an implicitly unwrapped property, `DispatchQueue.main.sync` on the main queue, a stored closure capturing `self` strongly, a `fatalError("TODO")` left in, and the shared ones (unreachable code, `x = x`, constant conditions…).
   - *Show in Code Map* and *Show Call Flow* work in Swift files, the map follows changes to sources, `Package.swift` and Xcode projects (not `.build`, `DerivedData` or `Pods`), and *Choose What to Analyze…* offers the Xcode projects and workspaces.
+  - Tested on real repositories: Alamofire, swift-argument-parser, Vapor, Kingfisher, swift-composable-architecture, swift-nio, Ice Cubes (SwiftUI), Wikipedia iOS (UIKit, Xcode) and SwiftHub (CocoaPods). Each maps in 2–15 s (Wikipedia iOS, 1,600 files, in 15 s); 72–90% of the calls to their own code are resolved. Calls of Swift's and Apple's own API are told apart from the code's, what other targets add to a type is found, a workspace's apps reach the framework another project builds, and documentation catalogs' tutorial code (`*.docc`) is left out.
 
 ## 0.5.1
 

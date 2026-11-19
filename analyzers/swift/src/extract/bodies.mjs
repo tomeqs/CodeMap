@@ -71,39 +71,43 @@ class Reader {
   /** Notes what a node refers to and binds; false when its children need no visit, a Map for a scope of their own. */
   visit(node, scope) {
     switch (node.type) {
-      case 'call_expression': {
-        const callee = node.namedChildren[0];
+      case 'call_expression':
+      case 'constructor_expression': {
+        const { callee, args, lambdas } = callParts(node);
         const e = this.expr(node, scope);
         if (e[0] === 'c') this.refs.push({ ev: 'call', e, line: line(node) });
         else if (e[0] === 'sub') {
-          // `lines[0]`, `self.lines[0]`: the property read.
+          // `lines[0]`, `self.lines[0]`: the property read; and the subscript, by its labels (`set[contains: x]`).
           if (e[1][0] === 'm') this.refs.push({ ev: 'access', e: e[1], line: line(node) });
           else if (e[1][0] === 'n') this.refs.push({ ev: 'name', name: e[1][1], line: line(node) });
+          const labels = args.map((a) => {
+            const label = a.childForFieldName('name') ?? a.childForFieldName('reference_specifier');
+            return label ? unquote(label.text) : '_';
+          });
+          this.refs.push({ ev: 'subscript', e: e[1], labels, line: line(node) });
         }
 
         // The callee is the call: visit what it is called on, and the arguments; a closure knows the call it is given to.
         if (callee?.type === 'navigation_expression') this.walkOptional(callee.childForFieldName('target'), scope);
-        else if (callee && callee.type !== 'simple_identifier' && callee.type !== 'prefix_expression') this.walkOptional(callee, scope);
-        const suffix = node.namedChildren.find((c) => c.type === 'call_suffix');
-        const args = suffix?.namedChildren.find((c) => c.type === 'value_arguments');
+        else if (callee && callee.type !== 'simple_identifier' && callee.type !== 'prefix_expression' && node.type === 'call_expression') this.walkOptional(callee, scope);
+        // `PublishSubject<User>()` uses User: the type it makes is the call's, its arguments are uses.
+        else if (node.type === 'constructor_expression') for (const part of callee?.namedChildren ?? []) if (part.type === 'type_arguments') this.walkOptional(part, scope);
         let slot = 0;
-        for (const argument of args?.namedChildren ?? []) {
-          if (argument.type !== 'value_argument') continue;
+        for (const argument of args) {
           const value = argument.childForFieldName('value');
           if (value?.type === 'lambda_literal' && e[0] === 'c') this.walkClosure(value, scope, e, slot);
           else this.walkOptional(value, scope);
           slot++;
         }
 
-        for (const child of suffix?.namedChildren ?? []) {
-          if (child.type !== 'lambda_literal' && child.type !== 'annotated_lambda') continue;
+        for (const child of lambdas) {
           const lambda = child.type === 'lambda_literal' ? child : child.namedChildren.find((c) => c.type === 'lambda_literal');
           if (lambda && e[0] === 'c') this.walkClosure(lambda, scope, e, slot);
           else this.walkOptional(child, scope);
           slot++;
         }
 
-        for (const child of node.namedChildren.slice(1)) if (child.type !== 'call_suffix') this.walkOptional(child, scope);
+        for (const child of node.namedChildren.slice(1)) if (child.type !== 'call_suffix' && child.type !== 'constructor_suffix') this.walkOptional(child, scope);
         return false;
       }
 
@@ -341,23 +345,26 @@ class Reader {
         return ['m', this.expr(target, scope), name];
       }
 
-      case 'call_expression': {
-        const callee = node.namedChildren[0];
-        const suffix = node.namedChildren.find((c) => c.type === 'call_suffix');
-        const args = suffix?.namedChildren.find((c) => c.type === 'value_arguments');
-        if (args && args.text.startsWith('[')) return ['sub', this.expr(callee, scope)];
+      case 'call_expression':
+      case 'constructor_expression': {
+        const { callee, args, lambdas, subscript } = callParts(node);
+        // `Backend<String>(config:)`, `Storage.Backend<String>(…)`: the type, less its arguments, called; `[Item]()` a value.
+        const constructed = node.type === 'constructor_expression' ? typeCallee(callee) : null;
+        if (node.type === 'constructor_expression' && (!constructed || /^(Swift\.)?(Array|Set|Dictionary|ContiguousArray)\b/.test(callee.text))) {
+          return callee && TYPE_NODES.has(callee.type) ? ['t', callee.text] : ['u'];
+        }
+        if (subscript) return ['sub', this.expr(callee, scope)];
         const labels = [];
         const values = [];
-        for (const argument of args?.namedChildren ?? []) {
-          if (argument.type !== 'value_argument') continue;
+        for (const argument of args) {
           const label = argument.childForFieldName('name') ?? argument.childForFieldName('reference_specifier');
           labels.push(label ? unquote(label.text) : '_');
           const value = argument.childForFieldName('value');
           values.push(value ? this.expr(value, scope) : null);
         }
 
-        for (const child of suffix?.namedChildren ?? []) if (child.type === 'lambda_literal' || child.type === 'annotated_lambda') labels.push('?');
-        return ['c', this.expr(callee, scope), labels, values];
+        for (let i = 0; i < lambdas.length; i++) labels.push('?');
+        return ['c', constructed ?? this.expr(callee, scope), labels, values];
       }
 
       case 'prefix_expression': {
@@ -407,6 +414,46 @@ class Reader {
 }
 
 /** `T = .init(…)` / `T = .make(…)`: the call of a member of the declared type T. */
+/**
+ * A call's callee, arguments (value_argument nodes) and trailing closures. `foo(x) { … }`, which the grammar reads as
+ * a call of foo(x)'s result with the closure, is one call of foo: Swift gives a trailing closure to the call before it.
+ * `subscript` for `items[0]`.
+ */
+function callParts(node) {
+  const suffixOf = (n) => n.namedChildren.find((c) => c.type === 'call_suffix' || c.type === 'constructor_suffix');
+  const argumentsOf = (suffix) => suffix?.namedChildren.find((c) => c.type === 'value_arguments');
+  const suffixes = [];
+  let current = node;
+  for (;;) {
+    const suffix = suffixOf(current);
+    if (suffix) suffixes.unshift(suffix);
+    const inner = current.namedChildren[0];
+    const innerArguments = inner?.type === 'call_expression' ? argumentsOf(suffixOf(inner)) : null;
+    if (!suffix || argumentsOf(suffix) || inner?.type !== 'call_expression' || innerArguments?.text.startsWith('[')) break;
+    current = inner;
+  }
+
+  const first = argumentsOf(suffixes[0]);
+  return {
+    callee: current.namedChildren[0],
+    args: suffixes.flatMap((s) => argumentsOf(s)?.namedChildren.filter((c) => c.type === 'value_argument') ?? []),
+    lambdas: suffixes.flatMap((s) => s.namedChildren.filter((c) => c.type === 'lambda_literal' || c.type === 'annotated_lambda')),
+    subscript: Boolean(first?.text.startsWith('[')),
+  };
+}
+
+/** `A.B<T>` as the names it is made of: ['m', ['n', 'A'], 'B']; null for other types ([Item], (A, B)). */
+function typeCallee(type) {
+  if (type?.type !== 'user_type') return null;
+  let e = null;
+  for (const child of type.namedChildren) {
+    if (child.type !== 'type_identifier') continue;
+    e = e ? ['m', e, unquote(child.text)] : ['n', unquote(child.text)];
+  }
+
+  return e;
+}
+
 export function implicitOf(declared, e) {
   return declared && e?.[0] === 'c' && e[1][0] === 'i' ? ['c', ['m', ['T', declared], e[1][1]], e[2], e[3]] : null;
 }

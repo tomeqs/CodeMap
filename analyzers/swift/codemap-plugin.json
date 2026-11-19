@@ -48,7 +48,8 @@
       "Pods",
       "Carthage",
       "SourcePackages",
-      "xcuserdata"
+      "xcuserdata",
+      "*.docc"
     ],
     "ignoreMarkers": [
       "pyvenv.cfg"

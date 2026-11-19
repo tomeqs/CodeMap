@@ -25,8 +25,10 @@ export function resolveReferences(model, graph, { log = () => {}, stats = false,
   }
 
   if (unresolvedFile) {
-    // The names the map declares first: those are the misses that matter.
-    const lines = [...resolver.unresolved.entries()].sort((a, b) => Number(resolver.declared.has(b[0])) - Number(resolver.declared.has(a[0])) || b[1] - a[1]).map(([name, count]) => `${count}\t${resolver.declared.has(name) ? '*' : ' '}\t${name}`);
+    // The calls counted as the map's code first (marked *): those are the misses that matter. Each with a few places.
+    const lines = [...resolver.unresolved.values()]
+      .sort((a, b) => Number(b.ours) - Number(a.ours) || b.count - a.count)
+      .map(({ name, ours, count, places }) => `${count}\t${ours ? '*' : ' '}\t${name}\t${places.join(' ')}`);
     writeFileSync(unresolvedFile, lines.join('\n') + '\n');
   }
 
@@ -37,6 +39,17 @@ const KEYWORDS = new Set(['some', 'any', 'inout', 'Self', 'where', 'borrowing', 
 const SEQUENCE_SAME = new Set(['filter', 'sorted', 'reversed', 'shuffled', 'prefix', 'suffix', 'dropFirst', 'dropLast']);
 /** Methods of arrays whose closure gets an element (reduce's second parameter). */
 const ELEMENT_CLOSURES = new Set(['map', 'flatMap', 'compactMap', 'forEach', 'filter', 'first', 'last', 'firstIndex', 'lastIndex', 'contains', 'allSatisfy', 'drop', 'prefix', 'sorted', 'min', 'max', 'reduce', 'partition', 'removeAll', 'split', 'sort', 'elementsEqual', 'lexicographicallyPrecedes', 'starts']);
+/**
+ * Apple's capitalized functions, which are no initializers (NSLocalizedString, CGRectMake, XCTAssertEqual), and what
+ * the common ones return.
+ */
+const FUNCTION_LIKE = /^(XCT[A-Z]|NSLog$|(NS|CG|CF|UI|CA|CT|CV|AV|Sec)[A-Z]\w*(Make|Get|From|Create|Copy|Equal|Begin|End|Contains|Intersects|Localized|Main)\w*$)/;
+const OUTSIDE_RESULTS = { NSLocalizedString: 'String', NSStringFromClass: 'String', NSStringFromSelector: 'String', CGRectMake: 'CGRect', CGPointMake: 'CGPoint', CGSizeMake: 'CGSize', NSMakeRange: 'NSRange' };
+/** Static members that, by Apple's convention, hold an instance of their own type. */
+const SINGLETONS = new Set(['shared', 'default', 'standard', 'main', 'current', 'autoupdatingCurrent']);
+/** What extensions of these add to an array or a dictionary. */
+const ARRAY_EXTENDED = ['Array', 'Sequence', 'Collection', 'BidirectionalCollection', 'RandomAccessCollection', 'MutableCollection', 'RangeReplaceableCollection'];
+const DICTIONARY_EXTENDED = ['Dictionary', 'Sequence', 'Collection'];
 const COMPARATORS = new Set(['sorted', 'sort', 'min', 'max', 'elementsEqual', 'lexicographicallyPrecedes', 'starts']);
 const SEQUENCE_ELEMENT = new Set(['first', 'last', 'randomElement', 'min', 'max', 'popLast', 'removeFirst', 'removeLast']);
 
@@ -57,6 +70,7 @@ class Resolver {
     this.untyped = new Set(); // names used on receivers of unknown type
     this.superCache = new Map();
     this.protocolCache = new Map();
+    this.extendedBy = new Map(); // a type of the map → extensions of it in other targets
     this.memberTypes = new Map();
     // Free functions, globals and type aliases of each target, and its extensions of types from outside, by name.
     this.functions = new Map();
@@ -136,6 +150,33 @@ class Resolver {
     return found;
   }
 
+  /** The typealias a name is, of the enclosing types or of the targets the context sees (a private one: its file's). */
+  aliasNamed(name, ctx) {
+    for (let e = ctx.entry; e; e = e.outer) {
+      const alias = e.members.find((m) => m.decl.kind === 'typeAlias' && m.decl.name === name);
+      if (alias) return alias;
+    }
+
+    for (const project of ctx.project ? this.visible(ctx.project) : []) {
+      const alias = this.inFile(this.aliases.get(project.id)?.get(name), ctx.file)[0];
+      if (alias) return alias;
+    }
+
+    return null;
+  }
+
+  /** The typealiases a type as written names (`[Addr]`, `Result<Box, Failure>`): uses of them. */
+  aliasesIn(text, ctx) {
+    if (!text) return [];
+    const out = new Set();
+    for (const name of new Set(text.match(/[A-Za-z_]\w*/g) ?? [])) {
+      const alias = this.aliasNamed(name, ctx);
+      if (alias?.id) out.add(alias);
+    }
+
+    return [...out];
+  }
+
   /** A typealias of the enclosing types or of the targets: the type it names. */
   aliasType(name, ctx, depth) {
     for (let e = ctx.entry; e; e = e.outer) {
@@ -144,7 +185,7 @@ class Resolver {
     }
 
     for (const project of ctx.project ? this.visible(ctx.project) : []) {
-      const alias = this.aliases.get(project.id)?.get(name)?.[0];
+      const alias = this.inFile(this.aliases.get(project.id)?.get(name), ctx.file)[0];
       if (alias?.decl.type) return this.lookupType(baseName(alias.decl.type), { project, entry: null, file: alias.holder.file }, depth + 1);
     }
 
@@ -244,17 +285,37 @@ class Resolver {
   }
 
   /** Members of a name: the type's own (its extensions'), its superclasses', then its protocols' (defaults too). */
-  membersNamed(entry, name) {
+  /**
+   * Members of a name of a type, its superclasses and protocols; with `project`, also what the targets it sees add
+   * to them from another target (VaporTesting's `extension Application { func testing(…) }`).
+   */
+  membersNamed(entry, name, project = null) {
     const out = [];
     const seen = new Set();
     const add = (e) => {
       if (!e || seen.has(e)) return;
       seen.add(e);
       for (const m of e.members) if (m.decl.name === name) out.push(m);
+      if (!project) return;
+      for (const extension of this.extendedBy.get(e) ?? []) {
+        if (!this.visible(project).includes(extension.project)) continue;
+        for (const m of extension.members) if (m.decl.name === name) out.push(m);
+      }
     };
     for (let e = entry, i = 0; e && i < 32; e = this.superclassOf(e), i++) add(e);
     for (let e = entry, i = 0; e && i < 32; e = this.superclassOf(e), i++) for (const p of this.protocolsOf(e)) add(p);
     return out;
+  }
+
+  /** Whether a type, its superclasses or protocols are @dynamicMemberLookup: names on it may be another type's. */
+  looksUpMembers(entry) {
+    for (let e = entry, i = 0; e && i < 32; e = this.superclassOf(e), i++) {
+      for (const t of [e, ...this.protocolsOf(e)]) {
+        if ([...t.decls, ...t.extensions].some((d) => d.decl.attributes?.includes('dynamicMemberLookup'))) return true;
+      }
+    }
+
+    return false;
   }
 
   /** Members of a name a target adds to a type from outside (extension String { … }) that a context can see. */
@@ -290,9 +351,12 @@ class Resolver {
   returnOf(member, receiver) {
     const decl = member.decl;
     if (decl.kind === 'constructor') return member.entry && !member.entry.external ? { entry: member.entry } : receiver;
-    if (!decl.returns) return null;
+    // Of the same labels and parameters, an `async` one with no result and one returning a future (swift-nio's
+    // close(mode:file:line:)) are one member: what it returns is the one that returns something.
+    const returns = decl.returns ?? member.places?.map((p) => p.member.returns).find(Boolean);
+    if (!returns) return null;
     const ctx = member.holder ? { entry: null, project: member.holder.file.project, file: member.holder.file } : this.ctxOf(member.entry);
-    return this.parseType(decl.returns, ctx, receiver?.entry ? receiver : null);
+    return this.parseType(returns, ctx, receiver?.entry ? receiver : null);
   }
 
   // ------------------------------------------------------------------------------------------- expressions
@@ -315,11 +379,11 @@ class Resolver {
       case 'n': {
         const name = e[1];
         if (scope.owner) {
-          const member = this.membersNamed(scope.owner, name).find((m) => isVariable(m));
+          const member = this.membersNamed(scope.owner, name, scope.project).find((m) => isVariable(m));
           if (member) return this.typeOfMember(member);
         }
 
-        const global = this.globalNamed(name, scope.project);
+        const global = this.globalNamed(name, scope.project, scope.ctx.file);
         if (global) return this.typeOfMember(global);
         const entry = this.lookupType(name, scope.ctx);
         if (entry) return { meta: entry };
@@ -340,6 +404,7 @@ class Resolver {
         const call = this.resolveCall(e, scope, depth);
         if (call.member) return this.returnOf(call.member, call.receiver);
         if (call.type) return { entry: call.type };
+        if (call.outsideType) return { ext: call.outsideType };
         // Array methods that keep the array or give an element.
         const callee = e[1];
         if (callee[0] === 'm') {
@@ -428,12 +493,12 @@ class Resolver {
       const nested = entry.nested.find((n) => n.name === name);
       if (nested) return { meta: nested };
       if (entry.cases.some((c) => c.name === name)) return { entry };
-      const member = this.membersNamed(entry, name).find((m) => isVariable(m));
+      const member = this.membersNamed(entry, name, scope.project).find((m) => isVariable(m));
       return member ? this.typeOfMember(member) : null;
     }
 
     if (receiver.entry) {
-      const member = this.membersNamed(receiver.entry, name).find((m) => isVariable(m));
+      const member = this.membersNamed(receiver.entry, name, scope.project).find((m) => isVariable(m));
       return member ? this.typeOfMember(member) : null;
     }
 
@@ -443,16 +508,32 @@ class Resolver {
       return member ? this.typeOfMember(member) : null;
     }
 
+    if (receiver.metaExt) {
+      const member = this.outsideMembers(receiver.metaExt, name, scope.project).find((m) => isVariable(m));
+      if (member) return this.typeOfMember(member);
+      // UIApplication.shared, FileManager.default, Calendar.current: the type's own instance.
+      return SINGLETONS.has(name) ? { ext: receiver.metaExt } : null;
+    }
+
     return null;
   }
 
-  globalNamed(name, project) {
+  globalNamed(name, project, file) {
     for (const p of this.visible(project)) {
-      const found = this.globals.get(p.id)?.get(name)?.[0];
+      const found = this.inFile(this.globals.get(p.id)?.get(name), file)[0];
       if (found) return found;
     }
 
     return null;
+  }
+
+  /**
+   * Free functions or globals of a name that code in `file` can call: a private (or fileprivate) one only from its own
+   * file, and the file's own first. 33 files of one target each with a `private let readMe` mean 33 globals.
+   */
+  inFile(list, file) {
+    const here = (m) => Boolean(file) && m.holder?.file?.path === file.path;
+    return (list ?? []).filter((m) => m.decl.access !== 'private' || here(m)).sort((a, b) => Number(here(b)) - Number(here(a)));
   }
 
   /**
@@ -469,15 +550,27 @@ class Resolver {
     if (fn[0] === 'n') {
       const name = fn[1];
       if (scope.owner) {
-        const member = pick(this.membersNamed(scope.owner, name).filter(isCallable));
+        const members = this.membersNamed(scope.owner, name, scope.project);
+        const member = pick(members.filter(isCallable));
         if (member) return { member, receiver: scope.owner.external ? null : { entry: scope.owner } };
+        // `completion?(result)`, `onDone()`: a closure held in a property.
+        const held = members.find(isVariable);
+        if (held) return { closure: held };
       }
 
       const type = this.lookupType(name, scope.ctx);
       if (type) return { type, member: pickInit(type), receiver: { entry: type } };
       const functions = [];
-      for (const p of this.visible(scope.project)) functions.push(...(this.functions.get(p.id)?.get(name) ?? []));
-      return { member: pick(functions) };
+      for (const p of this.visible(scope.project)) functions.push(...this.inFile(this.functions.get(p.id)?.get(name), scope.ctx.file));
+      const member = pick(functions);
+      if (member || functions.length) return { member };
+      const global = this.globalNamed(name, scope.project, scope.ctx.file);
+      if (global) return { closure: global };
+
+      // Nothing the caller can see has this name: Swift's or a framework's (`assert(…)`, `XCTAssertNoThrow(…)`), and
+      // a capitalized one makes an instance of that type (`DispatchSemaphore(value: 0)`).
+      if (scope.owner && this.membersNamed(scope.owner, name, scope.project).length) return {};
+      return { outside: true, outsideType: OUTSIDE_RESULTS[name] ?? (/^[A-Z]/.test(name) && !FUNCTION_LIKE.test(name) ? name : null) };
     }
 
     if (fn[0] === 'm') {
@@ -495,12 +588,23 @@ class Resolver {
         const nested = entry.nested.find((n) => n.name === name);
         if (nested) return { type: nested, member: pickInit(nested), receiver: { entry: nested } };
         if (entry.cases.some((c) => c.name === name)) return { enumCase: entry };
-        return { member: pick(this.membersNamed(entry, name).filter(isCallable)), receiver, viaType: entry };
+        return { member: pick(this.membersNamed(entry, name, scope.project).filter(isCallable)), receiver, viaType: entry };
       }
 
-      if (receiver?.entry) return { member: pick(this.membersNamed(receiver.entry, name).filter(isCallable)), receiver };
+      if (receiver?.entry) {
+        const members = this.membersNamed(receiver.entry, name, scope.project);
+        const member = pick(members.filter(isCallable));
+        const held = member ? null : members.find(isVariable);
+        return held ? { closure: held, receiver } : { member, receiver };
+      }
       if (receiver?.ext) return { member: pick(this.outsideMembers(receiver.ext, name, scope.project).filter(isCallable)), receiver };
       if (receiver?.metaExt) return { member: pick(this.outsideMembers(receiver.metaExt, name, scope.project).filter(isCallable)), receiver };
+      // `items.append(…)` is Array's; the map's own `extension Array` / `extension Collection` may add to it.
+      if (receiver?.array || receiver?.dict) {
+        const extended = receiver.array ? ARRAY_EXTENDED : DICTIONARY_EXTENDED;
+        return { member: pick(extended.flatMap((t) => this.outsideMembers(t, name, scope.project)).filter(isCallable)), receiver };
+      }
+
       return { unknownReceiver: !receiver };
     }
 
@@ -544,6 +648,17 @@ class Resolver {
 
   /** Edges the declarations alone give: inheritance, conformance, overrides, and the types members name. */
   declarations() {
+    // What other targets add to a type of the map: `extension Application` in VaporTesting.
+    for (const table of this.model.types.values()) {
+      for (const entry of table.values()) {
+        if (!entry.id || !entry.external) continue;
+        const extended = this.lookupType(entry.name, { entry: null, project: entry.project, file: this.ctxOf(entry).file });
+        if (!extended || extended === entry) continue;
+        if (!this.extendedBy.has(extended)) this.extendedBy.set(extended, []);
+        this.extendedBy.get(extended).push(entry);
+      }
+    }
+
     for (const table of this.model.types.values()) {
       for (const entry of table.values()) {
         if (!entry.id) continue;
@@ -614,6 +729,11 @@ class Resolver {
     const id = member.id;
     if (!id) return;
     const isVar = isVariable(member);
+    // A typealias named in the member's types is used by it.
+    for (const text of [isVar || decl.kind === 'typeAlias' ? decl.type : null, decl.returns, ...(decl.params ?? []).map((p) => p.type)]) {
+      for (const alias of this.aliasesIn(text, ctx)) if (alias !== member) this.edge(id, alias.id, 'uses');
+    }
+
     if (isVar || decl.kind === 'typeAlias') {
       for (const entry of this.typesIn(decl.type, ctx)) this.edge(id, entry.id, 'holds');
       if (!decl.type && decl.init?.call) {
@@ -680,15 +800,21 @@ class Resolver {
 
         this.counts.calls++;
         const call = this.resolveCall(ref.e, scope);
+        // A closure held in a property or a global: the call reads it, and what it runs is not known.
+        if (call.closure) {
+          if (call.closure.id) this.edge(source, call.closure.id, 'accesses', ref.line);
+          return;
+        }
+
         const name = fn[0] === 'm' ? fn[2] : fn[0] === 'n' ? fn[1] : null;
         // A call on a type from outside the map (DispatchQueue.sync, an array's append) is not one of the map's code.
-        const outside = call.receiver && !call.receiver.entry && !call.receiver.meta && !call.member;
+        const outside = call.outside || (call.receiver && !call.receiver.entry && !call.receiver.meta && !call.member);
         const ours = name !== null && this.declared.has(name) && !outside;
         if (ours) this.counts.ours++;
         if (call.member?.id || call.type?.id || call.enumCase) {
           this.counts.resolved++;
           if (ours) this.counts.oursResolved++;
-        } else this.miss(fn, call);
+        } else this.miss(fn, call, `${scope.ctx.file?.rel}:${ref.line}`, ours);
         if (call.member?.id) this.edge(source, call.member.id, 'calls', ref.line);
         if (call.type?.id && !call.delegated) this.edge(source, call.type.id, 'instantiates', ref.line);
         // A type named by itself (Order.make(), Failure.bad(…)) is a use already, from its name.
@@ -696,6 +822,11 @@ class Resolver {
         if (call.viaType?.id && !named) this.edge(source, call.viaType.id, 'uses', ref.line);
         if (call.enumCase?.id && !named) this.edge(source, call.enumCase.id, 'uses', ref.line);
         if (call.member) this.implicitArguments(source, ref, call.member, scope);
+        // `Addr(1)`, `Box.Kind.empty`: the typealias it goes through.
+        if (fn[0] === 'n' || (fn[0] === 'm' && fn[1][0] === 'n')) {
+          const alias = this.aliasNamed(fn[0] === 'n' ? fn[1] : fn[1][1], scope.ctx);
+          if (alias?.id && !(scope.owner && this.membersNamed(scope.owner, fn[0] === 'n' ? fn[1] : fn[1][1]).some((m) => m !== alias && m.decl.kind !== 'typeAlias'))) this.edge(source, alias.id, 'uses', ref.line);
+        }
         return;
       }
 
@@ -706,23 +837,35 @@ class Resolver {
         const name = e[2];
         if (receiver?.meta) {
           const entry = receiver.meta;
-          const member = this.membersNamed(entry, name).find((m) => isVariable(m));
+          const member = this.membersNamed(entry, name, scope.project).find((m) => isVariable(m));
           if (member?.id) this.edge(source, member.id, 'accesses', ref.line);
           if (entry.id && e[1][0] !== 'n') this.edge(source, entry.id, 'uses', ref.line);
           return;
         }
 
-        const members = receiver?.entry ? this.membersNamed(receiver.entry, name) : receiver?.ext ? this.outsideMembers(receiver.ext, name, scope.project) : [];
+        const members = receiver?.entry ? this.membersNamed(receiver.entry, name, scope.project) : receiver?.ext ? this.outsideMembers(receiver.ext, name, scope.project) : [];
         const member = members.find((m) => isVariable(m)) ?? (members.length === 1 ? members[0] : null);
         if (member?.id) this.edge(source, member.id, isVariable(member) ? 'accesses' : 'calls', ref.line);
-        else if (!receiver || receiver.ext) this.untyped.add(name);
+        // A @dynamicMemberLookup type (swift-composable-architecture's Store) reads names of another type through it.
+        else if (!receiver || receiver.ext || (receiver.entry && this.looksUpMembers(receiver.entry))) this.untyped.add(name);
+        return;
+      }
+
+      case 'subscript': {
+        const receiver = this.typeOf(ref.e, scope);
+        let candidates = [];
+        if (receiver?.entry) candidates = this.membersNamed(receiver.entry, 'subscript', scope.project);
+        else if (receiver?.array || receiver?.dict) candidates = (receiver.array ? [...ARRAY_EXTENDED, 'Set'] : DICTIONARY_EXTENDED).flatMap((t) => this.outsideMembers(t, 'subscript', scope.project));
+        else if (receiver?.ext) candidates = this.outsideMembers(receiver.ext, 'subscript', scope.project);
+        const fitting = candidates.filter((m) => bindArguments(m.decl.params ?? [], ref.labels));
+        if (fitting.length === 1 && fitting[0].id) this.edge(source, fitting[0].id, 'accesses', ref.line);
         return;
       }
 
       case 'name': {
         const name = ref.name;
         if (scope.owner) {
-          const members = this.membersNamed(scope.owner, name);
+          const members = this.membersNamed(scope.owner, name, scope.project);
           if (members.length) {
             const member = members.find((m) => isVariable(m)) ?? members[0];
             if (member.id) this.edge(source, member.id, isVariable(member) ? 'accesses' : 'calls', ref.line);
@@ -730,7 +873,7 @@ class Resolver {
           }
         }
 
-        const global = this.globalNamed(name, scope.project);
+        const global = this.globalNamed(name, scope.project, scope.ctx.file);
         if (global?.id) {
           this.edge(source, global.id, 'accesses', ref.line);
           return;
@@ -743,9 +886,11 @@ class Resolver {
         }
 
         for (const p of this.visible(scope.project)) {
-          const fn = this.functions.get(p.id)?.get(name);
-          if (fn?.length === 1 && fn[0].id) {
-            this.edge(source, fn[0].id, 'calls', ref.line);
+          const fn = this.inFile(this.functions.get(p.id)?.get(name), scope.ctx.file);
+          const own = fn.filter((m) => m.holder?.file?.path === scope.ctx.file?.path);
+          const one = own.length === 1 ? own[0] : fn.length === 1 ? fn[0] : null;
+          if (one?.id) {
+            this.edge(source, one.id, 'calls', ref.line);
             return;
           }
         }
@@ -755,6 +900,7 @@ class Resolver {
 
       case 'type':
         for (const entry of this.typesIn(ref.text, scope.ctx)) this.edge(source, entry.id, 'uses', ref.line);
+        for (const alias of this.aliasesIn(ref.text, scope.ctx)) this.edge(source, alias.id, 'uses', ref.line);
         return;
       case 'catch':
         for (const entry of this.typesIn(ref.text, scope.ctx)) this.edge(source, entry.id, 'catches', ref.line);
@@ -811,11 +957,15 @@ class Resolver {
     }
   }
 
-  miss(fn, call) {
+  miss(fn, call, place, ours) {
     const name = fn[0] === 'm' ? fn[2] : fn[0] === 'n' ? fn[1] : null;
     if (!name) return;
-    this.unresolved.set(name, (this.unresolved.get(name) ?? 0) + 1);
-    if (fn[0] === 'm' && (call.unknownReceiver || call.receiver?.ext || call.receiver?.metaExt)) this.untyped.add(name);
+    const key = `${ours ? '*' : ' '}${name}`;
+    const seen = this.unresolved.get(key) ?? { name, ours, count: 0, places: [] };
+    seen.count++;
+    if (seen.places.length < 3) seen.places.push(place);
+    this.unresolved.set(key, seen);
+    if (fn[0] === 'm' && (call.unknownReceiver || call.receiver?.ext || call.receiver?.metaExt || (call.receiver?.entry && this.looksUpMembers(call.receiver.entry)))) this.untyped.add(name);
   }
 
   /** Private members of a name used on something of unknown type may be what it calls: not reported unused. */
@@ -885,8 +1035,12 @@ function choose(candidates, labels, args, typeOfArg, accepts = (t, p) => argumen
   });
   if (typed.length === 1) return typed[0];
   // A requirement and its default, or a method and the protocol's: the same member to the map's eyes.
-  const own = (typed.length ? typed : pool).filter((c) => c.entry?.kind !== 'protocol');
-  return own.length === 1 ? own[0] : null;
+  const remaining = typed.length ? typed : pool;
+  const own = remaining.filter((c) => c.entry?.kind !== 'protocol');
+  if (own.length === 1) return own[0];
+  // What Swift is told to pick last (a deprecated twin marked @_disfavoredOverload), only when nothing else is left.
+  const favored = (own.length ? own : remaining).filter((c) => !c.decl.attributes?.includes('_disfavoredOverload'));
+  return favored.length === 1 ? favored[0] : null;
 }
 
 const LITERALS = { String: /^(String|Substring|Character|StaticString)$|StringProtocol/, Int: /^(U?Int\d*|Double|Float\d*|CGFloat|Decimal|TimeInterval)$/, Double: /^(Double|Float\d*|CGFloat|Decimal|TimeInterval)$/, Bool: /^Bool$/ };

@@ -9,11 +9,12 @@ const EXECUTABLES = /\.(application(\..*)?|tool|app-extension|extensionkit-exten
 /**
  * An Xcode project (App.xcodeproj) from its project.pbxproj:
  *   { bundle, dir, name, file, targets: [{ name, productType, test, executable, files, folders, dependencies,
- *     products, line }] }
+ *     products, frameworks, line }] }
  * `files` are the Swift files of a target's sources build phase, found through the group tree; `folders` are Xcode
  * 16's synchronized folders, { dir, excluded, included } (files the folder's exceptions take out of, or add to, the
  * target). `dependencies` names other targets of the project; `products` are Swift package products, { product,
- * package } with the package's name, or `path` for a local package.
+ * package } with the package's name, or `path` for a local package; `frameworks` the frameworks it links (Kingfisher
+ * for Kingfisher.framework), which may be built by another project of the workspace.
  */
 export function readXcodeProject(bundle) {
   const file = join(bundle, 'project.pbxproj');
@@ -45,8 +46,18 @@ export function readXcodeProject(bundle) {
     const target = objects[id];
     const productType = target.productType ?? '';
     const files = new Set();
+    const frameworks = [];
     for (const phaseId of target.buildPhases ?? []) {
       const phase = objects[phaseId];
+      if (phase?.isa === 'PBXFrameworksBuildPhase') {
+        for (const buildFileId of phase.files ?? []) {
+          const reference = objects[objects[buildFileId]?.fileRef];
+          const name = basename(reference?.path ?? reference?.name ?? '');
+          // The SDK's own (UIKit, Network) are not what another target builds.
+          if (/\.framework$/i.test(name) && reference?.sourceTree !== 'SDKROOT' && !/^System\//.test(reference?.path ?? '')) frameworks.push(name.replace(/\.framework$/i, ''));
+        }
+      }
+
       if (phase?.isa !== 'PBXSourcesBuildPhase') continue;
       for (const buildFileId of phase.files ?? []) {
         const path = paths.get(objects[buildFileId]?.fileRef);
@@ -88,6 +99,7 @@ export function readXcodeProject(bundle) {
 
     targets.push({
       name: target.name ?? target.productName ?? id,
+      productName: target.productName ?? null,
       productType,
       test: TESTS.test(productType),
       executable: EXECUTABLES.test(productType) && !TESTS.test(productType),
@@ -95,6 +107,7 @@ export function readXcodeProject(bundle) {
       folders,
       dependencies,
       products,
+      frameworks,
       line: lineOf(id),
     });
   }

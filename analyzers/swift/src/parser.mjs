@@ -23,7 +23,31 @@ export async function loadParser() {
   loaded = {
     vendored,
     /** Parses a text; the caller deletes the tree when done. */
-    parse: (text) => parser.parse(text),
+    parse: (text) => parser.parse(withoutDiagnostics(text)),
   };
   return loaded;
 }
+
+/**
+ * The text as the grammar can read it, every character in its place. Two things it cannot read are blanked out,
+ * neither of which means anything to the map:
+ * - `#warning("…")` and `#error("…")`, messages for the compiler, inside a type's body: Vapor's
+ *   `extension SocketAddress { #warning(…) init?(…) }` lost the extension and made its initializer top-level code;
+ * - a comment opener (slash, star) in a one-line string after an interpolation (Vapor's `"\(start)-\(end)/…"`), read
+ *   as the start of a comment that the next closer, in a doc comment 15 lines on, ended.
+ */
+export function withoutDiagnostics(text) {
+  let out = text;
+  if (out.includes('#warning') || out.includes('#error')) out = out.replace(/#(warning|error)\s*\(\s*"(?:[^"\\\n]|\\.)*"\s*\)/g, blank);
+  if (out.includes('/*')) {
+    // Line by line, and not on lines with a multi-line or raw string, whose quotes would pair the wrong way.
+    out = out.split('\n').map((line) => {
+      if (!line.includes('/*') || !line.includes('\\(') || line.includes('"""') || line.includes('#"')) return line;
+      return line.replace(/"(?:[^"\\]|\\.)*"/g, (literal) => (literal.includes('\\(') && literal.includes('/*') ? literal.replace(/\/\*/g, '/ ') : literal));
+    }).join('\n');
+  }
+
+  return out;
+}
+
+const blank = (m) => m.replace(/[^\n]/g, ' ');
