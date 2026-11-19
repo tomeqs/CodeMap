@@ -30,11 +30,14 @@ export function resolveReferences(model, graph, { log = () => {}, stats = false,
     writeFileSync(unresolvedFile, lines.join('\n') + '\n');
   }
 
-  return resolver.counts;
+  return resolver;
 }
 
 const KEYWORDS = new Set(['some', 'any', 'inout', 'Self', 'where', 'borrowing', 'consuming', 'throws', 'rethrows', 'async', 'escaping', 'sending', 'isolated', 'each', 'repeat', 'Type', 'Protocol']);
 const SEQUENCE_SAME = new Set(['filter', 'sorted', 'reversed', 'shuffled', 'prefix', 'suffix', 'dropFirst', 'dropLast']);
+/** Methods of arrays whose closure gets an element (reduce's second parameter). */
+const ELEMENT_CLOSURES = new Set(['map', 'flatMap', 'compactMap', 'forEach', 'filter', 'first', 'last', 'firstIndex', 'lastIndex', 'contains', 'allSatisfy', 'drop', 'prefix', 'sorted', 'min', 'max', 'reduce', 'partition', 'removeAll', 'split', 'sort', 'elementsEqual', 'lexicographicallyPrecedes', 'starts']);
+const COMPARATORS = new Set(['sorted', 'sort', 'min', 'max', 'elementsEqual', 'lexicographicallyPrecedes', 'starts']);
 const SEQUENCE_ELEMENT = new Set(['first', 'last', 'randomElement', 'min', 'max', 'popLast', 'removeFirst', 'removeLast']);
 
 class Resolver {
@@ -379,9 +382,40 @@ class Resolver {
         return element ? { array: element } : null;
       }
 
+      case 'cl':
+        return this.closureParameter(e, scope, depth);
+
       default:
         return null;
     }
+  }
+
+  /**
+   * Parameter i of a closure passed to a call: an array's element for map, filter, forEach and the like; else what
+   * the callee's parameter of a function type gives (`completion: (Result<Order, Error>) -> Void`).
+   */
+  closureParameter(e, scope, depth) {
+    const [, call, slot, i] = e;
+    const fn = call[1];
+    if (fn[0] === 'm') {
+      const receiver = this.typeOf(fn[1], scope, depth + 1);
+      if (receiver?.array && ELEMENT_CLOSURES.has(fn[2])) {
+        // reduce(init) { partial, element in }; comparators (sorted(by:), min(by:)) get two elements.
+        if (fn[2] === 'reduce') return i === 1 ? receiver.array : null;
+        return i === 0 || (i === 1 && COMPARATORS.has(fn[2])) ? receiver.array : null;
+      }
+      if (receiver?.dict && ELEMENT_CLOSURES.has(fn[2])) return null;
+    }
+
+    const resolved = this.resolveCall(call, scope, depth + 1);
+    const member = resolved.member;
+    if (!member) return null;
+    const params = member.decl.params ?? [];
+    const param = params[(bindArguments(params, call[2]) ?? [])[slot]];
+    const types = param?.type ? closureParameters(param.type) : null;
+    if (!types?.[i]) return null;
+    const ctx = member.holder ? { entry: null, project: member.holder.file.project, file: member.holder.file } : this.ctxOf(member.entry);
+    return this.parseType(types[i], ctx, resolved.receiver?.entry ? resolved.receiver : null);
   }
 
   /** The type of `receiver.name`. */
@@ -920,6 +954,21 @@ function constraintNames(decl) {
   if (!text) return [];
   const params = new Set([...(decl.generics ?? '').matchAll(/[<,]\s*(\w+)/g)].map((m) => m[1]));
   return [...text.matchAll(/[:=]\s*([A-Z][\w.]*)/g)].map((m) => m[1]).filter((n) => !params.has(n) && !KEYWORDS.has(n));
+}
+
+/** The parameter types of a function type as written: `@escaping (Result<Order, Error>) -> Void` → ['Result<Order, Error>']. */
+function closureParameters(text) {
+  let t = text.replace(/@\w+(\([^)]*\))?\s*/g, '').trim();
+  if (/^\(.*\)[?!]$/.test(t)) t = t.slice(1, -2).trim(); // ((A) -> Void)?
+  const arrow = t.indexOf('->');
+  if (!t.startsWith('(') || arrow < 0) return null;
+  let depth = 0;
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] === '(') depth++;
+    else if (t[i] === ')' && --depth === 0) return splitTop(t.slice(1, i), ',').map((p) => p.replace(/^(\w+\s+)?\w+\s*:\s*/, '').replace(/^(inout|borrowing|consuming)\s+/, ''));
+  }
+
+  return null;
 }
 
 /** `a, b` at the top level of a type (not inside <>, [], ()). */

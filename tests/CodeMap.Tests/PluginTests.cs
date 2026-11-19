@@ -336,6 +336,28 @@ public class PluginTests
     internal static string SwiftFixture(string name) => Path.Combine(GoldenTests.RepoRoot(), "analyzers", "swift", "test", "fixtures", name);
 
     [NodeFact(swift: true)]
+    public void Swift_frameworks_mark_entry_points_tests_and_handlers_so_only_dead_code_reads_as_dead()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(SwiftFixture("frameworks"), registry, NoGit);
+
+        Assert.Empty(graph.Analysis.Warnings);
+        // What Interface Builder, the runtime and the frameworks reach is not dead: only what nothing reaches.
+        Assert.Equal(new[] { "swift:Shop:CartView.never", "swift:Shop:CartViewController.unusedHelper()" }, graph.Analysis.UnusedCandidates.Order(StringComparer.Ordinal));
+        Assert.Contains(Tags.EntryPoint, graph.Node("swift:Server:Entry").Tags);
+        Assert.Contains(Tags.Test, graph.Node("swift:ShopTests:CartTests.testAdds()").Tags);
+        Assert.Contains(Tags.Handler, graph.Node("swift:Shop:CartViewController.tap(_:)").Tags);
+        Assert.Contains(Tags.Component, graph.Node("swift:Shop:CartView").Tags);
+        Assert.Contains("route", graph.Node("swift:Server:OrdersController.index(req:)").Tags);
+        Assert.StartsWith("GET /api/v1/orders/:id", graph.Node("swift:Server:file:routes.show(req:)").Doc);
+        graph.AssertEdge("swift:Shop:CartView", EdgeKinds.Injects, "swift:Shop:Cart");
+
+        // A route is where a call flow starts: the handler, and on to what it makes.
+        var flow = new CodeMap.Insights.CallFlow(new CodeMap.Insights.GraphIndex(graph)).Build(new[] { "swift:Server:OrdersController.boot(routes:)" });
+        Assert.Contains(flow.Methods, m => m.Id == "swift:Server:OrdersController.create(req:)");
+    }
+
+    [NodeFact(swift: true)]
     public void Swift_calls_reach_implementations_through_protocols_in_call_flows()
     {
         var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });

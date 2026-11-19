@@ -13,8 +13,9 @@ import { complexityOf } from './complexity.mjs';
  * `#if` blocks are flat markers in the tree, so the declarations of every branch are read.
  */
 export function extractFile(tree) {
-  const facts = { imports: [], types: [], functions: [], variables: [], aliases: [], topLevel: null };
+  const facts = { imports: [], types: [], functions: [], variables: [], aliases: [], topLevel: null, previews: null };
   const statements = [];
+  const previews = [];
   eachDeclaration(tree.rootNode, (node, doc) => {
     switch (node.type) {
       case 'import_declaration': {
@@ -36,11 +37,22 @@ export function extractFile(tree) {
       case 'typealias_declaration':
         facts.aliases.push(readAlias(node, doc, null));
         return;
+      case 'macro_invocation':
+        // #Preview { … }: the views it shows are used by it.
+        if (/^#Preview\b/.test(node.text)) {
+          previews.push(node);
+          return;
+        }
+
+        break;
       case 'operator_declaration':
       case 'precedence_group_declaration':
       case 'macro_declaration':
       case 'directive':
       case 'diagnostic':
+        return;
+      case 'ERROR':
+        // What the parser could not follow is not code that runs.
         return;
       default: {
         // Code at the top of the file (main.swift, scripts).
@@ -54,6 +66,9 @@ export function extractFile(tree) {
     }
   });
   if (facts.topLevel) Object.assign(facts.topLevel, readRefs(statements));
+  if (previews.length) {
+    facts.previews = { line: previews[0].startPosition.row + 1, endLine: previews[previews.length - 1].endPosition.row + 1, ...readRefs(previews) };
+  }
   return facts;
 }
 
@@ -204,11 +219,15 @@ const KEPT = new Set(['open', 'package', 'fileprivate']);
 export function readModifiers(node) {
   const modifiers = new Set();
   const attributes = [];
+  let arguments_ = null;
   let access = null;
   const take = (child) => {
     if (child.type === 'attribute') {
       const name = child.namedChildren.find((c) => c.type === 'user_type')?.text ?? child.text.replace(/^@/, '').replace(/\(.*$/s, '');
       attributes.push(name);
+      // @Environment(Store.self): the argument says what the property holds.
+      const argument = /\(([^]*)\)\s*$/.exec(child.text)?.[1];
+      if (argument) (arguments_ ??= {})[name] = argument.trim();
     } else if (child.type === 'visibility_modifier') {
       const text = child.text.replace(/\s+/g, '');
       if (/\(set\)$/.test(text)) modifiers.add(text);
@@ -228,7 +247,7 @@ export function readModifiers(node) {
     else if (!/comment/.test(child.type)) break;
   }
 
-  return { access, modifiers: [...modifiers], attributes };
+  return { access, modifiers: [...modifiers], attributes, attributeArguments: arguments_ };
 }
 
 function readFunction(node, doc, kind, owner) {
@@ -305,7 +324,7 @@ function readParameter(node, subscript) {
 }
 
 function readProperties(node, doc, defaultKind, owner) {
-  const { access, modifiers, attributes } = readModifiers(node);
+  const { access, modifiers, attributes, attributeArguments } = readModifiers(node);
   const out = [];
   const binding = (n) => n.type === 'value_binding_pattern' && n.text.trim() === 'let';
   const isLet = node.children.some(binding) || node.childrenForFieldName('name').some((p) => p.namedChildren.some(binding));
@@ -357,6 +376,7 @@ function readProperties(node, doc, defaultKind, owner) {
       access,
       modifiers: [...shared],
       attributes,
+      attributeArguments: attributeArguments ?? undefined,
       doc,
       signature: signatureOf(node, p.computed ?? p.value ?? null),
       line: node.startPosition.row + 1,

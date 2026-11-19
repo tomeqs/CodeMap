@@ -122,8 +122,8 @@ class Model {
   // ---------------------------------------------------------------------------------------- free code
 
   addFreeDeclarations(file) {
-    const { functions, variables, aliases, topLevel } = file.facts;
-    if (!functions.length && !variables.length && !aliases.length && !topLevel) return;
+    const { functions, variables, aliases, topLevel, previews } = file.facts;
+    if (!functions.length && !variables.length && !aliases.length && !topLevel && !previews) return;
     const holder = { id: holderId(file.project.id, file.component), file, members: [] };
     this.holders.set(file, holder);
     for (const member of [...functions, ...variables, ...aliases]) {
@@ -136,6 +136,12 @@ class Model {
     if (topLevel) {
       const main = { kind: 'method', name: 'main', labels: null, params: [], returns: null, access: 'private', modifiers: [], attributes: [], signature: 'top-level code', line: topLevel.line, endLine: topLevel.endLine, complexity: topLevel.complexity, topLevel: true, refs: topLevel.refs, locals: topLevel.locals };
       holder.members.push({ key: 'top-level', decl: main, places: [{ file, member: main }] });
+    }
+
+    if (previews) {
+      // The file's #Preview blocks: what they show is used by them, as by a test.
+      const preview = { kind: 'method', name: '#Preview', labels: null, params: [], returns: null, access: 'private', modifiers: [], attributes: [], signature: '#Preview', line: previews.line, endLine: previews.endLine, complexity: null, preview: true, refs: previews.refs, locals: previews.locals };
+      holder.members.push({ key: 'preview', decl: preview, places: [{ file, member: preview }] });
     }
   }
 
@@ -303,7 +309,8 @@ class Model {
       accessibility: holder.members.every((m) => accessOf(m.decl.access) === 'private') ? 'private' : 'public',
       signature: basename(file.rel),
       location: this.location(file, 1, file.lines),
-      tags: tagsOf(file.test ? ['test'] : []),
+      // A file of #Preview blocks only is test code; top-level code runs: an entry point.
+      tags: tagsOf(file.test || holder.members.every((m) => m.decl.preview) ? ['test'] : []),
       metrics: { loc: 0 },
     });
     assignIds(holder.id, holder.members);
@@ -327,10 +334,10 @@ class Model {
         extraLocations: others.map((p) => this.location(p.file, p.member.line, p.member.endLine)).filter(Boolean),
         attributes: [...new Set(member.places.flatMap((p) => p.member.attributes))],
         doc: decl.doc,
-        tags: tagsOf(file.test ? ['test'] : [], decl.topLevel && basename(file.path) === 'main.swift' ? ['entrypoint'] : []),
+        tags: tagsOf(file.test || decl.preview ? ['test'] : [], decl.topLevel && runsTopLevel(file) ? ['entrypoint'] : []),
         metrics: memberMetrics(decl),
       });
-      if (decl.topLevel && basename(file.path) === 'main.swift') node.tags = tagsOf(node.tags ?? [], ['entrypoint']);
+      if (decl.topLevel && runsTopLevel(file)) node.tags = tagsOf(node.tags ?? [], ['entrypoint']);
       node.metrics.loc += decl.endLine - decl.line + 1;
       this.keepTypes(child, decl);
     }
@@ -362,6 +369,11 @@ export function placeOf(file) {
   if (rel.startsWith('..')) rel = toPosix(relative(dirname(project.dir), file.path));
   const folder = dirname(rel) === '.' ? '' : dirname(rel);
   return { folder, component: rel.replace(/\.swift$/, '') };
+}
+
+/** Top-level code runs in main.swift, in an executable target, and in a script (a folder of Swift files). */
+function runsTopLevel(file) {
+  return basename(file.path) === 'main.swift' || file.project.executable || file.project.kind === 'folder';
 }
 
 /** What makes two declarations one member: a stored and a computed property of one name (#if branches) are one. */

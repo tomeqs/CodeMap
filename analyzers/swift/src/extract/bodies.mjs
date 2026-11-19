@@ -7,7 +7,9 @@
  *   ['i', name]  `.name`, a member of the type expected there      ['t', text]  a value of a type as written
  *   ['T', text]  the type itself (`Order` in `let o: Order = .init()`, `\Order.lines`)
  *   ['l', type]  a literal      ['el', E]  an element of E (for-in)      ['sub', E]  E[…]
- *   ['arr', E]  an array literal of E      ['u']  unknown
+ *   ['arr', E]  an array literal of E      ['cl', call, slot, i]  parameter i of the closure passed as argument `slot`
+ *   of `call` (a trailing closure's slot follows the labelled arguments)      ['u']  unknown
+ * A string literal without interpolation keeps its text: ['l', 'String', text].
  * A reference is { ev: call | access | name | type | throw | catch | selector, … , line }. Locals are scoped: a
  * closure's parameter or an `if let` binding is a local of its block only; `locals` maps each binding's key to
  * what it is bound to.
@@ -79,10 +81,29 @@ class Reader {
           else if (e[1][0] === 'n') this.refs.push({ ev: 'name', name: e[1][1], line: line(node) });
         }
 
-        // The callee is the call: visit what it is called on, and the arguments.
+        // The callee is the call: visit what it is called on, and the arguments; a closure knows the call it is given to.
         if (callee?.type === 'navigation_expression') this.walkOptional(callee.childForFieldName('target'), scope);
         else if (callee && callee.type !== 'simple_identifier' && callee.type !== 'prefix_expression') this.walkOptional(callee, scope);
-        for (const child of node.namedChildren.slice(1)) this.walkOptional(child, scope);
+        const suffix = node.namedChildren.find((c) => c.type === 'call_suffix');
+        const args = suffix?.namedChildren.find((c) => c.type === 'value_arguments');
+        let slot = 0;
+        for (const argument of args?.namedChildren ?? []) {
+          if (argument.type !== 'value_argument') continue;
+          const value = argument.childForFieldName('value');
+          if (value?.type === 'lambda_literal' && e[0] === 'c') this.walkClosure(value, scope, e, slot);
+          else this.walkOptional(value, scope);
+          slot++;
+        }
+
+        for (const child of suffix?.namedChildren ?? []) {
+          if (child.type !== 'lambda_literal' && child.type !== 'annotated_lambda') continue;
+          const lambda = child.type === 'lambda_literal' ? child : child.namedChildren.find((c) => c.type === 'lambda_literal');
+          if (lambda && e[0] === 'c') this.walkClosure(lambda, scope, e, slot);
+          else this.walkOptional(child, scope);
+          slot++;
+        }
+
+        for (const child of node.namedChildren.slice(1)) if (child.type !== 'call_suffix') this.walkOptional(child, scope);
         return false;
       }
 
@@ -100,7 +121,8 @@ class Reader {
         if (!parent || SKIP_NAME_PARENTS.has(parent.type)) return false;
         const field = fieldOf(node);
         if (field === 'bound_identifier' || field === 'name' || field === 'external_name') return false;
-        const name = unquote(node.text);
+        // `$isPresented`: the projected value of a property wrapper is a use of the property.
+        const name = unquote(node.text).replace(/^\$(?=[A-Za-z_])/, '');
         if (name.startsWith('$') || scope.has(name)) return false;
         this.refs.push({ ev: 'name', name, line: line(node) });
         return false;
@@ -243,6 +265,30 @@ class Reader {
     if (node) this.walk(node, scope);
   }
 
+  /**
+   * A closure passed to a call: its parameters (and $0, $1…) are what the callee gives it, known once the callee is
+   * (resolve.mjs): ['cl', call, slot, i]; a parameter with a type is that type.
+   */
+  walkClosure(lambda, scope, call, slot) {
+    const inner = new Map(scope);
+    const type = lambda.childForFieldName('type');
+    let count = 0;
+    const params = type?.namedChildren.find((c) => c.type === 'lambda_function_type_parameters');
+    for (const p of params?.namedChildren ?? []) {
+      if (p.type !== 'lambda_parameter') continue;
+      const names = p.childrenForFieldName('name');
+      const name = names.find((n) => n.type === 'simple_identifier')?.text;
+      const declared = names.find((n) => TYPE_NODES.has(n.type))?.text;
+      if (name) this.bind(inner, unquote(name), declared ? ['t', declared] : ['cl', call, slot, count]);
+      count++;
+    }
+
+    // { a, b in … }
+    for (const child of type?.namedChildren ?? []) if (child.type === 'simple_identifier') this.bind(inner, unquote(child.text), ['cl', call, slot, count++]);
+    if (!count) for (let i = 0; i < 4; i++) this.bind(inner, `$${i}`, ['cl', call, slot, i]);
+    for (const child of lambda.namedChildren) if (child.id !== type?.id) this.walk(child, inner);
+  }
+
   /** `if let x = a, let y = b.c`, `guard let x else`, `if let x` (the same x): bound into `into`. */
   bindConditions(node, scope, into) {
     const children = node.children;
@@ -271,8 +317,9 @@ class Reader {
     switch (node.type) {
       case 'simple_identifier': {
         const name = unquote(node.text);
-        if (name.startsWith('$')) return ['u'];
-        return scope.has(name) ? ['v', scope.get(name)] : ['n', name];
+        if (scope.has(name)) return ['v', scope.get(name)];
+        if (/^\$[A-Za-z_]/.test(name)) return ['n', name.slice(1)];
+        return name.startsWith('$') ? ['u'] : ['n', name];
       }
 
       case 'self_expression':
@@ -334,8 +381,11 @@ class Reader {
         return this.expr(node.childForFieldName('if_true') ?? node.namedChildren[1], scope);
       case 'line_string_literal':
       case 'multi_line_string_literal':
-      case 'raw_string_literal':
-        return ['l', 'String'];
+      case 'raw_string_literal': {
+        const parts = node.namedChildren;
+        const plain = parts.every((c) => c.type === 'line_str_text' || c.type === 'multi_line_str_text');
+        return plain ? ['l', 'String', parts.map((c) => c.text).join('')] : ['l', 'String'];
+      }
       case 'integer_literal':
         return ['l', 'Int'];
       case 'real_literal':
