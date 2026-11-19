@@ -39,6 +39,12 @@ const KEYWORDS = new Set(['some', 'any', 'inout', 'Self', 'where', 'borrowing', 
 const SEQUENCE_SAME = new Set(['filter', 'sorted', 'reversed', 'shuffled', 'prefix', 'suffix', 'dropFirst', 'dropLast']);
 /** Methods of arrays whose closure gets an element (reduce's second parameter). */
 const ELEMENT_CLOSURES = new Set(['map', 'flatMap', 'compactMap', 'forEach', 'filter', 'first', 'last', 'firstIndex', 'lastIndex', 'contains', 'allSatisfy', 'drop', 'prefix', 'sorted', 'min', 'max', 'reduce', 'partition', 'removeAll', 'split', 'sort', 'elementsEqual', 'lexicographicallyPrecedes', 'starts']);
+/**
+ * Apple's capitalized functions, which are no initializers (NSLocalizedString, CGRectMake, XCTAssertEqual), and what
+ * the common ones return.
+ */
+const FUNCTION_LIKE = /^(XCT[A-Z]|NSLog$|(NS|CG|CF|UI|CA|CT|CV|AV|Sec)[A-Z]\w*(Make|Get|From|Create|Copy|Equal|Begin|End|Contains|Intersects|Localized|Main)\w*$)/;
+const OUTSIDE_RESULTS = { NSLocalizedString: 'String', NSStringFromClass: 'String', NSStringFromSelector: 'String', CGRectMake: 'CGRect', CGPointMake: 'CGPoint', CGSizeMake: 'CGSize', NSMakeRange: 'NSRange' };
 /** Static members that, by Apple's convention, hold an instance of their own type. */
 const SINGLETONS = new Set(['shared', 'default', 'standard', 'main', 'current', 'autoupdatingCurrent']);
 /** What extensions of these add to an array or a dictionary. */
@@ -179,7 +185,7 @@ class Resolver {
     }
 
     for (const project of ctx.project ? this.visible(ctx.project) : []) {
-      const alias = this.aliases.get(project.id)?.get(name)?.[0];
+      const alias = this.inFile(this.aliases.get(project.id)?.get(name), ctx.file)[0];
       if (alias?.decl.type) return this.lookupType(baseName(alias.decl.type), { project, entry: null, file: alias.holder.file }, depth + 1);
     }
 
@@ -564,7 +570,7 @@ class Resolver {
       // Nothing the caller can see has this name: Swift's or a framework's (`assert(…)`, `XCTAssertNoThrow(…)`), and
       // a capitalized one makes an instance of that type (`DispatchSemaphore(value: 0)`).
       if (scope.owner && this.membersNamed(scope.owner, name, scope.project).length) return {};
-      return { outside: true, outsideType: /^[A-Z]/.test(name) ? name : null };
+      return { outside: true, outsideType: OUTSIDE_RESULTS[name] ?? (/^[A-Z]/.test(name) && !FUNCTION_LIKE.test(name) ? name : null) };
     }
 
     if (fn[0] === 'm') {
@@ -1028,13 +1034,13 @@ function choose(candidates, labels, args, typeOfArg, accepts = (t, p) => argumen
     });
   });
   if (typed.length === 1) return typed[0];
-  // What Swift is told to pick last (a deprecated twin marked @_disfavoredOverload), only when nothing else is left.
-  const remaining = typed.length ? typed : pool;
-  const favored = remaining.filter((c) => !c.decl.attributes?.includes('_disfavoredOverload'));
-  if (favored.length === 1) return favored[0];
   // A requirement and its default, or a method and the protocol's: the same member to the map's eyes.
-  const own = (favored.length ? favored : remaining).filter((c) => c.entry?.kind !== 'protocol');
-  return own.length === 1 ? own[0] : null;
+  const remaining = typed.length ? typed : pool;
+  const own = remaining.filter((c) => c.entry?.kind !== 'protocol');
+  if (own.length === 1) return own[0];
+  // What Swift is told to pick last (a deprecated twin marked @_disfavoredOverload), only when nothing else is left.
+  const favored = (own.length ? own : remaining).filter((c) => !c.decl.attributes?.includes('_disfavoredOverload'));
+  return favored.length === 1 ? favored[0] : null;
 }
 
 const LITERALS = { String: /^(String|Substring|Character|StaticString)$|StringProtocol/, Int: /^(U?Int\d*|Double|Float\d*|CGFloat|Decimal|TimeInterval)$/, Double: /^(Double|Float\d*|CGFloat|Decimal|TimeInterval)$/, Bool: /^Bool$/ };

@@ -395,3 +395,96 @@ test('a /* in an interpolated string does not start a comment', () => {
   });
   assert.ok(map.has('swift:P:Value.size()'));
 });
+
+test('from the self-review: linked frameworks, a dropped target’s excluded files, Apple functions, protocol ties, private aliases', () => {
+  const { map } = mapWithMisses({
+    'Package.swift': '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "Kit"), .target(name: "Legacy"), .target(name: "Network")])\n',
+    'Sources/Kit/Store.swift': `public final class Store {
+  public init() {}
+}
+public protocol Sender {
+  associatedtype Action
+  func send(_ action: Action)
+}
+public final class Box: Sender {
+  public typealias Action = Int
+  public init() {}
+  @_disfavoredOverload public func send(_ action: Int) {}
+}
+extension String {
+  public func shout() -> String { uppercased() }
+}
+func greet(_ box: Box, _ value: Int) -> String {
+  box.send(value)
+  return NSLocalizedString("hello", comment: "").shout()
+}
+`,
+    'Sources/Kit/A.swift': 'struct First { func firstOnly() {} }\nprivate typealias Model = First\n',
+    'Sources/Kit/B.swift': 'struct Second { func secondOnly() {} }\nprivate typealias Model = Second\nfunc useSecond(_ m: Model) { m.secondOnly() }\n',
+    'Sources/Legacy/Old.swift': 'public struct Old {}\n',
+    'Sources/Network/Client.swift': 'public struct Client {}\n',
+    'Demo/DemoApp.swift': 'import Kit\nfinal class DemoApp {\n  func start() { _ = Store() }\n}\n',
+    'Tests/KitTests.swift': 'import XCTest\nimport Kit\nfinal class KitTests: XCTestCase {\n  func testStore() { _ = Store() }\n}\n',
+    'Kit.xcodeproj/project.pbxproj': `{ objects = {
+  R = { isa = PBXProject; mainGroup = G; targets = (TK, TT, TA); };
+  G = { isa = PBXGroup; children = (S, GT, FD); sourceTree = "<group>"; };
+  S = { isa = PBXFileSystemSynchronizedRootGroup; exceptions = (E); path = Sources; sourceTree = "<group>"; };
+  E = { isa = PBXFileSystemSynchronizedBuildFileExceptionSet; membershipExceptions = (Legacy/Old.swift, Network/Client.swift); target = TK; };
+  GT = { isa = PBXGroup; children = (F2); path = Tests; sourceTree = "<group>"; };
+  F2 = { isa = PBXFileReference; path = KitTests.swift; sourceTree = "<group>"; };
+  B2 = { isa = PBXBuildFile; fileRef = F2; };
+  ST = { isa = PBXSourcesBuildPhase; files = (B2); };
+  NW = { isa = PBXFileReference; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
+  BN = { isa = PBXBuildFile; fileRef = NW; };
+  FP = { isa = PBXFrameworksBuildPhase; files = (BN); };
+  TK = { isa = PBXNativeTarget; name = "Kit iOS"; productName = Kit; productType = "com.apple.product-type.framework"; fileSystemSynchronizedGroups = (S); buildPhases = (); };
+  KF = { isa = PBXFileReference; path = Kit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+  BK = { isa = PBXBuildFile; fileRef = KF; };
+  FA = { isa = PBXFrameworksBuildPhase; files = (BK); };
+  TA = { isa = PBXNativeTarget; name = Demo; productType = "com.apple.product-type.application"; buildPhases = (SA, FA); };
+  SA = { isa = PBXSourcesBuildPhase; files = (BD); };
+  BD = { isa = PBXBuildFile; fileRef = FD; };
+  FD = { isa = PBXFileReference; path = Demo/DemoApp.swift; sourceTree = "<group>"; };
+  D1 = { isa = PBXTargetDependency; target = TK; };
+  TT = { isa = PBXNativeTarget; name = KitTests; productType = "com.apple.product-type.bundle.unit-test"; buildPhases = (ST, FP); dependencies = (D1); };
+}; rootObject = R; }`,
+  });
+  // The dropped Kit framework target's folder excludes Legacy/ and Network/: its tests depend on Kit alone, and the
+  // system Network.framework they link is not the package's Network target.
+  assert.deepEqual(map.edgesFrom('swift:project:KitTests', 'projectReference'), ['swift:project:Kit']);
+  // Kit.framework is the product of the dropped "Kit iOS" target: the demo app depends on the package's Kit.
+  assert.deepEqual(map.edgesFrom('swift:project:Demo', 'projectReference'), ['swift:project:Kit']);
+  // NSLocalizedString(…) is a String, not a type of that name.
+  assert.ok(map.hasEdge('swift:Kit:file:Store.greet(_:_:)', 'calls', 'swift:Kit:extension:String.shout()'));
+  // A disfavored implementation still beats the protocol's requirement.
+  assert.ok(map.hasEdge('swift:Kit:file:Store.greet(_:_:)', 'calls', 'swift:Kit:Box.send(_:)'));
+  // A private typealias is its own file's.
+  assert.ok(map.hasEdge('swift:Kit:file:B.useSecond(_:)', 'calls', 'swift:Kit:Second.secondOnly()'));
+});
+
+test('from the self-review: the comment opener rewrite leaves lines with multi-line or raw strings alone', async () => {
+  const { withoutDiagnostics } = await import('../src/parser.mjs');
+  assert.equal(withoutDiagnostics('let a = "\\(x)/*"'), 'let a = "\\(x)/ "');
+  for (const line of ['let s = """ \\(x) /* a */', 'let r = #"\\(x)/*"#']) assert.equal(withoutDiagnostics(line), line);
+});
+
+test('from the self-review: a framework of the SDK is not one another target builds', async () => {
+  const { readXcodeProject } = await import('../src/projects/xcode.mjs');
+  const { dir, dispose } = scratch({
+    'App.xcodeproj/project.pbxproj': `{ objects = {
+  R = { isa = PBXProject; mainGroup = G; targets = (TA); };
+  G = { isa = PBXGroup; children = (NW, KF); sourceTree = "<group>"; };
+  NW = { isa = PBXFileReference; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
+  KF = { isa = PBXFileReference; path = Kit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+  BN = { isa = PBXBuildFile; fileRef = NW; };
+  BK = { isa = PBXBuildFile; fileRef = KF; };
+  FP = { isa = PBXFrameworksBuildPhase; files = (BN, BK); };
+  TA = { isa = PBXNativeTarget; name = App; productType = "com.apple.product-type.application"; buildPhases = (FP); };
+}; rootObject = R; }`,
+  });
+  try {
+    assert.deepEqual(readXcodeProject(join(dir, 'App.xcodeproj')).targets[0].frameworks, ['Kit']);
+  } finally {
+    dispose();
+  }
+});

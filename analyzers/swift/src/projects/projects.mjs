@@ -229,23 +229,34 @@ function link(projects, { packages, podfiles, all = projects, fileProject = new 
   const sameContainer = (project, name) => projects.find((p) => p.name === name && p.container === project.container && p.kind === project.kind) ?? null;
   // An Xcode target left with no files because a package holds them (Kingfisher.xcodeproj's Kingfisher framework):
   // what depends on it depends on the projects that hold its files.
+  const held = new Map();
   const holdersOf = (dropped) => {
     const target = dropped?.source?.target;
     if (!target) return [];
+    if (held.has(dropped)) return held.get(dropped);
     const owners = new Set();
     for (const file of target.files ?? []) if (fileProject.get(file)) owners.add(fileProject.get(file));
-    for (const folder of target.folders ?? []) for (const [file, owner] of fileProject) if (isUnder(file, folder.dir)) owners.add(owner);
-    return [...owners].filter((p) => !p.test);
+    for (const folder of target.folders ?? []) {
+      for (const [file, owner] of fileProject) if (isUnder(file, folder.dir) && !folder.excluded?.has(file)) owners.add(owner);
+    }
+
+    const out = [...owners].filter((p) => !p.test);
+    held.set(dropped, out);
+    return out;
   };
   const xcodeTarget = (project, name) => {
     const kept = sameContainer(project, name);
     if (kept) return [kept];
     return holdersOf(all.find((p) => p.name === name && p.container === project.container && p.kind === 'xcode' && !p.files.length));
   };
-  // A framework another project of the map builds (a workspace's Kingfisher.framework); system frameworks are not.
+  // A framework another Xcode project of the map builds (a workspace's Kingfisher.framework), or the projects holding
+  // the files of one left without them; not a package or a folder that happens to share the name.
+  // By the target's name or its product's (Alamofire.xcodeproj's "Alamofire iOS" builds Alamofire.framework).
+  const builds = (p, name) => p.kind === 'xcode' && (p.name === name || p.source?.target?.productName === name);
   const framework = (project, name) => {
-    const built = projects.filter((p) => p.name === name && !p.test);
-    return built.length ? built : holdersOf(all.find((p) => p.name === name && p.kind === 'xcode' && !p.files.length));
+    const built = projects.filter((p) => builds(p, name) && !p.test && !p.executable && p !== project);
+    if (built.length) return built;
+    return [...new Set(all.filter((p) => builds(p, name) && !p.files.length).flatMap((p) => holdersOf(p)))];
   };
   // Products of the packages read: name → targets, and the package each product is in.
   const products = new Map();

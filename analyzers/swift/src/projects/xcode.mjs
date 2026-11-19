@@ -53,7 +53,8 @@ export function readXcodeProject(bundle) {
         for (const buildFileId of phase.files ?? []) {
           const reference = objects[objects[buildFileId]?.fileRef];
           const name = basename(reference?.path ?? reference?.name ?? '');
-          if (/\.framework$/i.test(name)) frameworks.push(name.replace(/\.framework$/i, ''));
+          // The SDK's own (UIKit, Network) are not what another target builds.
+          if (/\.framework$/i.test(name) && reference?.sourceTree !== 'SDKROOT' && !/^System\//.test(reference?.path ?? '')) frameworks.push(name.replace(/\.framework$/i, ''));
         }
       }
 
@@ -98,6 +99,7 @@ export function readXcodeProject(bundle) {
 
     targets.push({
       name: target.name ?? target.productName ?? id,
+      productName: target.productName ?? null,
       productType,
       test: TESTS.test(productType),
       executable: EXECUTABLES.test(productType) && !TESTS.test(productType),
