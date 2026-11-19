@@ -23,7 +23,17 @@ export async function loadParser() {
   loaded = {
     vendored,
     /** Parses a text; the caller deletes the tree when done. */
-    parse: (text) => parser.parse(text),
+    parse: (text) => parser.parse(withoutDiagnostics(text)),
   };
   return loaded;
+}
+
+/**
+ * `#warning("…")` and `#error("…")` blanked out, every other character in place. They are messages for the compiler,
+ * and the grammar cannot read them inside a type's body: Vapor's `extension SocketAddress { #warning(…) init?(…) }`
+ * lost the extension and made its initializer top-level code.
+ */
+export function withoutDiagnostics(text) {
+  if (!text.includes('#warning') && !text.includes('#error')) return text;
+  return text.replace(/#(warning|error)\s*\(\s*"(?:[^"\\\n]|\\.)*"\s*\)/g, (m) => m.replace(/[^\n]/g, ' '));
 }

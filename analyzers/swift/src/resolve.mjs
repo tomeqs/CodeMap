@@ -144,6 +144,33 @@ class Resolver {
     return found;
   }
 
+  /** The typealias a name is, of the enclosing types or of the targets the context sees (a private one: its file's). */
+  aliasNamed(name, ctx) {
+    for (let e = ctx.entry; e; e = e.outer) {
+      const alias = e.members.find((m) => m.decl.kind === 'typeAlias' && m.decl.name === name);
+      if (alias) return alias;
+    }
+
+    for (const project of ctx.project ? this.visible(ctx.project) : []) {
+      const alias = this.inFile(this.aliases.get(project.id)?.get(name), ctx.file)[0];
+      if (alias) return alias;
+    }
+
+    return null;
+  }
+
+  /** The typealiases a type as written names (`[Addr]`, `Result<Box, Failure>`): uses of them. */
+  aliasesIn(text, ctx) {
+    if (!text) return [];
+    const out = new Set();
+    for (const name of new Set(text.match(/[A-Za-z_]\w*/g) ?? [])) {
+      const alias = this.aliasNamed(name, ctx);
+      if (alias?.id) out.add(alias);
+    }
+
+    return [...out];
+  }
+
   /** A typealias of the enclosing types or of the targets: the type it names. */
   aliasType(name, ctx, depth) {
     for (let e = ctx.entry; e; e = e.outer) {
@@ -272,6 +299,17 @@ class Resolver {
     for (let e = entry, i = 0; e && i < 32; e = this.superclassOf(e), i++) add(e);
     for (let e = entry, i = 0; e && i < 32; e = this.superclassOf(e), i++) for (const p of this.protocolsOf(e)) add(p);
     return out;
+  }
+
+  /** Whether a type, its superclasses or protocols are @dynamicMemberLookup: names on it may be another type's. */
+  looksUpMembers(entry) {
+    for (let e = entry, i = 0; e && i < 32; e = this.superclassOf(e), i++) {
+      for (const t of [e, ...this.protocolsOf(e)]) {
+        if ([...t.decls, ...t.extensions].some((d) => d.decl.attributes?.includes('dynamicMemberLookup'))) return true;
+      }
+    }
+
+    return false;
   }
 
   /** Members of a name a target adds to a type from outside (extension String { … }) that a context can see. */
@@ -685,6 +723,11 @@ class Resolver {
     const id = member.id;
     if (!id) return;
     const isVar = isVariable(member);
+    // A typealias named in the member's types is used by it.
+    for (const text of [isVar || decl.kind === 'typeAlias' ? decl.type : null, decl.returns, ...(decl.params ?? []).map((p) => p.type)]) {
+      for (const alias of this.aliasesIn(text, ctx)) if (alias !== member) this.edge(id, alias.id, 'uses');
+    }
+
     if (isVar || decl.kind === 'typeAlias') {
       for (const entry of this.typesIn(decl.type, ctx)) this.edge(id, entry.id, 'holds');
       if (!decl.type && decl.init?.call) {
@@ -773,6 +816,11 @@ class Resolver {
         if (call.viaType?.id && !named) this.edge(source, call.viaType.id, 'uses', ref.line);
         if (call.enumCase?.id && !named) this.edge(source, call.enumCase.id, 'uses', ref.line);
         if (call.member) this.implicitArguments(source, ref, call.member, scope);
+        // `Addr(1)`, `Box.Kind.empty`: the typealias it goes through.
+        if (fn[0] === 'n' || (fn[0] === 'm' && fn[1][0] === 'n')) {
+          const alias = this.aliasNamed(fn[0] === 'n' ? fn[1] : fn[1][1], scope.ctx);
+          if (alias?.id && !(scope.owner && this.membersNamed(scope.owner, fn[0] === 'n' ? fn[1] : fn[1][1]).some((m) => m !== alias && m.decl.kind !== 'typeAlias'))) this.edge(source, alias.id, 'uses', ref.line);
+        }
         return;
       }
 
@@ -792,7 +840,19 @@ class Resolver {
         const members = receiver?.entry ? this.membersNamed(receiver.entry, name, scope.project) : receiver?.ext ? this.outsideMembers(receiver.ext, name, scope.project) : [];
         const member = members.find((m) => isVariable(m)) ?? (members.length === 1 ? members[0] : null);
         if (member?.id) this.edge(source, member.id, isVariable(member) ? 'accesses' : 'calls', ref.line);
-        else if (!receiver || receiver.ext) this.untyped.add(name);
+        // A @dynamicMemberLookup type (swift-composable-architecture's Store) reads names of another type through it.
+        else if (!receiver || receiver.ext || (receiver.entry && this.looksUpMembers(receiver.entry))) this.untyped.add(name);
+        return;
+      }
+
+      case 'subscript': {
+        const receiver = this.typeOf(ref.e, scope);
+        let candidates = [];
+        if (receiver?.entry) candidates = this.membersNamed(receiver.entry, 'subscript', scope.project);
+        else if (receiver?.array || receiver?.dict) candidates = (receiver.array ? [...ARRAY_EXTENDED, 'Set'] : DICTIONARY_EXTENDED).flatMap((t) => this.outsideMembers(t, 'subscript', scope.project));
+        else if (receiver?.ext) candidates = this.outsideMembers(receiver.ext, 'subscript', scope.project);
+        const fitting = candidates.filter((m) => bindArguments(m.decl.params ?? [], ref.labels));
+        if (fitting.length === 1 && fitting[0].id) this.edge(source, fitting[0].id, 'accesses', ref.line);
         return;
       }
 
@@ -834,6 +894,7 @@ class Resolver {
 
       case 'type':
         for (const entry of this.typesIn(ref.text, scope.ctx)) this.edge(source, entry.id, 'uses', ref.line);
+        for (const alias of this.aliasesIn(ref.text, scope.ctx)) this.edge(source, alias.id, 'uses', ref.line);
         return;
       case 'catch':
         for (const entry of this.typesIn(ref.text, scope.ctx)) this.edge(source, entry.id, 'catches', ref.line);
@@ -898,7 +959,7 @@ class Resolver {
     seen.count++;
     if (seen.places.length < 3) seen.places.push(place);
     this.unresolved.set(key, seen);
-    if (fn[0] === 'm' && (call.unknownReceiver || call.receiver?.ext || call.receiver?.metaExt)) this.untyped.add(name);
+    if (fn[0] === 'm' && (call.unknownReceiver || call.receiver?.ext || call.receiver?.metaExt || (call.receiver?.entry && this.looksUpMembers(call.receiver.entry)))) this.untyped.add(name);
   }
 
   /** Private members of a name used on something of unknown type may be what it calls: not reported unused. */

@@ -77,9 +77,14 @@ class Reader {
         const e = this.expr(node, scope);
         if (e[0] === 'c') this.refs.push({ ev: 'call', e, line: line(node) });
         else if (e[0] === 'sub') {
-          // `lines[0]`, `self.lines[0]`: the property read.
+          // `lines[0]`, `self.lines[0]`: the property read; and the subscript, by its labels (`set[contains: x]`).
           if (e[1][0] === 'm') this.refs.push({ ev: 'access', e: e[1], line: line(node) });
           else if (e[1][0] === 'n') this.refs.push({ ev: 'name', name: e[1][1], line: line(node) });
+          const labels = args.map((a) => {
+            const label = a.childForFieldName('name') ?? a.childForFieldName('reference_specifier');
+            return label ? unquote(label.text) : '_';
+          });
+          this.refs.push({ ev: 'subscript', e: e[1], labels, line: line(node) });
         }
 
         // The callee is the call: visit what it is called on, and the arguments; a closure knows the call it is given to.

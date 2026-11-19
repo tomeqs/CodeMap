@@ -326,3 +326,52 @@ test('a private global or function is its own file’s: files of one target each
   assert.ok(map.hasEdge('swift:P:BView.build()', 'calls', 'swift:P:file:B.make()'));
   assert.ok(map.hasEdge('swift:P:CView.text', 'accesses', 'swift:P:file:C.shared'));
 });
+
+test('a typealias named in a declaration, a type or a call is used', () => {
+  // swift-nio: `private typealias in_addr = …`, used as a type, was reported unused: aliases had no edges.
+  const { map } = mapWithMisses({
+    'Socket.swift': 'private typealias Addr = Int32\nstruct Socket {\n  typealias Port = UInt16\n  var address: Addr = 0\n  func port() -> Port { 80 }\n  func make() -> Int32 { let a = Addr(1); return a }\n}\n',
+  });
+  assert.ok(map.hasEdge('swift:P:Socket.address', 'uses', 'swift:P:file:Socket.Addr'));
+  assert.ok(map.hasEdge('swift:P:Socket.port()', 'uses', 'swift:P:Socket.Port'));
+  assert.ok(map.hasEdge('swift:P:Socket.make()', 'uses', 'swift:P:file:Socket.Addr'));
+});
+
+test('#warning and #error inside a type do not take its declarations apart', () => {
+  // Vapor: `extension SocketAddress { #warning(…) init?(…) }` lost the extension, and the initializer became
+  // top-level code: a private `main` of the file reported unused.
+  const { map } = mapWithMisses({
+    'Address.swift': 'struct Address {\n  #warning("Handle UNIX sockets")\n  init?(_ port: Int) { return nil }\n  #error("not on this platform")\n  func host() -> String { "" }\n}\n',
+  });
+  assert.ok(map.has('swift:P:Address.init(_:)'));
+  assert.ok(map.has('swift:P:Address.host()'));
+  assert.ok(!map.has('swift:P:file:Address'), 'no top-level code');
+});
+
+test('names read through a @dynamicMemberLookup type may be private members elsewhere; subscripts resolve by their labels', () => {
+  // swift-composable-architecture: `store.isGameEnabled` reads Game.State's fileprivate property through Store's
+  // dynamic member lookup, and `$topics[contains: topic]` calls a fileprivate subscript: both reported unused.
+  const { map } = mapWithMisses({
+    'Game.swift': `@dynamicMemberLookup
+final class Store<State> {
+  var state: State
+  init(_ state: State) { self.state = state }
+  subscript<T>(dynamicMember keyPath: KeyPath<State, T>) -> T { state[keyPath: keyPath] }
+}
+struct GameState { var won = false }
+extension GameState {
+  fileprivate var isGameEnabled: Bool { !won }
+}
+extension Set {
+  fileprivate subscript(contains element: Element) -> Bool { contains(element) }
+}
+final class GameController {
+  let store = Store(GameState())
+  var topics: Set<Int> = []
+  func update() -> Bool { store.isGameEnabled && topics[contains: 1] }
+}
+`,
+  });
+  assert.ok(map.node('swift:P:GameState.isGameEnabled').tags?.includes('maybe-used'));
+  assert.ok(map.hasEdge('swift:P:GameController.update()', 'accesses', 'swift:P:extension:Set.subscript(contains:)'));
+});
