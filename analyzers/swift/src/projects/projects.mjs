@@ -141,7 +141,7 @@ export function buildProjects(found, parse) {
 
   const kept = projects.filter((p) => p.files.length);
   assignIds(kept);
-  link(kept, { packages, podfiles, projects });
+  link(kept, { packages, podfiles, all: projects, fileProject });
   return { projects: kept, fileProject, warnings };
 }
 
@@ -223,10 +223,30 @@ function assignIds(projects) {
 }
 
 /** Dependencies between projects (projectReference) and on packages outside the map (packageReference). */
-function link(projects, { packages, podfiles }) {
+function link(projects, { packages, podfiles, all = projects, fileProject = new Map() }) {
   const byName = new Map();
   for (const project of projects) if (!byName.has(project.name)) byName.set(project.name, project);
   const sameContainer = (project, name) => projects.find((p) => p.name === name && p.container === project.container && p.kind === project.kind) ?? null;
+  // An Xcode target left with no files because a package holds them (Kingfisher.xcodeproj's Kingfisher framework):
+  // what depends on it depends on the projects that hold its files.
+  const holdersOf = (dropped) => {
+    const target = dropped?.source?.target;
+    if (!target) return [];
+    const owners = new Set();
+    for (const file of target.files ?? []) if (fileProject.get(file)) owners.add(fileProject.get(file));
+    for (const folder of target.folders ?? []) for (const [file, owner] of fileProject) if (isUnder(file, folder.dir)) owners.add(owner);
+    return [...owners].filter((p) => !p.test);
+  };
+  const xcodeTarget = (project, name) => {
+    const kept = sameContainer(project, name);
+    if (kept) return [kept];
+    return holdersOf(all.find((p) => p.name === name && p.container === project.container && p.kind === 'xcode' && !p.files.length));
+  };
+  // A framework another project of the map builds (a workspace's Kingfisher.framework); system frameworks are not.
+  const framework = (project, name) => {
+    const built = projects.filter((p) => p.name === name && !p.test);
+    return built.length ? built : holdersOf(all.find((p) => p.name === name && p.kind === 'xcode' && !p.files.length));
+  };
   // Products of the packages read: name → targets, and the package each product is in.
   const products = new Map();
   for (const pkg of packages) for (const product of pkg.products) products.set(`${pkg.name}|${product.name}`, product.targets);
@@ -263,7 +283,8 @@ function link(projects, { packages, podfiles }) {
         }
       }
     } else if (source.xcode) {
-      for (const name of source.target.dependencies) refer(project, sameContainer(project, name));
+      for (const name of source.target.dependencies) for (const other of xcodeTarget(project, name)) refer(project, other);
+      for (const name of source.target.frameworks ?? []) for (const other of framework(project, name)) refer(project, other);
       for (const product of source.target.products) {
         const local = productTargets(product.path ? packages.find((p) => p.dir === product.path)?.name ?? null : product.package, product.product);
         if (local?.length) for (const other of local) refer(project, other);

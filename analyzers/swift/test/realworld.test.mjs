@@ -193,3 +193,71 @@ final class WaiterTests: XCTestCase {
   assert.ok(!map.hasEdge('swift:OtherTests:WaiterTests.testWait()', 'calls', 'swift:P:Waiter.wait()'));
   assert.deepEqual(misses.filter((m) => m[1] === '*').map((m) => m[2]), []);
 });
+
+test("an Xcode target depending on one whose files a package holds, or linking a framework another project builds, depends on the package's target", () => {
+  // Kingfisher: its .xcodeproj's tests depend on the project's Kingfisher framework target, whose files Package.swift
+  // holds, and the demo project links Kingfisher.framework: the tests and the four demos saw none of Kingfisher.
+  const { map } = mapWithMisses({
+    'Package.swift': '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: "Lib", targets: [.target(name: "Lib")])\n',
+    'Sources/Lib/Store.swift': 'public final class Store {\n  public init() {}\n  public func load() -> Int { 1 }\n}\n',
+    'Tests/LibTests/StoreTests.swift': 'import XCTest\nimport Lib\nfinal class StoreTests: XCTestCase {\n  func testLoad() { XCTAssertEqual(Store().load(), 1) }\n}\n',
+    'Lib.xcodeproj/project.pbxproj': `{ objects = {
+  R = { isa = PBXProject; mainGroup = G; targets = (TL, TT); };
+  G = { isa = PBXGroup; children = (F1, F2); sourceTree = "<group>"; };
+  F1 = { isa = PBXFileReference; path = Sources/Lib/Store.swift; sourceTree = "<group>"; };
+  F2 = { isa = PBXFileReference; path = Tests/LibTests/StoreTests.swift; sourceTree = "<group>"; };
+  B1 = { isa = PBXBuildFile; fileRef = F1; };
+  B2 = { isa = PBXBuildFile; fileRef = F2; };
+  SL = { isa = PBXSourcesBuildPhase; files = (B1); };
+  ST = { isa = PBXSourcesBuildPhase; files = (B2); };
+  TL = { isa = PBXNativeTarget; name = Lib; productType = "com.apple.product-type.framework"; buildPhases = (SL); };
+  D1 = { isa = PBXTargetDependency; target = TL; };
+  TT = { isa = PBXNativeTarget; name = LibTests; productType = "com.apple.product-type.bundle.unit-test"; buildPhases = (ST); dependencies = (D1); };
+}; rootObject = R; }`,
+    'Demo/App.swift': 'import UIKit\nimport Lib\nfinal class AppController {\n  func start() -> Int { Store().load() }\n}\n',
+    'Demo/Demo.xcodeproj/project.pbxproj': `{ objects = {
+  R = { isa = PBXProject; mainGroup = G; targets = (TA); };
+  G = { isa = PBXGroup; children = (F1, FW, UK); sourceTree = "<group>"; };
+  F1 = { isa = PBXFileReference; path = App.swift; sourceTree = "<group>"; };
+  FW = { isa = PBXFileReference; path = Lib.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+  UK = { isa = PBXFileReference; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+  B1 = { isa = PBXBuildFile; fileRef = F1; };
+  BF = { isa = PBXBuildFile; fileRef = FW; };
+  BU = { isa = PBXBuildFile; fileRef = UK; };
+  S = { isa = PBXSourcesBuildPhase; files = (B1); };
+  FP = { isa = PBXFrameworksBuildPhase; files = (BF, BU); };
+  TA = { isa = PBXNativeTarget; name = Demo; productType = "com.apple.product-type.application"; buildPhases = (S, FP); };
+}; rootObject = R; }`,
+  });
+  assert.ok(map.hasEdge('swift:project:LibTests', 'projectReference', 'swift:project:Lib'));
+  assert.ok(map.hasEdge('swift:project:Demo', 'projectReference', 'swift:project:Lib'));
+  assert.deepEqual(map.edgesFrom('swift:project:Demo', 'projectReference'), ['swift:project:Lib'], 'UIKit.framework is not a project of the map');
+  assert.ok(map.hasEdge('swift:LibTests:StoreTests.testLoad()', 'calls', 'swift:Lib:Store.load()'));
+  assert.ok(map.hasEdge('swift:Demo:AppController.start()', 'calls', 'swift:Lib:Store.load()'));
+});
+
+test('foo(x) { … } is one call of foo with its trailing closure', () => {
+  // swift-composable-architecture: `let store = TestStore(initialState: …) { Feature() }` read as a call of
+  // TestStore(initialState:)'s result, so `store` had no type and 782 `store.send(…)` were missed.
+  const { map, misses } = mapWithMisses({
+    'Store.swift': `final class Store {
+  init(initialState: Int, reducer: () -> Int) {}
+  func send(_ action: Int) {}
+}
+final class Runner {
+  func run(_ x: Int) {}
+  func run(_ x: Int, then: () -> Void) {}
+}
+func use() {
+  let store = Store(initialState: 1) { 2 }
+  store.send(3)
+  Runner().run(1) { }
+}
+`,
+  });
+  assert.ok(map.hasEdge('swift:P:file:Store.use()', 'calls', 'swift:P:Store.init(initialState:reducer:)'));
+  assert.ok(map.hasEdge('swift:P:file:Store.use()', 'calls', 'swift:P:Store.send(_:)'));
+  assert.ok(map.hasEdge('swift:P:file:Store.use()', 'calls', 'swift:P:Runner.run(_:then:)'));
+  assert.ok(!map.hasEdge('swift:P:file:Store.use()', 'calls', 'swift:P:Runner.run(_:)'), 'the closure is an argument of run');
+  assert.deepEqual(misses.filter((m) => m[1] === '*').map((m) => m[2]), []);
+});
