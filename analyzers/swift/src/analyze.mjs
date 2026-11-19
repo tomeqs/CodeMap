@@ -5,6 +5,7 @@ import { extractFile } from './extract/declarations.mjs';
 import { Graph } from './graph.mjs';
 import { buildModel, placeOf } from './model.mjs';
 import { buildProjects } from './projects/projects.mjs';
+import { resolveReferences } from './resolve.mjs';
 
 /** Files longer than this (in characters) are left out: generated tables. 4 MB of Swift parses in about a second. */
 const MAX_LENGTH = 8 * 1024 * 1024;
@@ -86,8 +87,10 @@ export function analyze(parser, request, log = () => {}) {
   for (const project of kept) project.references = project.references.filter((r) => kept.includes(r));
   log(`${files.length} file(s) in ${kept.length} target(s)`);
   const graph = new Graph();
-  buildModel({ files, projects: kept, root, graph });
+  const model = buildModel({ files, projects: kept, root, graph });
   timing.mark('model');
+  resolveReferences(model, graph, { log, stats: Boolean(process.env.CODEMAP_SWIFT_STATS), unresolvedFile: process.env.CODEMAP_SWIFT_UNRESOLVED || null });
+  timing.mark('references');
 
   if (counts.generated) warnings.push(`${counts.generated} generated file(s) were skipped.`);
   if (counts.tests) warnings.push(`${counts.tests} test file(s) were left out.`);

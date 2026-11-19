@@ -1,3 +1,4 @@
+import { expr, implicitOf, readBody as readRefs } from './bodies.mjs';
 import { complexityOf } from './complexity.mjs';
 
 /**
@@ -13,6 +14,7 @@ import { complexityOf } from './complexity.mjs';
  */
 export function extractFile(tree) {
   const facts = { imports: [], types: [], functions: [], variables: [], aliases: [], topLevel: null };
+  const statements = [];
   eachDeclaration(tree.rootNode, (node, doc) => {
     switch (node.type) {
       case 'import_declaration': {
@@ -47,9 +49,11 @@ export function extractFile(tree) {
         const top = (facts.topLevel ??= { line, endLine, complexity: 0 });
         top.endLine = Math.max(top.endLine, endLine);
         top.complexity += complexityOf(node);
+        statements.push(node);
       }
     }
   });
+  if (facts.topLevel) Object.assign(facts.topLevel, readRefs(statements));
   return facts;
 }
 
@@ -88,7 +92,7 @@ function readType(node, doc) {
   const body = node.childForFieldName('body');
   const decl = {
     kind,
-    name: kind === 'extension' ? typeName(nameNode) : (nameNode?.text ?? ''),
+    name: kind === 'extension' ? typeName(nameNode) : unquote(nameNode?.text ?? ''),
     access,
     modifiers,
     attributes,
@@ -150,7 +154,7 @@ function readBody(body, decl) {
         for (const name of node.childrenForFieldName('name')) {
           if (name.type !== 'simple_identifier') continue;
           const data = node.childForFieldName('data_contents');
-          decl.cases.push({ name: name.text, labels: data ? caseLabels(data) : null, line: node.startPosition.row + 1 });
+          decl.cases.push({ name: unquote(name.text), labels: data ? caseLabels(data) : null, line: node.startPosition.row + 1 });
         }
 
         return;
@@ -174,11 +178,14 @@ function caseLabels(data) {
   return labels;
 }
 
+/** A name without the backticks that let a keyword be one: `default` → default. */
+export const unquote = (name) => name.replace(/`/g, '');
+
 /** A type's name as written, without its generic arguments: Order, Order.Line, Array. */
 export function typeName(node) {
   if (!node) return '';
   if (node.type === 'user_type') {
-    const parts = node.namedChildren.filter((c) => c.type === 'type_identifier').map((c) => c.text);
+    const parts = node.namedChildren.filter((c) => c.type === 'type_identifier').map((c) => unquote(c.text));
     if (parts.length) return parts.join('.');
   }
 
@@ -233,7 +240,7 @@ function readFunction(node, doc, kind, owner) {
   else if (kind === 'subscript') name = 'subscript';
   else {
     const field = node.childrenForFieldName('name').find((c) => c.type === 'simple_identifier');
-    name = field?.text ?? /func\s+([^\s(<]+)/.exec(node.text)?.[1] ?? '?';
+    name = unquote(field?.text ?? /func\s+([^\s(<]+)/.exec(node.text)?.[1] ?? '?');
   }
 
   const params = [];
@@ -257,7 +264,12 @@ function readFunction(node, doc, kind, owner) {
   }
 
   if (/^init[?!]/.test(node.text.replace(/^[^]*?\binit\b/, 'init'))) modifiers.add('failable');
+  const { refs, locals } = body ? readRefs([body], params) : { refs: [], locals: {} };
   return {
+    refs,
+    locals,
+    generics: node.namedChildren.find((c) => c.type === 'type_parameters')?.text,
+    where: node.namedChildren.find((c) => c.type === 'type_constraints')?.text,
     kind: kind === 'deinit' ? 'method' : kind === 'subscript' ? 'property' : kind,
     name,
     labels: params.map((p) => p.label),
@@ -277,8 +289,11 @@ function readFunction(node, doc, kind, owner) {
 }
 
 function readParameter(node, subscript) {
-  const external = node.childForFieldName('external_name')?.text;
-  const local = node.namedChildren.find((c) => c.type === 'simple_identifier' && c !== node.childForFieldName('external_name'))?.text ?? '_';
+  // Nodes are new objects on every call: told apart by id. With an external name, the local one is the second.
+  const externalNode = node.childForFieldName('external_name');
+  const external = externalNode ? unquote(externalNode.text) : undefined;
+  const names = node.namedChildren.filter((c) => c.type === 'simple_identifier' && c.id !== externalNode?.id);
+  const local = names[0] ? unquote(names[0].text) : '_';
   const type = [...node.namedChildren].reverse().find((c) => c.type !== 'simple_identifier' && c.type !== 'parameter_modifiers' && !/comment/.test(c.type));
   return {
     label: external ?? (subscript ? '_' : local),
@@ -323,7 +338,14 @@ function readProperties(node, doc, defaultKind, owner) {
   if (isLet) shared.add('readonly');
   return out.map((p) => {
     const kind = p.computed ? 'property' : defaultKind === 'property' ? 'property' : defaultKind;
+    const bodies = [p.computed && p.computed.type !== 'protocol_property_requirements' ? p.computed : null, p.value].filter(Boolean);
+    const { refs, locals } = bodies.length ? readRefs(bodies) : { refs: [], locals: {} };
+    // `let made: Line = .init()`: the implicit member is the declared type's.
+    const implicit = p.type && p.value ? implicitOf(p.type, expr(p.value)) : null;
+    if (implicit) refs.push({ ev: 'call', e: implicit, line: p.value.startPosition.row + 1 });
     return {
+      refs,
+      locals,
       kind,
       name: p.name,
       labels: null,
@@ -331,6 +353,7 @@ function readProperties(node, doc, defaultKind, owner) {
       returns: null,
       type: p.type,
       init: initOf(p.value),
+      initE: p.value && !p.type ? expr(p.value) : undefined,
       access,
       modifiers: [...shared],
       attributes,
@@ -348,10 +371,10 @@ function readProperties(node, doc, defaultKind, owner) {
 /** The names a binding pattern binds: `x`, `(a, b)`. */
 function patternNames(pattern) {
   const bound = pattern.childForFieldName('bound_identifier');
-  if (bound) return [bound.text];
+  if (bound) return [unquote(bound.text)];
   const names = [];
   const visit = (node) => {
-    if (node.type === 'simple_identifier') names.push(node.text);
+    if (node.type === 'simple_identifier') names.push(unquote(node.text));
     else for (const child of node.namedChildren) if (child.type === 'pattern' || child.type === 'simple_identifier') visit(child);
   };
   visit(pattern);
