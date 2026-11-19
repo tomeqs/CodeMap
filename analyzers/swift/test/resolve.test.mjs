@@ -153,3 +153,28 @@ final class Box {
     dispose();
   }
 });
+
+test('a target sees the targets it depends on through others; guard let x on a property is the property', () => {
+  const { dir, dispose } = scratch({
+    'Package.swift': '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "A"), .target(name: "B", dependencies: ["A"]), .target(name: "C", dependencies: ["B"])])\n',
+    'Sources/A/Store.swift': 'public final class Store {\n  public init() {}\n  public func load() -> Int { 1 }\n}\n',
+    'Sources/B/Middle.swift': 'import A\npublic struct Middle {}\n',
+    'Sources/C/Top.swift': `import A
+final class Top {
+  var store: Store?
+  func run() -> Int {
+    guard let store else { return 0 }
+    return store.load() + Store().load()
+  }
+}
+`,
+  });
+  try {
+    const fragment = run(dir);
+    assert.ok(fragment.hasEdge('swift:C:Top.run()', 'calls', 'swift:A:Store.load()'));
+    assert.ok(fragment.hasEdge('swift:C:Top.run()', 'instantiates', 'swift:A:Store'));
+    assert.ok(fragment.hasEdge('swift:C:Top.run()', 'accesses', 'swift:C:Top.store'));
+  } finally {
+    dispose();
+  }
+});

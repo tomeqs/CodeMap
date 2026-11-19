@@ -1,6 +1,6 @@
 # CodeMap
 
-An interactive **3D map of your code**: C# solutions, TypeScript / JavaScript and C / C++ (with Node.js 18+) and Python (with Python 3.9+), or all of them in one map.
+An interactive **3D map of your code**: C# solutions, TypeScript / JavaScript, C / C++ and Swift (with Node.js 18+) and Python (with Python 3.9+), or all of them in one map.
 CodeMap turns the code into a graph of its relationships (types, members, calls, imports, inheritance, dependency
 injection…) and opens it in the browser: Galaxy, City, Layers, DI and Flow views, with call flows and sequence diagrams.
 
@@ -21,6 +21,9 @@ codemap --version                    # which languages are available here
 - **C / C++**: CMake targets, Visual Studio projects, Unreal Engine modules or folders of sources, without building or
   configuring them; classes, calls and inheritance resolved from the declared types; tests, Qt and Unreal recognised.
   Needs Node.js 18 or newer.
+- **Swift**: Swift packages, Xcode projects and workspaces, Tuist, XcodeGen and CocoaPods, without Xcode or a Swift
+  toolchain; extensions joined to their types, calls told apart by their argument labels; XCTest, Swift Testing,
+  SwiftUI, UIKit / AppKit and Vapor routes recognised. Needs Node.js 18 or newer.
 - **Insights**: architecture layers and upward dependencies, DI lifetime problems (captive dependencies, request scope,
   unreachable providers), cycles, hotspots from git history, possibly unused code.
 

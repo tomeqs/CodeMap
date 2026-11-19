@@ -1,0 +1,116 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B1000001 /* ShopiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000001 /* ShopiOSApp.swift */; };
+		B1000002 /* Cart.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000002 /* Cart.swift */; };
+		B1000003 /* CartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000003 /* CartView.swift */; };
+		B1000004 /* CheckoutViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000004 /* CheckoutViewController.swift */; };
+		B1000005 /* ShopKit in Frameworks */ = {isa = PBXBuildFile; productRef = D1000001 /* ShopKit */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		C1000001 /* ShopiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShopiOSApp.swift; sourceTree = "<group>"; };
+		C1000002 /* Cart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cart.swift; sourceTree = "<group>"; };
+		C1000003 /* CartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CartView.swift; sourceTree = "<group>"; };
+		C1000004 /* CheckoutViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckoutViewController.swift; sourceTree = "<group>"; };
+		C1000010 /* ShopiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ShopiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		E1000000 = {
+			isa = PBXGroup;
+			children = (
+				E1000001 /* iOS */,
+				E1000002 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		E1000001 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				C1000001 /* ShopiOSApp.swift */,
+				C1000002 /* Cart.swift */,
+				C1000003 /* CartView.swift */,
+				C1000004 /* CheckoutViewController.swift */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+		E1000002 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C1000010 /* ShopiOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F1000001 /* ShopiOS */ = {
+			isa = PBXNativeTarget;
+			buildPhases = (
+				A1000001 /* Sources */,
+			);
+			dependencies = (
+			);
+			name = ShopiOS;
+			packageProductDependencies = (
+				D1000001 /* ShopKit */,
+			);
+			productName = ShopiOS;
+			productReference = C1000010 /* ShopiOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		G1000000 /* Project object */ = {
+			isa = PBXProject;
+			mainGroup = E1000000;
+			packageReferences = (
+				H1000001 /* XCLocalSwiftPackageReference "." */,
+			);
+			productRefGroup = E1000002 /* Products */;
+			targets = (
+				F1000001 /* ShopiOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A1000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B1000001 /* ShopiOSApp.swift in Sources */,
+				B1000002 /* Cart.swift in Sources */,
+				B1000003 /* CartView.swift in Sources */,
+				B1000004 /* CheckoutViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		H1000001 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D1000001 /* ShopKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ShopKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = G1000000 /* Project object */;
+}

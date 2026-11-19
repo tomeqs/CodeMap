@@ -13,7 +13,7 @@ internal static partial class Tools
         sim: id, and the tag "simulated".
 
         {"op":"moveType","type":"<type>","to":"<namespace>"}
-            Move a type (a file in TypeScript, a module in Python, a class or a header's functions in C++) with its members into another namespace (folder, package).
+            Move a type (a file in TypeScript, a module in Python, a class or a header's functions in C++, a type or a file's functions in Swift) with its members into another namespace (folder, package).
         {"op":"moveMember","member":"<member>","to":"<type or class>"}
             Move a method, property or field to another type: e.g. the fix for feature envy.
         {"op":"moveNamespace","namespace":"<namespace>","toProject":"<project>"}

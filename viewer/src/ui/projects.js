@@ -36,7 +36,7 @@ function ago(date) {
 }
 
 const ICONS = { solution: '◆', project: '●', folder: '▸', place: '⌂' };
-const SHORT_NAMES = { csharp: 'C#', typescript: 'TS', python: 'PY', cpp: 'C++' };
+const SHORT_NAMES = { csharp: 'C#', typescript: 'TS', python: 'PY', cpp: 'C++', swift: 'Swift' };
 
 /** Files the languages take as input (from the server), as one test; C#'s when the server does not say. */
 function inputTest(languages) {

@@ -74,6 +74,7 @@ pojedynczej i mnogiej, a `external` nazywa kod spoza analizy. Viewer bierze stą
 | TypeScript (`typescript`) | Package / Packages | Folder / Folders | File / Files | Declaration / Declarations | npm packages |
 | Python (`python`) | Project / Projects | Package / Packages | Module / Modules | Declaration / Declarations | PyPI packages |
 | C/C++ (`cpp`) | Project / Projects | Namespace / Namespaces | Type / Types | Member / Members | libraries |
+| Swift (`swift`) | Target / Targets | Folder / Folders | Type / Types | Member / Members | packages |
 
 W TypeScripcie jednostką mapy jest plik (`module`, `level: "type"`), a klasy, interfejsy, funkcje, aliasy typów
 i stałe są jego składowymi (`level: "member"`); metody klasy mają ją za `parent` i też są składowymi. Metryki pliku
@@ -99,6 +100,23 @@ definicjami. Id: `cpp:project:<projekt>`, `cpp:ns:<projekt>/<namespace>` (`a::b`
 biblioteki `cpp:lib:<nazwa>` (`cpp:lib:Qt6::Widgets`). Modyfikatory: `static`, `virtual`, `override`, `abstract`, `sealed`
 (`final`), `const`, `constexpr`, `inline`, `extern`, `explicit`, `union`, `signal` (sygnał Qt), `nodiscard`.
 
+W Swifcie mapa ma kształt target → folder → typ → składowa: projekty to targety (Swift Package Manager, Xcode, Tuist,
+XcodeGen, podspec CocoaPods, a dla plików poza nimi folder), namespace’y to foldery w targecie (`Orders`; pliki na samej
+górze targetu leżą w namespace’ie o nazwie targetu), typy to `class` (także `actor` z modyfikatorem `actor`), `struct`,
+`enum`, `interface` (protokół), `extension` (rozszerzenie typu spoza mapy, jedno na target i folder) i `module` (funkcje
+wolne, zmienne globalne, kod na najwyższym poziomie i bloki `#Preview` jednego pliku), a składowe to `method` (także
+`deinit`), `constructor` (`init`), `property` (właściwości obliczane i `subscript`), `field` (przechowywane `let` / `var`),
+`typeAlias` (`typealias`, `associatedtype`), a w `module` także `function` i `variable`. Rozszerzenie typu z mapy łączy
+się z nim: jego składowe i protokoły należą do typu, a plik rozszerzenia trafia do `extraLocations` typu. Id:
+`swift:project:<target>`, `swift:ns:<target>/<folder>`, `swift:<target>:<typ>` (zagnieżdżone `Order.Line`), składowe
+z etykietami argumentów (`swift:Shop:Order.addLine(_:quantity:)`; typy parametrów tylko wtedy, gdy dwa przeciążenia mają
+te same etykiety: `add(_:Line)`; składowa statyczna o nazwie i etykietach składowej instancji dostaje `#static`),
+`swift:<target>:extension:<folder>/<typ>`, `swift:<target>:file:<ścieżka bez rozszerzenia>`, paczki `swift:pkg:<nazwa>`.
+`open` i `public` to `public`, `package` i `internal` to `internal`, `fileprivate` i `private` to `private`; `open`,
+`package` i `fileprivate` zostają też modyfikatorami. Inne modyfikatory: `static`, `final`, `override`, `mutating`,
+`async`, `throws`, `lazy`, `weak`, `nonisolated`, `required`, `convenience`, `private(set)`…; atrybuty (`@MainActor`,
+`@Published`, makra) są w `attributes`.
+
 Mapa kilku języków (np. folder z solucją C# i aplikacją TypeScript) ma wszystkie w `source.languages`, a projekty i paczki
 każdego mają swój `language`.
 
@@ -115,14 +133,14 @@ każdego mają swój `language`.
 | Tag | Znaczenie |
 |---|---|
 | `controller`, `dbcontext`, `repository`, `service`, `handler`, `hosted-service`, `middleware`, `hub`, `exception`, `attribute`, `options`, `dto`, `validator`, `factory`, `extensions` | rozpoznane role (dziedziczenie, interfejsy, atrybuty, konwencje nazw) |
-| `page`, `component` | C#: strona Razor (`PageModel` albo code-behind pliku `.cshtml`) i komponent Blazora (`ComponentBase` albo code-behind pliku `.razor`); ich składowe nie są „nieużywane”, bo używa ich markup. `component` także dla komponentów Angulara |
-| `test`, `test-project` | klasa/metoda testowa, projekt testowy; w TypeScripcie także pliki w `test/`, `tests/`, `__tests__/`, `__fixtures__/`, `__testfixtures__/` oraz `*.test-d.ts`; w Pythonie `test_*.py`, `*_test.py`, `tests.py`, `conftest.py`, pliki w `tests/` i klasy `TestCase`; w C++ testy GoogleTest, Catch2, doctest, Boost.Test i Qt Test, pliki w `test/` / `tests/` i `*_test.cpp`, targety CMake linkujące framework testów |
-| `entity` | model ORM: Django, SQLAlchemy (także Flask-SQLAlchemy i SQLModel z `table=True`) |
-| `entrypoint` | `Main`, top-level statements, projekt wykonywalny; w C/C++ `main` (i `WinMain`, `DllMain`…), funkcje Unreal wołane z Blueprintów i przez sieć, tryby gry; w TypeScripcie pliki z `main`, `module`, `bin` i `exports` w package.json (bez warunków `types`), pliki uruchamiające kod, których nikt nie importuje, i pliki, które framework ładuje sam (Next.js, SvelteKit, SolidStart, Astro, Nuxt) |
-| `route` | trasa HTTP (Express, NestJS; w Pythonie FastAPI, Flask, Django i Django REST framework, z pełną ścieżką na początku `doc`) albo plik trasy w routingu plikowym (`app/**/page.tsx`, `pages/**`, `+page.svelte`, `src/routes/**`, `server/api/**`) |
+| `page`, `component` | C#: strona Razor (`PageModel` albo code-behind pliku `.cshtml`) i komponent Blazora (`ComponentBase` albo code-behind pliku `.razor`); ich składowe nie są „nieużywane”, bo używa ich markup. `component` także dla komponentów Angulara, widoków SwiftUI i kontrolerów, widoków i komórek UIKit / AppKit |
+| `test`, `test-project` | klasa/metoda testowa, projekt testowy; w TypeScripcie także pliki w `test/`, `tests/`, `__tests__/`, `__fixtures__/`, `__testfixtures__/` oraz `*.test-d.ts`; w Pythonie `test_*.py`, `*_test.py`, `tests.py`, `conftest.py`, pliki w `tests/` i klasy `TestCase`; w C++ testy GoogleTest, Catch2, doctest, Boost.Test i Qt Test, pliki w `test/` / `tests/` i `*_test.cpp`, targety CMake linkujące framework testów; w Swifcie `XCTestCase` z metodami `test…`, `@Test` i `@Suite` (Swift Testing), `PreviewProvider` i `#Preview`, targety testów, pliki w `Tests/` i `*Tests.swift` |
+| `entity` | model ORM: Django, SQLAlchemy (także Flask-SQLAlchemy i SQLModel z `table=True`); w Swifcie `Model` Fluenta |
+| `entrypoint` | `Main`, top-level statements, projekt wykonywalny; w C/C++ `main` (i `WinMain`, `DllMain`…), funkcje Unreal wołane z Blueprintów i przez sieć, tryby gry; w Swifcie typy `@main` z `main()`, kod na najwyższym poziomie `main.swift`, `App` SwiftUI, delegaty aplikacji i sceny, `boot(routes:)` kolekcji tras Vapora, targety wykonywalne; w TypeScripcie pliki z `main`, `module`, `bin` i `exports` w package.json (bez warunków `types`), pliki uruchamiające kod, których nikt nie importuje, i pliki, które framework ładuje sam (Next.js, SvelteKit, SolidStart, Astro, Nuxt) |
+| `route` | trasa HTTP (Express, NestJS; w Pythonie FastAPI, Flask, Django i Django REST framework, w Swifcie Vapor, z pełną ścieżką na początku `doc`) albo plik trasy w routingu plikowym (`app/**/page.tsx`, `pages/**`, `+page.svelte`, `src/routes/**`, `server/api/**`) |
 | `config`, `barrel` | TypeScript: konfiguracja narzędzia w katalogu paczki (`vite.config.ts`, `.eslintrc.cjs`) i plik złożony tylko z importów i re-eksportów (`index.ts` folderu); Python: `setup.py`, `noxfile.py`, `docs/conf.py`, ustawienia Django, `__init__.py` tylko z importami |
 | `init` | Python: `__init__.py` z kodem, który wykonuje się przy imporcie pakietu |
-| `maybe-used` | C++: metoda `Q_INVOKABLE` (woła ją QML). Python: prywatna składowa, której może używać kod, którego analiza nie śledzi: jej nazwa pada na obiekcie nieznanego typu albo w `getattr`, albo to metoda klasy dziedziczącej po klasie spoza analizy (która może ją wołać jako hook); nie jest zgłaszana jako nieużywana |
+| `maybe-used` | C++: metoda `Q_INVOKABLE` (woła ją QML). Swift: składowa `@objc`, `@IBOutlet`, `@NSManaged` (sięga po nią runtime Objective-C albo Interface Builder) i prywatna składowa, której nazwa pada na obiekcie nieznanego typu. Python: prywatna składowa, której może używać kod, którego analiza nie śledzi: jej nazwa pada na obiekcie nieznanego typu albo w `getattr`, albo to metoda klasy dziedziczącej po klasie spoza analizy (która może ją wołać jako hook); nie jest zgłaszana jako nieużywana |
 | `generated` | `[GeneratedCode]`, `[CompilerGenerated]` |
 | `positional` | właściwość z parametru pozycyjnego rekordu |
 | `in-cycle` | element należy do cyklu zależności |

@@ -399,3 +399,34 @@ test('live updates follow folders and renames, and a save during the first analy
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('live updates follow Swift sources, packages and Xcode projects, not build output or dependencies', () => {
+  const { isSourceFile } = require('../../src/extension');
+  for (const file of ['Sources/Shop/Order.swift', 'Package.swift', 'App.xcodeproj/project.pbxproj', 'App.xcworkspace/contents.xcworkspacedata', 'Project.swift', 'project.yml', 'Podfile', 'Toast.podspec']) {
+    assert.ok(isSourceFile(file), file);
+  }
+
+  for (const file of ['.build/checkouts/swift-nio/Sources/NIO/a.swift', 'DerivedData/x/y.swift', 'Pods/Alamofire/Source/Session.swift', 'Carthage/Checkouts/a.swift', 'SourcePackages/checkouts/b.swift', 'App/R.generated.swift', 'App.xcodeproj/xcuserdata/me.xcuserdatad/a.swift']) {
+    assert.ok(!isSourceFile(file), file);
+  }
+});
+
+test('Swift: the folder without asking; asked to choose, the Xcode projects and workspaces after it', async () => {
+  const app = path.resolve(extensionPath, '..', 'samples', 'shop-swift');
+  const files = [path.join(app, 'Package.swift'), path.join(app, 'Sources', 'ShopDomain', 'Money.swift'), path.join(app, 'ShopiOS.xcodeproj', 'project.pbxproj'), path.join(app, 'ShopiOS.xcodeproj', 'project.xcworkspace', 'contents.xcworkspacedata'), path.join(app, 'Shop.xcworkspace', 'contents.xcworkspacedata')];
+  const { vscode, log } = createMock({ workspaceRoot: app, files });
+  const restore = installMock(vscode);
+  try {
+    const { CodeMapController, targetRoot } = require('../../src/extension');
+    const controller = new CodeMapController(fakeContext(extensionPath));
+    assert.equal(await controller.pickTarget(), app);
+    assert.equal(log.quickPicks.length, 0);
+    assert.equal(await controller.pickTarget({ always: true }), app); // the mock picks the first item: the folder
+    assert.deepEqual(log.quickPicks[0].map((i) => i.label), [`$(folder) ${path.basename(app)}`, 'Shop.xcworkspace', 'ShopiOS.xcodeproj']);
+    // An Xcode project is a folder but a project file: the map is rooted at the folder it is in.
+    assert.equal(targetRoot(path.join(app, 'ShopiOS.xcodeproj')), app);
+    assert.equal(targetRoot(app), app);
+  } finally {
+    restore();
+  }
+});

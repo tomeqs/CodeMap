@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Swift**, as a fifth language, with nothing to install: the analyzer reads it with tree-sitter on VS Code's own Node.js, so an iOS or macOS app maps without Xcode, a Swift toolchain or a build, on any platform.
+  - Targets from Swift packages (`Package.swift` is read, not run), Xcode projects and workspaces (Xcode 16's synchronized folders too), Tuist, XcodeGen and CocoaPods. A folder with both a package and an `.xcodeproj` of the same files is mapped by the package.
+  - A map of targets, folders, types and members. Extensions join their type (a type extended in a second file has both places); extensions of types from outside (`extension String`) are grouped per folder; free functions and top-level code sit in a module per file.
+  - Calls told apart by their argument labels (`add(_:)` and `add(_:quantity:)` are two nodes), then by their arguments' types; closures typed from the parameter they are passed to; leading-dot members (`.paid`, `.init(…)`) from the type the context expects. Inheritance, protocol conformance (also from an extension), overrides, `init` injection, property types, `throw` and `catch`; a protocol call reaches its implementations in the Flow view, and a call that cannot be told gives no edge.
+  - XCTest and Swift Testing; SwiftUI views as components, `App` as an entry point, `@Environment` / `@EnvironmentObject` in the DI view, `#Preview`; UIKit / AppKit view controllers, `@IBAction` handlers, `@IBOutlet` and `@objc` members kept from the dead-code list; Vapor routes with their full paths (through `grouped`, `group` and route collections), middleware and Fluent models.
+  - Checks inside functions (`--checks`): `try!`, `as!`, a dropped `try?`, an empty `catch`, an implicitly unwrapped property, `DispatchQueue.main.sync` on the main queue, a stored closure capturing `self` strongly, a `fatalError("TODO")` left in, and the shared ones (unreachable code, `x = x`, constant conditions…).
+  - *Show in Code Map* and *Show Call Flow* work in Swift files, the map follows changes to sources, `Package.swift` and Xcode projects (not `.build`, `DerivedData` or `Pods`), and *Choose What to Analyze…* offers the Xcode projects and workspaces.
+
 ## 0.5.1
 
 - **C and C++: code that was read wrongly.** Found by reviewing 0.5.0.

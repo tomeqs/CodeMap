@@ -126,6 +126,16 @@ async function scenario(controller) {
   assert.ok(cpp.nodes.some((n) => n.id === 'cpp:shop_domain:shop::Order'), 'classes are on the map');
   assert.ok(cpp.edges.some((e) => e.kind === 'calls' && e.target === 'cpp:shop_domain:shop::Order::create()'), 'calls are resolved');
 
+  // Swift too, with its grammar as WebAssembly: no Swift toolchain or Xcode needed; an Xcode project as the target.
+  mark('Swift on the Node.js of VS Code');
+  const swiftPackage = path.resolve(__dirname, '..', '..', '..', 'analyzers', 'swift', 'test', 'fixtures', 'package');
+  const swift = await runAnalyzer(analyzer, swiftPackage, { gitHistory: false }, { onLine: (l) => log.push(l) });
+  assert.ok(swift.source.languages.some((l) => l.id === 'swift'), 'mapped as Swift');
+  assert.ok(swift.nodes.some((n) => n.id === 'swift:Domain:Order.add(_:quantity:)'), 'members are on the map');
+  assert.ok(swift.edges.some((e) => e.kind === 'projectReference' && e.source === 'swift:project:Shop'), 'targets depend on each other');
+  const xcode = await runAnalyzer(analyzer, path.join(swiftPackage, 'Shop.xcodeproj'), { gitHistory: false }, { onLine: (l) => log.push(l) });
+  assert.deepEqual(xcode.nodes.filter((n) => n.kind === 'project').map((n) => n.id), ['swift:project:Shop iOS'], 'the Xcode project alone');
+
   // The MCP server for agent mode: offered through VS Code's provider API, started as VS Code would start it.
   mark('MCP server');
   const api = vscode.extensions.getExtension('tomeqs.codemap-3d').exports;

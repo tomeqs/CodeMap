@@ -1,6 +1,6 @@
 # CodeMap
 
-A 3D map of C#, TypeScript / JavaScript, Python, C and C++ code: dependencies, architecture layers, dependency injection and call
+A 3D map of C#, TypeScript / JavaScript, Python, C, C++ and Swift code: dependencies, architecture layers, dependency injection and call
 flows, one click away from the code. It also runs as an MCP server, so AI agents can read the structure and improve it.
 
 | Galaxy: types as stars, projects as solar systems | City: height = complexity, colour = hotspot |
@@ -31,7 +31,7 @@ Pick one:
   * Add its folder to `PATH`, so `codemap` works in any terminal.
 * **.NET tool** (.NET SDK 8+): `dotnet tool install -g CodeMap.Tool`
 
-TypeScript, JavaScript, C and C++ also need Node.js 18+ (the extension uses the one built into the editor).
+TypeScript, JavaScript, C, C++ and Swift also need Node.js 18+ (the extension uses the one built into the editor).
 Python needs Python 3.9+: the one on the `PATH`, or the one `CODEMAP_PYTHON` names.
 
 ## Open a map
@@ -151,6 +151,13 @@ Full reference: [docs/mcp.md](docs/mcp.md).
   * GoogleTest, Catch2, doctest, Boost.Test and Qt Test;
   * Qt (signals, slots, `connect`, `Q_PROPERTY`, widgets);
   * Unreal Engine (`UCLASS`, `UFUNCTION` called from Blueprints, `UINTERFACE`).
+* **Swift** (needs Node.js 18+; no Xcode, Swift toolchain or build): open a folder, `Package.swift`, an `.xcodeproj` /
+  `.xcworkspace`, a Tuist `Project.swift`, an XcodeGen `project.yml`, a `Podfile` / `.podspec` or a file. Targets come
+  from the package, the Xcode project or the generator; extensions join their type, and calls are told apart by their
+  argument labels. Recognises:
+  * XCTest and Swift Testing;
+  * SwiftUI (views, `@Environment` in the DI view, `#Preview`), UIKit and AppKit (view controllers, `@IBAction`);
+  * Vapor (routes with their full paths, middleware, Fluent models).
 * **Several in one repository:** one map with all of them.
 * **Other languages:** as [plugins](docs/plugins.md).
 
@@ -185,7 +192,7 @@ Details, GPU and AR glasses: [docs/viewer.md](docs/viewer.md).
 * **Findings with a health score (A–E):** god classes, feature envy, hubs, large types… In the `.md` report and the MCP
   server.
 * **Mistakes inside functions** (`--checks`): swallowed exceptions, `async void`, `.Result`, floating promises,
-  forgotten `await`s, mutable default arguments, unreachable code…
+  forgotten `await`s, mutable default arguments, `try!` and `as!`, unreachable code…
 
 Rules, metrics and thresholds: [docs/analysis.md](docs/analysis.md#findings-and-the-health-score).
 
@@ -207,6 +214,7 @@ dotnet test                                          # analyzer and MCP server t
 cd analyzers/typescript && npm install && npm test   # TypeScript plugin (npm install is also needed to build it into the CLI)
 cd analyzers/python && python3 -m unittest discover -s test   # Python plugin (standard library only)
 cd analyzers/cpp && npm ci && npm test               # C / C++ plugin (npm ci is also needed to build it into the CLI)
+cd analyzers/swift && npm ci && npm test             # Swift plugin (likewise)
 cd vscode && npm install && npm test                 # VS Code extension
 cd viewer && npm install && npm run dev              # viewer: http://localhost:5173/?data=sample.codemap.json
 npm run build                                        # builds the viewer into src/CodeMap.Cli/Assets/viewer.html

@@ -60,6 +60,14 @@ public class GoldenTests
         AssertGolden("shop-cpp", Normalize(graph, RepoRoot()));
     }
 
+    [NodeFact(swift: true)]
+    public void Swift_shop_map_matches_the_golden_file()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(Path.Combine(RepoRoot(), "samples", "shop-swift"), registry, new AnalyzerOptions { Git = false });
+        AssertGolden("shop-swift", Normalize(graph, RepoRoot()));
+    }
+
     [NodeFact(cpp: true)]
     public void Cpp_map_matches_the_golden_file()
     {

@@ -1,12 +1,12 @@
 # CodeMap 3D for VS Code
 
-An interactive 3D map of your C# solution, TypeScript / JavaScript, Python, C or C++ code (or all of them in one map), inside VS Code and one click away from the code.
+An interactive 3D map of your C# solution, TypeScript / JavaScript, Python, C, C++ or Swift code (or all of them in one map), inside VS Code and one click away from the code.
 
 ![Call flow with its sequence diagram](https://raw.githubusercontent.com/tomeqs/CodeMap/main/docs/img/flow.png)
 
 ## What you get
 
-- **Galaxy and City**: projects, namespaces and types (TypeScript: packages, folders and files; Python: projects, packages and modules; C / C++: projects, namespaces and classes) laid out as a force graph or a code city. Size, height and colour show any metric (lines, complexity, coupling, git churn, hotspots).
+- **Galaxy and City**: projects, namespaces and types (TypeScript: packages, folders and files; Python: projects, packages and modules; C / C++: projects, namespaces and classes; Swift: targets, folders and types) laid out as a force graph or a code city. Size, height and colour show any metric (lines, complexity, coupling, git churn, hotspots).
 - **Layers**: architecture layers computed from the code, with dependencies that point upwards in red.
 - **DI**: services on singleton / scoped / transient planes, for Microsoft DI, NestJS and Angular. Captive dependencies, request scope spreading to its consumers and missing registrations are flagged.
 - **Flow**: what a controller action, an Express or Nest route, a handler or a background service calls, in source order and through interfaces to the implementation the container injects. Includes a **sequence diagram** you can copy as Mermaid.
@@ -18,15 +18,15 @@ An interactive 3D map of your C# solution, TypeScript / JavaScript, Python, C or
 
 | | |
 |---|---|
-| **CodeMap: Open Code Map** | Command palette, or right-click a `.sln` / `.slnx` / `.csproj` / `package.json` / `tsconfig.json` / folder in the Explorer |
+| **CodeMap: Open Code Map** | Command palette, or right-click a `.sln` / `.slnx` / `.csproj` / `package.json` / `tsconfig.json` / `Package.swift` / folder in the Explorer |
 | **Open a symbol's code** | *Open* in the details panel, or double-click a method |
 | **CodeMap: Show in Code Map** (`Ctrl+Alt+M`) | Selects the method, function, class or file under the cursor on the map |
 | **CodeMap: Show Call Flow** | The call flow and sequence diagram of the method or function under the cursor (editor context menu) |
 | **CodeMap: Choose What to Analyze…** | Switch to another solution, project or folder of the workspace |
 
-With only C#, CodeMap opens the solution; with only TypeScript / JavaScript, Python or C / C++, the workspace folder. When the workspace has C# and another language, it asks, and the folder gives one map with the C# projects, the npm packages, the Python projects and the C / C++ targets side by side.
+With only C#, CodeMap opens the solution; with only TypeScript / JavaScript, Python, C / C++ or Swift, the workspace folder (or, for Swift, the Xcode project or workspace you pick). When the workspace has C# and another language, it asks, and the folder gives one map with the C# projects, the npm packages, the Python projects, the C / C++ targets and the Swift targets side by side.
 
-The map updates itself when you save source or project files (`.cs`, `.csproj`, `.ts`, `.js`, `package.json`, `tsconfig.json`…); the camera and the selection stay where they were.
+The map updates itself when you save source or project files (`.cs`, `.csproj`, `.ts`, `.js`, `package.json`, `tsconfig.json`, `.swift`, `Package.swift`, `project.pbxproj`…); the camera and the selection stay where they were.
 
 ## For AI agents: the MCP server
 
@@ -53,6 +53,7 @@ The tools, prompts and options are described in the [main README](https://github
 - Without .NET, set `codemap.analyzerPath` to the standalone `codemap` executable from the [releases](https://github.com/tomeqs/CodeMap/releases).
 - TypeScript and JavaScript are read with the TypeScript compiler bundled with the extension, on the Node.js built into VS Code: no `npm install` of your code and no Node.js installation needed. Frameworks (Express, NestJS, Angular) are recognised from the imports.
 - C and C++ are read by the analyzer's C / C++ plugin on VS Code's own Node.js, with tree-sitter: nothing to install, build or configure. Projects come from CMake targets, Visual Studio projects (`.vcxproj`) and Unreal Engine modules; GoogleTest, Catch2, doctest, Boost.Test, Qt (signals, slots, `connect`) and Unreal's reflection macros are recognised.
+- Swift is read by the analyzer's Swift plugin on VS Code's own Node.js, with tree-sitter: no Xcode, Swift toolchain or build needed, so it works on Windows and Linux too. Targets come from `Package.swift`, Xcode projects and workspaces, Tuist, XcodeGen and CocoaPods; XCTest, Swift Testing, SwiftUI (with `@Environment` in the DI view), UIKit / AppKit and Vapor routes are recognised.
 - Python is read by the analyzer's Python plugin, on Python 3.9+ and its standard library alone: the interpreter the Python extension chose for the workspace when it is installed, else Python on the `PATH`. Nothing has to be installed into your environment. FastAPI (with `Depends` in the DI view), Flask, Django, Celery, click / typer, pytest and SQLAlchemy are recognised from the imports.
 
 ## Settings
