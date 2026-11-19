@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs';
 import { basename, dirname, relative, resolve } from 'node:path';
+import { runChecks } from './checks.mjs';
 import { discover, isGenerated, isTestFile, lineCount, readText, toPosix } from './discover.mjs';
 import { extractFile } from './extract/declarations.mjs';
 import { Graph } from './graph.mjs';
@@ -30,9 +31,10 @@ export function analyze(parser, request, log = () => {}) {
   timing.mark('discover');
   const { projects, fileProject, warnings } = buildProjects(found, (text) => parser.parse(text));
   timing.mark('projects');
-  const counts = { generated: 0, tests: 0, large: 0, failed: [], unreadable: [] };
+  const counts = { generated: 0, tests: 0, large: 0, failed: [], unreadable: [], unchecked: [] };
 
   const files = [];
+  const diagnostics = [];
   let errorBytes = 0;
   let totalBytes = 0;
   let started = Date.now();
@@ -68,6 +70,14 @@ export function analyze(parser, request, log = () => {}) {
         totalBytes += text.length;
         if (text.length > 2000 && errors > text.length / 2) counts.unreadable.push(rel);
         file.facts = extractFile(tree);
+        // Problems inside the code (--checks), not in tests; a check that fails leaves the file's map as it is.
+        if (options.checks && !test) {
+          try {
+            diagnostics.push(...runChecks(tree, file));
+          } catch (error) {
+            counts.unchecked.push(`${rel} (${String(error?.message ?? error).split('\n')[0]})`);
+          }
+        }
       } finally {
         tree.delete();
       }
@@ -98,6 +108,7 @@ export function analyze(parser, request, log = () => {}) {
   if (counts.generated) warnings.push(`${counts.generated} generated file(s) were skipped.`);
   if (counts.tests) warnings.push(`${counts.tests} test file(s) were left out.`);
   if (counts.large) warnings.push(`${counts.large} file(s) longer than ${MAX_LENGTH / 1024 / 1024} M characters were skipped.`);
+  if (counts.unchecked.length) warnings.push(`${counts.unchecked.length} file(s) could not be checked: ${counts.unchecked.slice(0, 5).join(', ')}${counts.unchecked.length > 5 ? ', …' : ''}`);
   if (counts.failed.length) warnings.push(`${counts.failed.length} file(s) could not be read: ${counts.failed.slice(0, 5).join(', ')}${counts.failed.length > 5 ? ', …' : ''}`);
   if (counts.unreadable.length) warnings.push(`${counts.unreadable.length} file(s) are mostly code the parser could not follow, so their declarations may be missing: ${counts.unreadable.slice(0, 5).join(', ')}${counts.unreadable.length > 5 ? ', …' : ''}`);
   if (process.env.CODEMAP_SWIFT_STATS) log(`parse errors: ${totalBytes ? ((100 * errorBytes) / totalBytes).toFixed(2) : '0.00'}% of the code`);
@@ -114,7 +125,7 @@ export function analyze(parser, request, log = () => {}) {
     },
     nodes,
     edges,
-    analysis: options.checks ? { warnings, diagnostics: [] } : { warnings },
+    analysis: options.checks ? { warnings, diagnostics: sortDiagnostics(diagnostics) } : { warnings },
   };
 }
 
@@ -122,6 +133,19 @@ export function analyze(parser, request, log = () => {}) {
 function nameOf(target, only) {
   if (only && ['package', 'tuist', 'xcodegen', 'podfile'].includes(only.kind)) return basename(dirname(target));
   return basename(target).replace(/\.(xcodeproj|xcworkspace|podspec\.json|podspec|swift)$/i, '');
+}
+
+/** One report per rule and place, in file order. */
+function sortDiagnostics(list) {
+  const seen = new Set();
+  return list
+    .filter((d) => {
+      const key = `${d.rule}|${d.location.file}|${d.location.line}|${d.column}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => cmp(a.location.file, b.location.file) || a.location.line - b.location.line || a.column - b.column || cmp(a.rule, b.rule));
 }
 
 function errorShare(tree) {
