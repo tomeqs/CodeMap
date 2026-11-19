@@ -296,3 +296,17 @@ final class Channel: Invoker {
   assert.ok(map.hasEdge('swift:P:Channel.shutdown(_:)', 'calls', 'swift:P:Future.wait()'));
   assert.deepEqual(misses.filter((m) => m[1] === '*').map((m) => m[2]), []);
 });
+
+test("what another target adds to a type of the map is the type's, for the targets that see it", () => {
+  // Vapor: VaporTesting's `extension Application { func testing(…) }`, called 206 times as `app.testing { … }`.
+  const { map } = mapWithMisses({
+    'Package.swift': '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "Core"), .target(name: "Testing", dependencies: ["Core"]), .testTarget(name: "CoreTests", dependencies: ["Core", "Testing"]), .target(name: "Other", dependencies: ["Core"])])\n',
+    'Sources/Core/Application.swift': 'public final class Application {\n  public init() {}\n  public var name = "app"\n}\n',
+    'Sources/Testing/Application+Testing.swift': 'import Core\nextension Application {\n  public func testing(_ method: Int = 0, _ body: (Application) -> Void) { body(self) }\n  public var testName: String { name }\n}\n',
+    'Tests/CoreTests/AppTests.swift': 'import XCTest\nimport Core\nimport Testing\nfinal class AppTests: XCTestCase {\n  func testIt() {\n    let app = Application()\n    app.testing { _ in }\n    _ = app.testName\n  }\n}\n',
+    'Sources/Other/Use.swift': 'import Core\nfunc use(_ app: Application) {\n  app.testing { _ in }\n}\n',
+  });
+  assert.ok(map.hasEdge('swift:CoreTests:AppTests.testIt()', 'calls', 'swift:Testing:extension:Application.testing(_:_:)'));
+  assert.ok(map.hasEdge('swift:CoreTests:AppTests.testIt()', 'accesses', 'swift:Testing:extension:Application.testName'));
+  assert.ok(!map.hasEdge('swift:Other:file:Use.use(_:)', 'calls', 'swift:Testing:extension:Application.testing(_:_:)'), 'Other does not see Testing');
+});

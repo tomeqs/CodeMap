@@ -64,6 +64,7 @@ class Resolver {
     this.untyped = new Set(); // names used on receivers of unknown type
     this.superCache = new Map();
     this.protocolCache = new Map();
+    this.extendedBy = new Map(); // a type of the map → extensions of it in other targets
     this.memberTypes = new Map();
     // Free functions, globals and type aliases of each target, and its extensions of types from outside, by name.
     this.functions = new Map();
@@ -251,13 +252,22 @@ class Resolver {
   }
 
   /** Members of a name: the type's own (its extensions'), its superclasses', then its protocols' (defaults too). */
-  membersNamed(entry, name) {
+  /**
+   * Members of a name of a type, its superclasses and protocols; with `project`, also what the targets it sees add
+   * to them from another target (VaporTesting's `extension Application { func testing(…) }`).
+   */
+  membersNamed(entry, name, project = null) {
     const out = [];
     const seen = new Set();
     const add = (e) => {
       if (!e || seen.has(e)) return;
       seen.add(e);
       for (const m of e.members) if (m.decl.name === name) out.push(m);
+      if (!project) return;
+      for (const extension of this.extendedBy.get(e) ?? []) {
+        if (!this.visible(project).includes(extension.project)) continue;
+        for (const m of extension.members) if (m.decl.name === name) out.push(m);
+      }
     };
     for (let e = entry, i = 0; e && i < 32; e = this.superclassOf(e), i++) add(e);
     for (let e = entry, i = 0; e && i < 32; e = this.superclassOf(e), i++) for (const p of this.protocolsOf(e)) add(p);
@@ -325,7 +335,7 @@ class Resolver {
       case 'n': {
         const name = e[1];
         if (scope.owner) {
-          const member = this.membersNamed(scope.owner, name).find((m) => isVariable(m));
+          const member = this.membersNamed(scope.owner, name, scope.project).find((m) => isVariable(m));
           if (member) return this.typeOfMember(member);
         }
 
@@ -439,12 +449,12 @@ class Resolver {
       const nested = entry.nested.find((n) => n.name === name);
       if (nested) return { meta: nested };
       if (entry.cases.some((c) => c.name === name)) return { entry };
-      const member = this.membersNamed(entry, name).find((m) => isVariable(m));
+      const member = this.membersNamed(entry, name, scope.project).find((m) => isVariable(m));
       return member ? this.typeOfMember(member) : null;
     }
 
     if (receiver.entry) {
-      const member = this.membersNamed(receiver.entry, name).find((m) => isVariable(m));
+      const member = this.membersNamed(receiver.entry, name, scope.project).find((m) => isVariable(m));
       return member ? this.typeOfMember(member) : null;
     }
 
@@ -487,7 +497,7 @@ class Resolver {
     if (fn[0] === 'n') {
       const name = fn[1];
       if (scope.owner) {
-        const members = this.membersNamed(scope.owner, name);
+        const members = this.membersNamed(scope.owner, name, scope.project);
         const member = pick(members.filter(isCallable));
         if (member) return { member, receiver: scope.owner.external ? null : { entry: scope.owner } };
         // `completion?(result)`, `onDone()`: a closure held in a property.
@@ -508,7 +518,7 @@ class Resolver {
 
       // Nothing the caller can see has this name: Swift's or a framework's (`assert(…)`, `XCTAssertNoThrow(…)`), and
       // a capitalized one makes an instance of that type (`DispatchSemaphore(value: 0)`).
-      if (scope.owner && this.membersNamed(scope.owner, name).length) return {};
+      if (scope.owner && this.membersNamed(scope.owner, name, scope.project).length) return {};
       return { outside: true, outsideType: /^[A-Z]/.test(name) ? name : null };
     }
 
@@ -527,11 +537,11 @@ class Resolver {
         const nested = entry.nested.find((n) => n.name === name);
         if (nested) return { type: nested, member: pickInit(nested), receiver: { entry: nested } };
         if (entry.cases.some((c) => c.name === name)) return { enumCase: entry };
-        return { member: pick(this.membersNamed(entry, name).filter(isCallable)), receiver, viaType: entry };
+        return { member: pick(this.membersNamed(entry, name, scope.project).filter(isCallable)), receiver, viaType: entry };
       }
 
       if (receiver?.entry) {
-        const members = this.membersNamed(receiver.entry, name);
+        const members = this.membersNamed(receiver.entry, name, scope.project);
         const member = pick(members.filter(isCallable));
         const held = member ? null : members.find(isVariable);
         return held ? { closure: held, receiver } : { member, receiver };
@@ -587,6 +597,17 @@ class Resolver {
 
   /** Edges the declarations alone give: inheritance, conformance, overrides, and the types members name. */
   declarations() {
+    // What other targets add to a type of the map: `extension Application` in VaporTesting.
+    for (const table of this.model.types.values()) {
+      for (const entry of table.values()) {
+        if (!entry.id || !entry.external) continue;
+        const extended = this.lookupType(entry.name, { entry: null, project: entry.project, file: this.ctxOf(entry).file });
+        if (!extended || extended === entry) continue;
+        if (!this.extendedBy.has(extended)) this.extendedBy.set(extended, []);
+        this.extendedBy.get(extended).push(entry);
+      }
+    }
+
     for (const table of this.model.types.values()) {
       for (const entry of table.values()) {
         if (!entry.id) continue;
@@ -755,13 +776,13 @@ class Resolver {
         const name = e[2];
         if (receiver?.meta) {
           const entry = receiver.meta;
-          const member = this.membersNamed(entry, name).find((m) => isVariable(m));
+          const member = this.membersNamed(entry, name, scope.project).find((m) => isVariable(m));
           if (member?.id) this.edge(source, member.id, 'accesses', ref.line);
           if (entry.id && e[1][0] !== 'n') this.edge(source, entry.id, 'uses', ref.line);
           return;
         }
 
-        const members = receiver?.entry ? this.membersNamed(receiver.entry, name) : receiver?.ext ? this.outsideMembers(receiver.ext, name, scope.project) : [];
+        const members = receiver?.entry ? this.membersNamed(receiver.entry, name, scope.project) : receiver?.ext ? this.outsideMembers(receiver.ext, name, scope.project) : [];
         const member = members.find((m) => isVariable(m)) ?? (members.length === 1 ? members[0] : null);
         if (member?.id) this.edge(source, member.id, isVariable(member) ? 'accesses' : 'calls', ref.line);
         else if (!receiver || receiver.ext) this.untyped.add(name);
@@ -771,7 +792,7 @@ class Resolver {
       case 'name': {
         const name = ref.name;
         if (scope.owner) {
-          const members = this.membersNamed(scope.owner, name);
+          const members = this.membersNamed(scope.owner, name, scope.project);
           if (members.length) {
             const member = members.find((m) => isVariable(m)) ?? members[0];
             if (member.id) this.edge(source, member.id, isVariable(member) ? 'accesses' : 'calls', ref.line);
