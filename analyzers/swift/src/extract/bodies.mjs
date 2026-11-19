@@ -306,7 +306,10 @@ class Reader {
         }
       }
 
-      const e = value ? this.expr(value, into) : into.has(name) ? ['v', into.get(name)] : ['u'];
+      // `if let x` / `guard let x`: the x around it, a local or a property (which it reads). With a value
+      // (`if let user = current`) the name is new and only the value is read.
+      const e = value ? this.expr(value, into) : into.has(name) ? ['v', into.get(name)] : ['n', name];
+      if (!value && e[0] === 'n') this.refs.push({ ev: 'name', name, line: children[i].startPosition.row + 1 });
       this.bind(into, name, e);
     }
   }

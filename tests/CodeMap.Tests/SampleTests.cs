@@ -6,7 +6,8 @@ namespace CodeMap.Tests;
 
 /// <summary>
 /// samples/shop-ts (the shop in TypeScript: NestJS API, Express gateway, Angular web on a domain library), samples/shop-py
-/// (the shop in Python: FastAPI, Django, Flask, Celery on a domain library), samples/shop-cpp (the shop in C++: CMake
+/// (the shop in Python: FastAPI, Django, Flask, Celery on a domain library), samples/shop-swift (the shop in Swift: a
+/// SwiftPM package with Vapor, an Xcode iOS app with SwiftUI and UIKit), samples/shop-cpp (the shop in C++: CMake
 /// targets, Qt, tests, a C library, an Unreal module) and samples/ as a whole (with the C# Shop and Booking): what they are
 /// there to show stays on the map.
 /// </summary>
@@ -188,16 +189,73 @@ public class SampleTests
         Assert.Equal("cpp:shop_domain:file:libs/domain/include/shop/domain/discounts#shop::domain::discountFor(Tier,const Money&)", diagnostic.Node);
     }
 
-    [NodeFact(typescript: true, python: true, cpp: true)]
-    public void The_samples_folder_is_one_map_of_csharp_typescript_python_and_cpp()
+    [NodeFact(swift: true)]
+    public void The_swift_shop_has_its_targets_types_flows_cycle_and_dead_code()
+    {
+        var graph = CodeMapAnalyzer.Analyze(Path.Combine(Samples, "shop-swift"), Registry, new AnalyzerOptions { Git = false, CodeChecks = true });
+        void Edge(string source, string kind, string target) => graph.AssertEdge(source, kind, target);
+        bool Tagged(string id, string tag) => graph.Node(id).Tags.Contains(tag);
+        const string domain = "swift:ShopDomain:";
+        const string app = "swift:ShopApp:";
+        const string infra = "swift:ShopInfra:";
+
+        Assert.Empty(graph.Analysis.Warnings);
+        Assert.Equal(new[] { "ShopApp", "ShopDomain", "ShopInfra", "ShopServer", "ShopTests", "ShopiOS", "shop-cli" },
+            graph.Nodes.Where(n => n.Kind == NodeKinds.Project).Select(n => n.Name).Order(StringComparer.Ordinal));
+        Edge("swift:project:shop-cli", EdgeKinds.ProjectReference, "swift:project:ShopInfra");
+        Edge("swift:project:ShopInfra", EdgeKinds.ProjectReference, "swift:project:ShopApp");
+        Edge("swift:project:ShopApp", EdgeKinds.ProjectReference, "swift:project:ShopDomain");
+        Edge("swift:project:ShopiOS", EdgeKinds.ProjectReference, "swift:project:ShopDomain"); // the package's ShopKit product
+        Edge("swift:project:ShopServer", EdgeKinds.PackageReference, "swift:pkg:vapor");
+        Assert.True(Tagged("swift:project:ShopTests", Tags.TestProject));
+        Assert.True(Tagged("swift:project:shop-cli", Tags.EntryPoint));
+
+        // An extension of the type in another file, an overload by labels, a free function
+        var order = graph.Node(domain + "Order");
+        Assert.Equal("Sources/ShopDomain/Orders/Order.swift", order.Location!.File);
+        Assert.Contains(order.ExtraLocations!, l => l.File == "Sources/ShopDomain/Orders/Order+Totals.swift");
+        Assert.Equal(domain + "Order", graph.Node(domain + "Order.total").Parent);
+        Edge(domain + "Order.add(_:)", EdgeKinds.Calls, domain + "Order.add(_:quantity:)");
+        Edge(app + "OrderService.place(_:tier:)", EdgeKinds.Calls, domain + "file:Discounts.discount(for:on:)");
+
+        // From main through the protocol to the fake gateway
+        Edge(infra + "FakePaymentGateway", EdgeKinds.Implements, app + "PaymentGateway");
+        var flows = new CodeMap.Insights.CallFlow(new CodeMap.Insights.GraphIndex(graph));
+        var flow = flows.Build(new[] { "swift:shop-cli:ShopCLI.main()" });
+        Assert.Contains(flow.Methods, m => m.Id == app + "PaymentService.charge(_:)");
+        Assert.Contains(flow.Methods, m => m.Id == infra + "FakePaymentGateway.charge(_:reference:)");
+        Assert.Contains(flow.Methods, m => m.Id == domain + "Order.markPaid()");
+
+        // Orders and payments need each other; one private method nobody calls
+        Assert.Contains(graph.Analysis.Cycles, c => c.Level == "type" && c.Nodes.SequenceEqual(new[] { app + "OrderService", app + "PaymentService" }));
+        Assert.Equal(new[] { domain + "Order.legacyTotal()" }, graph.Analysis.UnusedCandidates);
+
+        // Vapor, SwiftUI, UIKit, tests
+        Assert.StartsWith("GET /api/orders/:id", graph.Node("swift:ShopServer:OrdersController.show(req:)").Doc);
+        Assert.True(Tagged("swift:ShopiOS:ShopiOSApp", Tags.EntryPoint));
+        Assert.True(Tagged("swift:ShopiOS:CartView", Tags.Component));
+        Edge("swift:ShopiOS:CartView", EdgeKinds.Injects, "swift:ShopiOS:Cart");
+        Assert.True(Tagged("swift:ShopiOS:CheckoutViewController.payTapped(_:)", Tags.Handler));
+        Assert.True(Tagged("swift:ShopTests:OrderTests.testTheSameProductAddsToItsLine()", Tags.Test));
+        Assert.True(Tagged("swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()", Tags.Test));
+
+        // --checks: the try! of the command line
+        var diagnostic = Assert.Single(graph.Analysis.Diagnostics!);
+        Assert.Equal(("force-try", "Sources/shop-cli/ShopCLI.swift", "swift:shop-cli:ShopCLI.main()"), (diagnostic.Rule, diagnostic.Location.File, diagnostic.Node));
+    }
+
+    [NodeFact(typescript: true, python: true, cpp: true, swift: true)]
+    public void The_samples_folder_is_one_map_of_csharp_typescript_python_cpp_and_swift()
     {
         var graph = CodeMapAnalyzer.Analyze(Samples, Registry, NoGit);
-        Assert.Equal(new[] { "csharp", "cpp", "python", "typescript" }, graph.Source.Languages!.Select(l => l.Id));
+        Assert.Equal(new[] { "csharp", "cpp", "python", "swift", "typescript" }, graph.Source.Languages!.Select(l => l.Id));
         var projects = graph.Nodes.Where(n => n.Kind == NodeKinds.Project).ToList();
         Assert.Equal(9, projects.Count(p => p.Language == "csharp"));     // Shop 5, Booking 4
         Assert.Equal(7, projects.Count(p => p.Language == "typescript")); // shop-ts 4, Booking 3
         Assert.Equal(5, projects.Count(p => p.Language == "python"));     // shop-py
         Assert.Equal(8, projects.Count(p => p.Language == "cpp"));        // shop-cpp
+        Assert.Equal(7, projects.Count(p => p.Language == "swift"));      // shop-swift
+        Assert.Contains(graph.Nodes, n => n.Id == "swift:ShopDomain:Order");
         Assert.Contains(graph.Nodes, n => n.Id == "cpp:shop_domain:shop::domain::Order");
         Assert.Contains(graph.Nodes, n => n.Id == "py:shop-domain:src/shop_domain/orders.py#Order");
         Assert.Contains(graph.Nodes, n => n.Id == "T:Shop.Domain.Orders.Order");

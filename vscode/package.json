@@ -1,7 +1,7 @@
 {
   "name": "codemap-3d",
   "displayName": "CodeMap 3D",
-  "description": "Interactive 3D map of your C#, TypeScript / JavaScript, Python, C and C++ code: dependencies, architecture layers, DI lifetimes, call flows and sequence diagrams, one click away from the code. Includes an MCP server that lets AI agents read and improve the structure.",
+  "description": "Interactive 3D map of your C#, TypeScript / JavaScript, Python, C, C++ and Swift code: dependencies, architecture layers, DI lifetimes, call flows and sequence diagrams, one click away from the code. Includes an MCP server that lets AI agents read and improve the structure.",
   "version": "0.5.1",
   "publisher": "tomeqs",
   "license": "MIT",
@@ -42,7 +42,11 @@
     "c",
     "cmake",
     "qt",
-    "unreal engine"
+    "unreal engine",
+    "swift",
+    "swiftui",
+    "xcode",
+    "vapor"
   ],
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -59,7 +63,9 @@
     "workspaceContains:**/*.{sln,slnx,slnf,csproj}",
     "workspaceContains:**/{package.json,tsconfig.json,jsconfig.json}",
     "workspaceContains:**/{pyproject.toml,setup.py,setup.cfg,requirements.txt,Pipfile}",
-    "workspaceContains:**/{CMakeLists.txt,*.vcxproj,*.uproject,meson.build}"
+    "workspaceContains:**/{CMakeLists.txt,*.vcxproj,*.uproject,meson.build}",
+    "workspaceContains:**/{Package.swift,Project.swift,project.yml,Podfile}",
+    "workspaceContains:**/*.xcodeproj/project.pbxproj"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -124,19 +130,19 @@
       "explorer/context": [
         {
           "command": "codemap.open",
-          "when": "explorerResourceIsFolder || resourceExtname =~ /^\\.(sln|slnx|slnf|csproj)$/ || resourceFilename =~ /^((package|jsconfig|tsconfig(\\.[\\w-]+)?)\\.json|pyproject\\.toml|setup\\.py|requirements\\.txt|CMakeLists\\.txt|[^/\\\\]+\\.(vcxproj|uproject))$/",
+          "when": "explorerResourceIsFolder || resourceExtname =~ /^\\.(sln|slnx|slnf|csproj)$/ || resourceFilename =~ /^((package|jsconfig|tsconfig(\\.[\\w-]+)?)\\.json|pyproject\\.toml|setup\\.py|requirements\\.txt|CMakeLists\\.txt|Package\\.swift|Project\\.swift|project\\.yml|Podfile|[^/\\\\]+\\.(vcxproj|uproject|podspec))$/",
           "group": "navigation@90"
         }
       ],
       "editor/context": [
         {
           "command": "codemap.revealInMap",
-          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp)$/",
+          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp|swift)$/",
           "group": "navigation@90"
         },
         {
           "command": "codemap.callFlow",
-          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp)$/",
+          "when": "resourceLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp|swift)$/",
           "group": "navigation@91"
         }
       ],
@@ -155,11 +161,11 @@
       "commandPalette": [
         {
           "command": "codemap.revealInMap",
-          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp)$/"
+          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp|swift)$/"
         },
         {
           "command": "codemap.callFlow",
-          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp)$/"
+          "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp|swift)$/"
         }
       ]
     },
@@ -168,7 +174,7 @@
         "command": "codemap.revealInMap",
         "key": "ctrl+alt+m",
         "mac": "cmd+alt+m",
-        "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp)$/"
+        "when": "editorLangId =~ /^(csharp|typescript|typescriptreact|javascript|javascriptreact|python|c|cpp|cuda-cpp|swift)$/"
       }
     ],
     "configuration": {

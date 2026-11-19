@@ -11,7 +11,7 @@
     <ApplicationIcon>Assets\codemap.ico</ApplicationIcon>
     <Product>CodeMap</Product>
     <PackageId>CodeMap.Tool</PackageId>
-    <Description>Maps C# solutions (and TypeScript / JavaScript and C / C++ with Node.js, Python with Python 3.9+) into a relationship graph (JSON, DGML, GraphML, Cypher) and an interactive 3D map.</Description>
+    <Description>Maps C# solutions (and TypeScript / JavaScript, C / C++ and Swift with Node.js, Python with Python 3.9+) into a relationship graph (JSON, DGML, GraphML, Cypher) and an interactive 3D map.</Description>
     <PackageTags>code-map;architecture;dependency-graph;visualization;csharp;roslyn;typescript;javascript;python;cpp;c;cmake;qt;unreal;swift;swiftui;xcode;nestjs;angular;dependency-injection;3d</PackageTags>
     <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>

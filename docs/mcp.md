@@ -29,7 +29,7 @@ else the current folder.
   ```
 
 `codemap` is the ready-made program from the releases or the .NET tool (`dotnet tool install -g CodeMap.Tool`).
-TypeScript, JavaScript, C and C++ need Node.js 18+; `CODEMAP_NODE` points at a `node` that is not on `PATH`. Python
+TypeScript, JavaScript, C, C++ and Swift need Node.js 18+; `CODEMAP_NODE` points at a `node` that is not on `PATH`. Python
 needs Python 3.9+; `CODEMAP_PYTHON` points at one that is not on `PATH` (or at a project's virtual environment).
 
 Options: `codemap mcp [path] [--root <dir>] [--no-watch] [--no-checks] [--no-git] [--lang <list>] [--plugins <dir>]

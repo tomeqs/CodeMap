@@ -97,8 +97,9 @@ class Resolver {
     if (source && target && (source !== target || kind === 'calls')) this.graph.addEdge(source, target, kind, line);
   }
 
+  /** The target and every target it depends on, through others too (the model's, so both agree). */
   visible(project) {
-    return [project, ...project.references];
+    return this.model.visible(project);
   }
 
   // ------------------------------------------------------------------------------------------------ types

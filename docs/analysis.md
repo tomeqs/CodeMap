@@ -224,9 +224,92 @@ CODEMAP_CPP_STATS=1 codemap path/to/project   # how many calls were resolved, an
 CODEMAP_CPP_UNRESOLVED=calls.json codemap path/to/project   # the calls to the code's own names left unresolved
 ```
 
+### Swift
+
+A plugin (`analyzers/swift`, included in the releases) that runs on **Node.js 18+** with tree-sitter and its Swift
+grammar as WebAssembly, like C and C++: no Xcode, Swift toolchain, resolved packages or build needed, so an iOS app maps
+on Linux or Windows too. The project files are read, never run.
+
+* **What you can open:** a folder, a `Package.swift`, an `.xcodeproj` or `.xcworkspace` (a folder that CodeMap takes as
+  one project file), a Tuist `Project.swift`, an XcodeGen `project.yml`, a `Podfile`, a `.podspec` or a `.swift` file.
+* **Projects** (targets):
+  * Swift Package Manager: `Package.swift` read with the Swift grammar: `.target`, `.executableTarget`, `.testTarget`
+    and `.macro`, with their `path`, `sources` and `exclude` or the default `Sources/<name>` and `Tests/<name>`.
+    Dependencies on other targets are `projectReference`s; a product of a package that is on the map links its
+    targets, any other is an external package. `let` arrays written out in the manifest are followed;
+  * Xcode: the native targets of `project.pbxproj` with the files of their build phase, Xcode 16's synchronized
+    folders (less their exceptions), target dependencies and Swift package products (as above: a local package's
+    product links its targets). A workspace maps the projects and package folders it lists. Several targets of the
+    same files (one per platform) are one project;
+  * Tuist (`Project.swift`) and XcodeGen (`project.yml`): their targets, sources, excludes and dependencies;
+  * CocoaPods: the pods of a `Podfile` are external packages of the target they are listed under, and a `.podspec`'s
+    `source_files` (and its test spec's) are a project when nothing above holds those files;
+  * a folder project for the files no target holds.
+  A folder with both a `Package.swift` and an `.xcodeproj` of the same files (Alamofire) is mapped by the package; open
+  the `.xcodeproj` itself to map its targets.
+* **Left out:** `.build`, `DerivedData`, `Pods`, `Carthage`, `SourcePackages`, `xcuserdata`; the manifests themselves
+  (`Package.swift`, `Project.swift`, Tuist's helpers); generated files (`*.generated.swift`, R.swift, SwiftGen and
+  Sourcery outputs, files marked `@generated` or "DO NOT EDIT").
+
+The map: targets → **folders** within the target (`swift:ns:Shop/Orders`; `Shop/` for the files at its top) → types
+(`class`, `actor` as a class with the modifier `actor`, `struct`, `enum` with its cases counted, `protocol` as
+`interface`) → members (`func` a method, `init` a constructor, computed properties and `subscript` properties, stored
+`let` / `var` fields, `typealias` and `associatedtype` aliases). Nested types sit in their outer type.
+
+* **Extensions join their type:** an extension of a type of the map adds its members and conformances to that type, and
+  its file is an extra place of the type (as C#'s `partial`). An extension of a type from outside (`extension String`,
+  `extension View`) is a node of kind `extension`, one per target and folder; one of a type of another target of the
+  map `extends` it.
+* **Free functions, globals, top-level code** (`main.swift`) and `#Preview` blocks sit in a `module` node per file.
+* **Ids** use Swift's names with the argument labels: `swift:Shop:Order.addLine(_:quantity:)`, with the parameter types
+  only when two overloads share their labels (`add(_:Line)`), and `#static` for a static member that shares an instance
+  member's name. Access: `open` / `public` are public, `package` / `internal` internal, `fileprivate` / `private`
+  private (`open`, `package` and `fileprivate` also stay as modifiers); attributes (`@MainActor`, property wrappers,
+  macros) are attributes.
+* **Resolution:** the types of expressions come from what the code declares: parameters, properties, locals with a
+  type or an initializer (`Order(…)`, `.init(…)`, a call's return type), `self` and implicit `self`, static members,
+  `if let` / `guard let`, optional chaining, `as?` / `as!`, `for` over arrays and dictionaries, closures' parameters
+  (also from the type of the parameter they are passed to), `try` and `await`. Leading-dot members (`.paid`,
+  `.init(…)`) are looked up in the type the context expects. A call is told apart from its overloads by its argument
+  labels (defaults, variadics and trailing closures counted), then by the number of arguments, then by their types; a
+  method found on a type and its bases is the most derived one. A target sees the targets it depends on, and theirs. A
+  call that cannot be told makes no edge rather than a guessed one.
+* **Edges:** calls, initializers (`instantiates`), class inheritance, protocol conformance (`implements`, also from an
+  extension, and a member to the requirement it satisfies), `override`, signature and stored property types through
+  optionals, arrays, dictionaries, `some` and `any` (`accepts`, `returns`, `holds`), `init` parameters (`injects`),
+  properties and globals (`accesses`), `throw` and `catch … as`, and generic constraints, casts and metatypes (`uses`).
+  Call flows dispatch a call of a protocol requirement to the types that conform.
+* **Entry points:** `@main` types (with their `main()`), `main.swift`, executable targets and apps.
+* **Tests:** XCTest (`XCTestCase` subclasses: `test…` methods and `setUp` / `tearDown`), Swift Testing (`@Test`,
+  `@Suite`), test targets, files in `Tests/` (`UnitTests/`, `UITests/`, `IntegrationTests/`…) or named `*Tests.swift` /
+  `*Spec.swift`.
+* **Unused code:** private and fileprivate members and types nothing references. Overrides, initializers, `deinit`,
+  protocol requirements and members of tests are left alone. Tagged `maybe-used` rather than reported: members reached
+  by the Objective-C runtime or Interface Builder (`@objc`, `@IBOutlet`, `@NSManaged`…), and private members whose name
+  is called on something whose type is not known.
+
+Frameworks recognised from the code itself:
+
+* **SwiftUI:** `View` conformers are components, an `App` an entry point, `@Environment` / `@EnvironmentObject` /
+  `@ObservedObject` / `@Bindable` properties are what a view needs (`injects`, so they show in the DI view), and
+  `#Preview` blocks and `PreviewProvider`s use their views.
+* **UIKit and AppKit:** view controllers, views and cells are components, `@IBAction` methods handlers, application
+  and scene delegates entry points.
+* **Vapor:** `app.get("orders", ":id") { … }`, `grouped(…)`, `group(…) { … }`, `use: handler` and
+  `register(collection:)` are routes with their full path (`GET /api/orders/:id` in `doc`); a `RouteCollection`'s
+  `boot(routes:)` is an entry point, `Middleware` conformers middleware, and Fluent `Model`s entities.
+
+```bash
+codemap path/to/App                     # a folder with Package.swift, an .xcodeproj, Project.swift, project.yml or sources
+codemap path/to/App/App.xcodeproj       # only the targets of an Xcode project
+codemap path/to/repo --lang swift       # only the Swift of a repository
+CODEMAP_SWIFT_STATS=1 codemap path/to/App   # how many calls were resolved, and how much the parser could not read
+CODEMAP_SWIFT_UNRESOLVED=calls.json codemap path/to/App   # the calls to the code's own names left unresolved
+```
+
 ### Several languages, and the samples
 
-* A repository with C#, TypeScript, Python and C++ gives one map with all of them side by side. The levels are then called
+* A repository with C#, TypeScript, Python, C++ and Swift gives one map with all of them side by side. The levels are then called
   "Projects / Packages", "Types / Files / Modules"… Maps of different languages have no edges between them yet (e.g.
   HTTP calls from TypeScript to C# controllers).
 * [`samples/Shop`](../samples/Shop): a C# solution (DDD, DI, events, a deliberate cycle and dead code).
@@ -238,6 +321,9 @@ CODEMAP_CPP_UNRESOLVED=calls.json codemap path/to/project   # the calls to the c
 * [`samples/shop-cpp`](../samples/shop-cpp): the same shop in C++ (CMake targets for the domain, the application and
   the infrastructure, a command line and a Qt window, GoogleTest and Catch2 tests), beside a C library and an Unreal
   module, with a deliberate cycle and dead code.
+* [`samples/shop-swift`](../samples/shop-swift): the same shop in Swift (a Swift package with the domain, the
+  application, the infrastructure, a command line, a Vapor server and XCTest and Swift Testing tests, beside an iOS app
+  in an Xcode project with SwiftUI and UIKit), with a deliberate cycle and dead code.
 * [`samples/Booking`](../samples/Booking): an ASP.NET Core API and a TypeScript client in one folder. It is a test bed
   that contains the edge cases of C# and TypeScript mapping, each listed with what its map must show.
 
@@ -367,6 +453,13 @@ costs. `FindingsAnalysis.Compute(graph)` gives the same in code.
   * exceptions: an empty or swallowing `catch`, catching by value, throwing a pointer, an exception made without
     `throw`;
   * dead code: unreachable code (not across a branch of `#if` left out).
+* **Swift** (CodeMap's own rules, narrowed on real code to stay quiet):
+  * errors: `try!` outside tests, `try?` whose result is dropped, an empty `catch`, `fatalError("not implemented")` or
+    `fatalError("TODO")` left in;
+  * crashes: `as!`, an implicitly unwrapped property (`var name: String!`) that is not an `@IBOutlet`,
+    `DispatchQueue.main.sync` called on the main queue;
+  * memory: a closure stored in a property that captures `self` strongly (no `[weak self]` / `[unowned self]`);
+  * correctness: `x = x`, `x == x`, constant conditions, `==` on floating-point numbers, unreachable code.
 
 Test code and generated code are not checked. The checks do not change the health score, which measures structure.
 
@@ -452,12 +545,13 @@ src/CodeMap.Cli       the `codemap` tool (dotnet tool or standalone executable),
 analyzers/typescript  TypeScript / JavaScript plugin (Node.js + TypeScript compiler API), copied to plugins/typescript
 analyzers/python      Python plugin (Python's own ast, standard library only), copied to plugins/python
 analyzers/cpp         C / C++ plugin (Node.js + tree-sitter as WebAssembly), copied to plugins/cpp
+analyzers/swift       Swift plugin (Node.js + tree-sitter as WebAssembly), copied to plugins/swift
 vscode/               VS Code extension: the map in a webview, code ↔ map navigation, live refresh, MCP for the editor's agent
 viewer/               3D map: Vite + three.js + d3-force-3d + d3-hierarchy, built into a single HTML file
 tests/CodeMap.Tests   xUnit tests of the analyzer, exporters and MCP server; Golden/ holds saved maps of the samples,
                       the Shop findings and diagrams, and the viewer's call flows the C# port must match
 tests/mcp-smoke.mjs   `codemap mcp` as an agent uses it (CI and every release)
-samples/              Shop (C#), shop-ts (TypeScript), shop-py (Python), shop-cpp (C and C++), Booking (C# and TypeScript: the mapping edge cases)
+samples/              Shop (C#), shop-ts (TypeScript), shop-py (Python), shop-cpp (C and C++), shop-swift (Swift), Booking (C# and TypeScript: the mapping edge cases)
 docs/                 format specification, JSON Schema, the plugin protocol, these pages
 ```
 

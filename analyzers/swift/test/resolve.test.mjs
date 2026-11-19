@@ -153,3 +153,56 @@ final class Box {
     dispose();
   }
 });
+
+test('a target sees the targets it depends on through others; guard let x on a property is the property', () => {
+  const { dir, dispose } = scratch({
+    'Package.swift': '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "A"), .target(name: "B", dependencies: ["A"]), .target(name: "C", dependencies: ["B"])])\n',
+    'Sources/A/Store.swift': 'public final class Store {\n  public init() {}\n  public func load() -> Int { 1 }\n}\n',
+    'Sources/B/Middle.swift': 'import A\npublic struct Middle {}\n',
+    'Sources/C/Top.swift': `import A
+final class Top {
+  var store: Store?
+  func run() -> Int {
+    guard let store else { return 0 }
+    return store.load() + Store().load()
+  }
+}
+`,
+  });
+  try {
+    const fragment = run(dir);
+    assert.ok(fragment.hasEdge('swift:C:Top.run()', 'calls', 'swift:A:Store.load()'));
+    assert.ok(fragment.hasEdge('swift:C:Top.run()', 'instantiates', 'swift:A:Store'));
+    assert.ok(fragment.hasEdge('swift:C:Top.run()', 'accesses', 'swift:C:Top.store'));
+  } finally {
+    dispose();
+  }
+});
+
+test('from the self-review: if let x = y reads only y; a base class from an indirect dependency is the base type', () => {
+  const { dir, dispose } = scratch({
+    'Package.swift': '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "A"), .target(name: "B", dependencies: ["A"]), .target(name: "C", dependencies: ["B"])])\n',
+    'Sources/A/Store.swift': 'open class Store {\n  public init() {}\n}\n',
+    'Sources/B/Middle.swift': 'import A\npublic struct Middle {}\n',
+    'Sources/C/Top.swift': `import A
+final class Top: Store {
+  var current: Int?
+  var user = 0
+  func run() -> Int {
+    if let user = current { return user }
+    guard let current else { return 0 }
+    return current
+  }
+}
+`,
+  });
+  try {
+    const fragment = run(dir);
+    assert.ok(fragment.hasEdge('swift:C:Top.run()', 'accesses', 'swift:C:Top.current'));
+    assert.ok(!fragment.hasEdge('swift:C:Top.run()', 'accesses', 'swift:C:Top.user'), 'if let user = current does not read the property user');
+    assert.ok(fragment.hasEdge('swift:C:Top', 'inherits', 'swift:A:Store'));
+    assert.equal(fragment.node('swift:C:Top')?.baseType, 'Store');
+  } finally {
+    dispose();
+  }
+});

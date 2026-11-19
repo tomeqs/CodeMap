@@ -3,9 +3,10 @@
 // work, no errors – once per renderer.
 //
 //   npm run test:smoke [-- --renderers webgl,webgpu] [--headed] [--only 'name part'] [--dist other/build]
-//                      [--samples dir]  with shop-ts.codemap.json, shop-py.codemap.json, shop-cpp.codemap.json and samples.codemap.json,
-//                                       the analyzer's maps of samples/shop-ts, samples/shop-py, samples/shop-cpp and of samples/ (C#,
-//                                       TypeScript and Python in one map); CI passes it
+//                      [--samples dir]  with shop-ts.codemap.json, shop-py.codemap.json, shop-cpp.codemap.json,
+//                                       shop-swift.codemap.json and samples.codemap.json, the analyzer's maps of
+//                                       samples/shop-ts, samples/shop-py, samples/shop-cpp, samples/shop-swift and of samples/
+//                                       (every language in one map); CI passes it
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { CHROMIUM_ARGS, fixture, graph, launch, open, serve, settled } from './lib.mjs';
@@ -1081,8 +1082,8 @@ async function graphicsFallbacks() {
 
 /**
  * The analyzer's own maps: samples/shop-ts (NestJS API, Express gateway, Angular web on a domain library),
- * samples/shop-py (FastAPI, Django, Flask, Celery on a domain library), samples/shop-cpp (CMake targets, Qt, tests, a C library)
- * and samples/ (those and the C# Shop in one map).
+ * samples/shop-py (FastAPI, Django, Flask, Celery on a domain library), samples/shop-cpp (CMake targets, Qt, tests, a C library),
+ * samples/shop-swift (SwiftPM targets, Vapor, an Xcode app with SwiftUI and UIKit) and samples/ (those and the C# Shop in one map).
  */
 async function sampleTests(query) {
   const views = async (app, list) => {
@@ -1194,8 +1195,31 @@ async function sampleTests(query) {
   });
   await cpp.page.close();
 
+  const swift = await open(browser, query(fixture(resolve(samples, 'shop-swift.codemap.json'))));
+  await test('samples/shop-swift: targets, folders, types; the flow from main through a protocol; Vapor, SwiftUI and tests', async () => {
+    await settled(swift.page, 60000);
+    const info = await swift.page.evaluate(() => {
+      const app = window.codemap;
+      const buttons = [...document.querySelectorAll('#level-toggle [data-level]')].map((b) => b.textContent);
+      app.setLevel('type');
+      app.setView('galaxy');
+      app.showFlow(['swift:shop-cli:ShopCLI.main()']);
+      const main = [...(app.flow?.nodes.keys() ?? [])];
+      return { buttons, main, entries: app.getEntryPoints().map((e) => e.node.id) };
+    });
+    assert.deepEqual(info.buttons, ['Targets', 'Folders', 'Types', 'Members', 'Auto']);
+    // main → OrderService.checkout → PaymentService.charge → PaymentGateway.charge (a protocol) → FakePaymentGateway.charge
+    assert.ok(info.main.includes('swift:ShopInfra:FakePaymentGateway.charge(_:reference:)'), `main: ${info.main}`);
+    assert.ok(info.main.includes('swift:ShopDomain:Order.markPaid()'), `main: ${info.main}`);
+    assert.ok(info.entries.includes('swift:shop-cli:ShopCLI'), `entries: ${info.entries}`);
+    assert.ok(info.entries.includes('swift:ShopServer:OrdersController'), `entries: ${info.entries}`);
+    await views(swift, ['galaxy', 'city', 'layers', 'di', 'flow', 'matrix']);
+    assert.deepEqual(swift.errors, []);
+  });
+  await swift.page.close();
+
   const mixed = await open(browser, query(fixture(resolve(samples, 'samples.codemap.json'))));
-  await test('samples/: C#, TypeScript, Python and C++ in one map, in each language\'s words', async () => {
+  await test('samples/: C#, TypeScript, Python, C++ and Swift in one map, in each language\'s words', async () => {
     await settled(mixed.page, 60000);
     const info = await mixed.page.evaluate(() => {
       const app = window.codemap;
@@ -1205,8 +1229,9 @@ async function sampleTests(query) {
         entries: app.getEntryPoints().map((e) => e.node.id),
       };
     });
-    assert.deepEqual(info.buttons, ['Projects / Packages', 'Namespaces / Packages / Folders', 'Types / Modules / Files', 'Members / Declarations', 'Auto']);
-    assert.deepEqual(info.languages.sort(), ['cpp', 'csharp', 'python', 'typescript']);
+    assert.deepEqual(info.buttons, ['Projects / Targets / Packages', 'Namespaces / Packages / Folders', 'Types / Modules / Files', 'Members / Declarations', 'Auto']);
+    assert.deepEqual(info.languages.sort(), ['cpp', 'csharp', 'python', 'swift', 'typescript']);
+    assert.ok(info.entries.includes('swift:shop-cli:ShopCLI'), `entries: ${info.entries}`);
     assert.ok(info.entries.includes('T:Shop.Api.Controllers.OrdersController'), `entries: ${info.entries}`);
     assert.ok(info.entries.includes('ts:@shop/api:src/orders/orders.controller.ts#OrdersController'), `entries: ${info.entries}`);
     assert.ok(info.entries.includes('py:shop-api:src/shop_api/routers/orders.py'), `entries: ${info.entries}`);

@@ -14,12 +14,15 @@ const VIEW_TYPE = 'codemap.map';
 const TARGET_KEY = 'codemap.target';
 const CACHE_FILE = 'map.codemap.json';
 // Files whose change makes the map out of date: C# and its projects, TypeScript / JavaScript and their packages,
-// Python and its project files, C / C++ and their build files.
-const SOURCE_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf|[cm]?tsx?|[cm]?jsx?|py|c|cc|cpp|cxx|c\+\+|h|hh|hpp|hxx|h\+\+|ipp|inl|tpp|vcxproj|uproject)$|(^|[\\/])((package|jsconfig|tsconfig(\.[\w-]+)?)\.json|pyproject\.toml|setup\.cfg|Pipfile|requirements[\w.-]*\.txt|CMakeLists\.txt|meson\.build|compile_commands\.json)$/i;
-const NOT_SOURCE = /\.d\.[cm]?ts$|\.min\.js$|(^|[\\/])(moc_[^\\/]+|qrc_[^\\/]+|ui_[^\\/]+\.h|[^\\/]+\.(generated\.h|gen\.cpp|pb\.(h|cc)))$|(^|[\\/])(node_modules|dist|bin|obj|__pycache__|site-packages|\.venv|venv|\.tox|[^\\/]+\.egg-info)[\\/]/i;
+// Python and its project files, C / C++ and their build files, Swift and its packages and Xcode projects.
+const SOURCE_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf|[cm]?tsx?|[cm]?jsx?|py|c|cc|cpp|cxx|c\+\+|h|hh|hpp|hxx|h\+\+|ipp|inl|tpp|vcxproj|uproject|swift|pbxproj|xcworkspacedata|podspec)$|(^|[\\/])((package|jsconfig|tsconfig(\.[\w-]+)?)\.json|pyproject\.toml|setup\.cfg|Pipfile|requirements[\w.-]*\.txt|CMakeLists\.txt|meson\.build|compile_commands\.json|Podfile|project\.ya?ml)$/i;
+const NOT_SOURCE = /\.d\.[cm]?ts$|\.min\.js$|(^|[\\/])(moc_[^\\/]+|qrc_[^\\/]+|ui_[^\\/]+\.h|[^\\/]+\.(generated\.h|gen\.cpp|pb\.(h|cc)|generated\.swift))$|(^|[\\/])(node_modules|dist|bin|obj|__pycache__|site-packages|\.venv|venv|\.tox|[^\\/]+\.egg-info)[\\/]/i;
 // Folders a build writes to (CMake, Unreal Engine; TypeScript and Python leave their output in build/ too). C# reads
 // its projects wherever they are, and a build/ folder with the build's own project is common: its files there count.
 const BUILD_OUTPUT = /(^|[\\/])(build|cmake-build-[^\\/]+|CMakeFiles|_deps|Intermediate|Binaries|DerivedDataCache)[\\/]/i;
+// Where SwiftPM, Xcode, CocoaPods and Carthage keep builds and other people's code, by their exact names: a `pods/`
+// folder of a web app or a C# `Pods/` namespace is code of the map.
+const SWIFT_OUTPUT = /(^|[\\/])(\.build|DerivedData|Pods|Carthage|SourcePackages|xcuserdata)[\\/]/;
 const CSHARP_FILES = /\.(cs|csproj|props|targets|sln|slnx|slnf)$/i;
 const EXCLUDE = '**/{node_modules,bin,obj,.git,.vs}/**';
 const SCRIPT_EXCLUDE = '**/{node_modules,bin,obj,dist,build,out,coverage,.git,.vs,.next,.angular}/**';
@@ -29,6 +32,11 @@ const PYTHON_EXCLUDE = '**/{node_modules,bin,obj,dist,build,__pycache__,site-pac
 const PYTHON_SOURCES = '**/*.py';
 const CPP_EXCLUDE = '**/{node_modules,bin,obj,build,out,third_party,3rdparty,external,vendor,Intermediate,Binaries,.git,.vs}/**';
 const CPP_SOURCES = '**/*.{c,cc,cpp,cxx}';
+const SWIFT_EXCLUDE = '**/{node_modules,.build,DerivedData,Pods,Carthage,SourcePackages,.git}/**';
+const SWIFT_SOURCES = '**/*.swift';
+// Xcode projects and workspaces are folders; a workspace inside a project (project.xcworkspace) is the project's own.
+const XCODE_PROJECTS = '**/*.xcodeproj/project.pbxproj';
+const XCODE_WORKSPACES = '**/*.xcworkspace/contents.xcworkspacedata';
 const READY_TIMEOUT_MS = 30000;
 
 /** One code map per window: the webview with the 3D map, the analysis behind it and the live updates. */
@@ -393,7 +401,7 @@ class CodeMapController {
   /** A folder whose change changes the map: one with source files in it, or (gone or moved away) one the map has code from. */
   holdsSources(relative, file) {
     const inside = relative.replace(/\\/g, '/').replace(/\/$/, '') + '/';
-    if (NOT_SOURCE.test(inside) || BUILD_OUTPUT.test(inside)) return false;
+    if (NOT_SOURCE.test(inside) || BUILD_OUTPUT.test(inside) || SWIFT_OUTPUT.test(inside)) return false;
     let stat = null;
     try {
       stat = fs.statSync(file);
@@ -457,13 +465,14 @@ class CodeMapController {
 
   /**
    * What to analyze. C#: solutions first (shallowest first), then projects; asks when there is more than one.
-   * TypeScript / JavaScript, Python or C / C++ only: the workspace folder. C# with another language: asks, with the
-   * folder (one map of everything) first.
+   * TypeScript / JavaScript, Python, C / C++ or Swift only: the workspace folder; when asked to choose, Swift's Xcode
+   * projects and workspaces are offered after the folder. C# with another language: asks, with the folder (one map of
+   * everything) first.
    */
   async pickTarget({ always = false } = {}) {
     const folders = vscode.workspace.workspaceFolders ?? [];
     if (!folders.length) {
-      vscode.window.showWarningMessage('CodeMap: open a folder with code first (a C# solution or project, a TypeScript / JavaScript package, a Python project or C / C++ code).');
+      vscode.window.showWarningMessage('CodeMap: open a folder with code first (a C# solution or project, a TypeScript / JavaScript package, a Python project, C / C++ or Swift code).');
       return null;
     }
 
@@ -471,9 +480,21 @@ class CodeMapController {
     let candidates = (await vscode.workspace.findFiles('**/*.{sln,slnx,slnf}', EXCLUDE, 50)).filter((uri) => listsCSharpProjects(uri.fsPath));
     if (!candidates.length) candidates = await vscode.workspace.findFiles('**/*.csproj', EXCLUDE, 200);
     const paths = candidates.map((uri) => uri.fsPath).sort((a, b) => depth(a) - depth(b) || a.localeCompare(b));
-    const others = paths.length ? [(await this.hasScripts()) && 'TypeScript / JavaScript', (await this.hasPython()) && 'Python', (await this.hasCpp()) && 'C / C++'].filter(Boolean) : [];
+    const others = paths.length ? [(await this.hasScripts()) && 'TypeScript / JavaScript', (await this.hasPython()) && 'Python', (await this.hasCpp()) && 'C / C++', (await this.hasSwift()) && 'Swift'].filter(Boolean) : [];
     const scripts = others.length > 0;
     const languages = listOf(['C#', ...others]);
+    if (!paths.length && always) {
+      const xcode = await this.xcodeTargets();
+      if (xcode.length) {
+        const items = [
+          ...folders.map((f) => ({ label: `$(folder) ${f.name}`, description: 'everything in the folder: Swift packages and Xcode projects together', target: f.uri.fsPath })),
+          ...xcode.map((p) => ({ label: path.basename(p), description: vscode.workspace.asRelativePath(path.dirname(p)), target: p })),
+        ];
+        const choice = await vscode.window.showQuickPick(items, { placeHolder: 'What should CodeMap analyze? An Xcode project or workspace maps its own targets.' });
+        return choice?.target ?? null;
+      }
+    }
+
     if (!paths.length && (!always || folders.length === 1)) return folders[0].uri.fsPath;
     if (paths.length === 1 && !always && !scripts) return paths[0];
 
@@ -494,6 +515,20 @@ class CodeMapController {
   async hasCpp() {
     const sources = await vscode.workspace.findFiles(CPP_SOURCES, CPP_EXCLUDE, 50);
     return sources.some((uri) => isSourceFile(vscode.workspace.asRelativePath(uri.fsPath, false)));
+  }
+
+  /** Whether the workspace has Swift code beside C#: .swift files outside build output and dependencies. */
+  async hasSwift() {
+    const sources = await vscode.workspace.findFiles(SWIFT_SOURCES, SWIFT_EXCLUDE, 50);
+    return sources.some((uri) => isSourceFile(vscode.workspace.asRelativePath(uri.fsPath, false)));
+  }
+
+  /** The Xcode workspaces and projects of the workspace (folders), workspaces first, shallowest first. */
+  async xcodeTargets() {
+    const workspaces = (await vscode.workspace.findFiles(XCODE_WORKSPACES, SWIFT_EXCLUDE, 20)).map((uri) => path.dirname(uri.fsPath)).filter((p) => !/\.xcodeproj$/i.test(path.dirname(p)));
+    const projects = (await vscode.workspace.findFiles(XCODE_PROJECTS, SWIFT_EXCLUDE, 50)).map((uri) => path.dirname(uri.fsPath));
+    const order = (a, b) => depth(a) - depth(b) || a.localeCompare(b);
+    return [...workspaces.sort(order), ...projects.sort(order)];
   }
 
   /** Whether the workspace has Python code beside C#: .py files outside environments and build output. */
@@ -536,7 +571,7 @@ function depth(file) {
 
 /** Whether a change to a file (its path inside the analyzed folder) can change the map. */
 function isSourceFile(file) {
-  return SOURCE_FILES.test(file) && !NOT_SOURCE.test(file) && (!BUILD_OUTPUT.test(file) || CSHARP_FILES.test(file));
+  return SOURCE_FILES.test(file) && !NOT_SOURCE.test(file) && (!(BUILD_OUTPUT.test(file) || SWIFT_OUTPUT.test(file)) || CSHARP_FILES.test(file));
 }
 
 /** Whether a folder (`inside`: its path in the analyzed folder, ending in /) holds a source file; a huge folder is taken to. */
@@ -552,18 +587,21 @@ function folderHasSources(folder, inside, budget = { left: 5000 }) {
     if (budget.left-- <= 0) return true;
     const name = inside + entry.name;
     if (entry.isDirectory()) {
-      if (!entry.name.startsWith('.') && !NOT_SOURCE.test(name + '/') && !BUILD_OUTPUT.test(name + '/') && folderHasSources(path.join(folder, entry.name), name + '/', budget)) return true;
+      if (!entry.name.startsWith('.') && !NOT_SOURCE.test(name + '/') && !BUILD_OUTPUT.test(name + '/') && !SWIFT_OUTPUT.test(name + '/') && folderHasSources(path.join(folder, entry.name), name + '/', budget)) return true;
     } else if (isSourceFile(name)) return true;
   }
 
   return false;
 }
 
-/** The folder a target is analyzed in: the folder itself, or the one its solution or project file is in. */
+/**
+ * The folder a target is analyzed in: the folder itself, or the one its solution or project file is in (an Xcode
+ * project or workspace is a folder, but a project file: the folder it is in).
+ */
 function targetRoot(target) {
   if (!target) return null;
   try {
-    return fs.statSync(target).isDirectory() ? target : path.dirname(target);
+    return fs.statSync(target).isDirectory() && !/\.(xcodeproj|xcworkspace)[\\/]?$/i.test(target) ? target : path.dirname(target);
   } catch {
     return path.dirname(target);
   }
@@ -626,4 +664,4 @@ function extensionVersion(context) {
 
 function deactivate() {}
 
-module.exports = { activate, deactivate, CodeMapController, fingerprint, isSourceFile, listsCSharpProjects };
+module.exports = { activate, deactivate, CodeMapController, fingerprint, isSourceFile, listsCSharpProjects, targetRoot };

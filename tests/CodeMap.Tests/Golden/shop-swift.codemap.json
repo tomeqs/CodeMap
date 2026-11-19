@@ -1,0 +1,4473 @@
+{
+  "format": "codemap",
+  "version": "1.1",
+  "generator": {
+    "name": "codemap",
+    "version": "(version)"
+  },
+  "generatedAt": "(time)",
+  "source": {
+    "path": "(repo)/samples/shop-swift",
+    "root": "(repo)/samples/shop-swift",
+    "kind": "directory",
+    "name": "shop-swift",
+    "languages": [
+      {
+        "id": "swift",
+        "name": "Swift",
+        "levels": {
+          "project": [
+            "Target",
+            "Targets"
+          ],
+          "namespace": [
+            "Folder",
+            "Folders"
+          ],
+          "type": [
+            "Type",
+            "Types"
+          ],
+          "member": [
+            "Member",
+            "Members"
+          ]
+        },
+        "external": "packages"
+      }
+    ]
+  },
+  "stats": {
+    "projects": 7,
+    "namespaces": 8,
+    "types": 25,
+    "members": 67,
+    "packages": 1,
+    "externalTypes": 0,
+    "edges": 229,
+    "files": 18,
+    "lines": 324,
+    "cycles": 1,
+    "edges.returns": 8,
+    "edges.accepts": 20,
+    "edges.injects": 5,
+    "edges.accesses": 71,
+    "edges.calls": 52,
+    "edges.throws": 2,
+    "edges.uses": 6,
+    "edges.holds": 17,
+    "edges.instantiates": 34,
+    "edges.implements": 5,
+    "edges.projectReference": 8,
+    "edges.packageReference": 1
+  },
+  "nodes": [
+    {
+      "id": "swift:project:ShopApp",
+      "kind": "project",
+      "name": "ShopApp",
+      "fullName": "Sources/ShopApp",
+      "language": "swift",
+      "signature": ".target",
+      "location": {
+        "file": "Package.swift",
+        "line": 11,
+        "endLine": 11
+      },
+      "metrics": {
+        "abstractness": 0.5,
+        "ca": 4,
+        "ce": 1,
+        "complexity": 9,
+        "distance": 0.3,
+        "files": 3,
+        "instability": 0.2,
+        "lines": 61,
+        "loc": 49,
+        "types": 4
+      }
+    },
+    {
+      "id": "swift:project:ShopDomain",
+      "kind": "project",
+      "name": "ShopDomain",
+      "fullName": "Sources/ShopDomain",
+      "language": "swift",
+      "signature": ".target",
+      "location": {
+        "file": "Package.swift",
+        "line": 10,
+        "endLine": 10
+      },
+      "metrics": {
+        "abstractness": 0,
+        "ca": 6,
+        "ce": 0,
+        "complexity": 19,
+        "distance": 1,
+        "files": 5,
+        "instability": 0,
+        "lines": 88,
+        "loc": 81,
+        "types": 8
+      }
+    },
+    {
+      "id": "swift:project:ShopInfra",
+      "kind": "project",
+      "name": "ShopInfra",
+      "fullName": "Sources/ShopInfra",
+      "language": "swift",
+      "signature": ".target",
+      "location": {
+        "file": "Package.swift",
+        "line": 12,
+        "endLine": 12
+      },
+      "metrics": {
+        "abstractness": 0,
+        "ca": 3,
+        "ce": 2,
+        "complexity": 5,
+        "distance": 0.6,
+        "files": 2,
+        "instability": 0.4,
+        "lines": 26,
+        "loc": 18,
+        "types": 2
+      }
+    },
+    {
+      "id": "swift:project:ShopServer",
+      "kind": "project",
+      "name": "ShopServer",
+      "fullName": "Sources/ShopServer",
+      "language": "swift",
+      "signature": ".executableTarget",
+      "location": {
+        "file": "Package.swift",
+        "line": 14,
+        "endLine": 14
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 3,
+        "complexity": 7,
+        "distance": 0,
+        "files": 1,
+        "instability": 1,
+        "lines": 41,
+        "loc": 34,
+        "types": 3
+      }
+    },
+    {
+      "id": "swift:project:ShopTests",
+      "kind": "project",
+      "name": "ShopTests",
+      "fullName": "Tests/ShopTests",
+      "language": "swift",
+      "signature": ".testTarget",
+      "location": {
+        "file": "Package.swift",
+        "line": 15,
+        "endLine": 15
+      },
+      "tags": [
+        "test-project"
+      ],
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 3,
+        "complexity": 3,
+        "distance": 0,
+        "files": 2,
+        "instability": 1,
+        "lines": 33,
+        "loc": 25,
+        "types": 2
+      }
+    },
+    {
+      "id": "swift:project:ShopiOS",
+      "kind": "project",
+      "name": "ShopiOS",
+      "fullName": "iOS",
+      "language": "swift",
+      "signature": "application",
+      "location": {
+        "file": "ShopiOS.xcodeproj/project.pbxproj",
+        "line": 56,
+        "endLine": 56
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 1,
+        "complexity": 6,
+        "distance": 0,
+        "files": 4,
+        "instability": 1,
+        "lines": 60,
+        "loc": 47,
+        "types": 5
+      }
+    },
+    {
+      "id": "swift:project:shop-cli",
+      "kind": "project",
+      "name": "shop-cli",
+      "fullName": "Sources/shop-cli",
+      "language": "swift",
+      "signature": ".executableTarget",
+      "location": {
+        "file": "Package.swift",
+        "line": 13,
+        "endLine": 13
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 3,
+        "complexity": 1,
+        "distance": 0,
+        "files": 1,
+        "instability": 1,
+        "lines": 15,
+        "loc": 11,
+        "types": 1
+      }
+    },
+    {
+      "id": "swift:ns:ShopApp/",
+      "kind": "namespace",
+      "name": "ShopApp",
+      "fullName": "ShopApp",
+      "parent": "swift:project:ShopApp",
+      "project": "swift:project:ShopApp",
+      "metrics": {
+        "abstractness": 0.5,
+        "ca": 4,
+        "ce": 2,
+        "complexity": 9,
+        "distance": 0.167,
+        "instability": 0.333,
+        "loc": 49,
+        "types": 4
+      }
+    },
+    {
+      "id": "swift:ns:ShopDomain/",
+      "kind": "namespace",
+      "name": "ShopDomain",
+      "fullName": "ShopDomain",
+      "parent": "swift:project:ShopDomain",
+      "project": "swift:project:ShopDomain",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 7,
+        "ce": 0,
+        "complexity": 9,
+        "distance": 1,
+        "instability": 0,
+        "loc": 31,
+        "types": 4
+      }
+    },
+    {
+      "id": "swift:ns:ShopDomain/Orders",
+      "kind": "namespace",
+      "name": "Orders",
+      "fullName": "ShopDomain/Orders",
+      "parent": "swift:project:ShopDomain",
+      "project": "swift:project:ShopDomain",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 6,
+        "ce": 1,
+        "complexity": 10,
+        "distance": 0.857,
+        "instability": 0.143,
+        "loc": 50,
+        "types": 4
+      }
+    },
+    {
+      "id": "swift:ns:ShopInfra/",
+      "kind": "namespace",
+      "name": "ShopInfra",
+      "fullName": "ShopInfra",
+      "parent": "swift:project:ShopInfra",
+      "project": "swift:project:ShopInfra",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 3,
+        "ce": 3,
+        "complexity": 5,
+        "distance": 0.5,
+        "instability": 0.5,
+        "loc": 18,
+        "types": 2
+      }
+    },
+    {
+      "id": "swift:ns:ShopServer/",
+      "kind": "namespace",
+      "name": "ShopServer",
+      "fullName": "ShopServer",
+      "parent": "swift:project:ShopServer",
+      "project": "swift:project:ShopServer",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 4,
+        "complexity": 7,
+        "distance": 0,
+        "instability": 1,
+        "loc": 34,
+        "types": 3
+      }
+    },
+    {
+      "id": "swift:ns:ShopTests/",
+      "kind": "namespace",
+      "name": "ShopTests",
+      "fullName": "ShopTests",
+      "parent": "swift:project:ShopTests",
+      "project": "swift:project:ShopTests",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 4,
+        "complexity": 3,
+        "distance": 0,
+        "instability": 1,
+        "loc": 25,
+        "types": 2
+      }
+    },
+    {
+      "id": "swift:ns:ShopiOS/",
+      "kind": "namespace",
+      "name": "iOS",
+      "fullName": "ShopiOS",
+      "parent": "swift:project:ShopiOS",
+      "project": "swift:project:ShopiOS",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 2,
+        "complexity": 6,
+        "distance": 0,
+        "instability": 1,
+        "loc": 47,
+        "types": 5
+      }
+    },
+    {
+      "id": "swift:ns:shop-cli/",
+      "kind": "namespace",
+      "name": "shop-cli",
+      "fullName": "shop-cli",
+      "parent": "swift:project:shop-cli",
+      "project": "swift:project:shop-cli",
+      "metrics": {
+        "abstractness": 0,
+        "ca": 0,
+        "ce": 4,
+        "complexity": 1,
+        "distance": 0,
+        "instability": 1,
+        "loc": 11,
+        "types": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:OrderRepository",
+      "kind": "interface",
+      "name": "OrderRepository",
+      "fullName": "OrderRepository",
+      "parent": "swift:ns:ShopApp/",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "signature": "public protocol OrderRepository: AnyObject",
+      "location": {
+        "file": "Sources/ShopApp/Ports.swift",
+        "line": 4,
+        "endLine": 7
+      },
+      "metrics": {
+        "ca": 2,
+        "ce": 1,
+        "complexity": 0,
+        "instability": 0.333,
+        "loc": 4,
+        "maxComplexity": 0,
+        "members": 2,
+        "methods": 2
+      }
+    },
+    {
+      "id": "swift:ShopApp:OrderService",
+      "kind": "class",
+      "name": "OrderService",
+      "fullName": "OrderService",
+      "parent": "swift:ns:ShopApp/",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "modifiers": [
+        "final"
+      ],
+      "signature": "public final class OrderService",
+      "location": {
+        "file": "Sources/ShopApp/OrderService.swift",
+        "line": 5,
+        "endLine": 27
+      },
+      "tags": [
+        "in-cycle"
+      ],
+      "doc": "Places orders and has them paid; refunds go back through it.",
+      "metrics": {
+        "ca": 6,
+        "ce": 7,
+        "complexity": 6,
+        "constructors": 1,
+        "fields": 2,
+        "instability": 0.538,
+        "loc": 23,
+        "maxComplexity": 2,
+        "members": 6,
+        "methods": 3
+      }
+    },
+    {
+      "id": "swift:ShopApp:PaymentGateway",
+      "kind": "interface",
+      "name": "PaymentGateway",
+      "fullName": "PaymentGateway",
+      "parent": "swift:ns:ShopApp/",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "signature": "public protocol PaymentGateway: AnyObject",
+      "location": {
+        "file": "Sources/ShopApp/Ports.swift",
+        "line": 9,
+        "endLine": 11
+      },
+      "metrics": {
+        "ca": 2,
+        "ce": 1,
+        "complexity": 0,
+        "instability": 0.333,
+        "loc": 3,
+        "maxComplexity": 0,
+        "members": 1,
+        "methods": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:PaymentService",
+      "kind": "class",
+      "name": "PaymentService",
+      "fullName": "PaymentService",
+      "parent": "swift:ns:ShopApp/",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "modifiers": [
+        "final"
+      ],
+      "signature": "public final class PaymentService",
+      "location": {
+        "file": "Sources/ShopApp/PaymentService.swift",
+        "line": 5,
+        "endLine": 23
+      },
+      "tags": [
+        "in-cycle"
+      ],
+      "doc": "Charges orders through the gateway; a refund looks the order up through the order service.",
+      "metrics": {
+        "ca": 4,
+        "ce": 3,
+        "complexity": 3,
+        "constructors": 1,
+        "fields": 2,
+        "instability": 0.429,
+        "loc": 19,
+        "maxComplexity": 1,
+        "members": 5,
+        "methods": 2
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Money",
+      "kind": "struct",
+      "name": "Money",
+      "fullName": "Money",
+      "parent": "swift:ns:ShopDomain/",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "signature": "public struct Money: Hashable, Comparable, Sendable",
+      "location": {
+        "file": "Sources/ShopDomain/Money.swift",
+        "line": 2,
+        "endLine": 13
+      },
+      "doc": "An amount of money in cents, so sums are exact.",
+      "metrics": {
+        "ca": 11,
+        "ce": 0,
+        "complexity": 4,
+        "constructors": 1,
+        "fields": 2,
+        "instability": 0,
+        "loc": 12,
+        "maxComplexity": 1,
+        "members": 6,
+        "methods": 3
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order",
+      "kind": "class",
+      "name": "Order",
+      "fullName": "Order",
+      "parent": "swift:ns:ShopDomain/Orders",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "modifiers": [
+        "final"
+      ],
+      "signature": "public final class Order: Identifiable",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 9,
+        "endLine": 47
+      },
+      "extraLocations": [
+        {
+          "file": "Sources/ShopDomain/Orders/Order+Totals.swift",
+          "line": 1,
+          "endLine": 7
+        }
+      ],
+      "doc": "An order of a customer: lines of products, paid once.",
+      "metrics": {
+        "ca": 11,
+        "ce": 5,
+        "complexity": 10,
+        "constructors": 1,
+        "fields": 3,
+        "instability": 0.312,
+        "loc": 46,
+        "maxComplexity": 3,
+        "members": 10,
+        "methods": 4,
+        "properties": 2
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.Line",
+      "kind": "struct",
+      "name": "Line",
+      "fullName": "Order.Line",
+      "parent": "swift:ShopDomain:Order",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "signature": "public struct Line: Hashable",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 10,
+        "endLine": 13
+      },
+      "metrics": {
+        "ca": 1,
+        "ce": 1,
+        "complexity": 0,
+        "fields": 2,
+        "instability": 0.5,
+        "loc": 4,
+        "members": 2
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.Status",
+      "kind": "enum",
+      "name": "Status",
+      "fullName": "Order.Status",
+      "parent": "swift:ShopDomain:Order",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "signature": "public enum Status: String",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 15,
+        "endLine": 15
+      },
+      "metrics": {
+        "ca": 1,
+        "ce": 0,
+        "complexity": 0,
+        "enumMembers": 2,
+        "instability": 0,
+        "loc": 1,
+        "members": 0
+      }
+    },
+    {
+      "id": "swift:ShopDomain:OrderError",
+      "kind": "enum",
+      "name": "OrderError",
+      "fullName": "OrderError",
+      "parent": "swift:ns:ShopDomain/Orders",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "signature": "public enum OrderError: Error",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 3,
+        "endLine": 6
+      },
+      "metrics": {
+        "ca": 2,
+        "ce": 0,
+        "complexity": 0,
+        "enumMembers": 2,
+        "instability": 0,
+        "loc": 4,
+        "members": 0
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Product",
+      "kind": "struct",
+      "name": "Product",
+      "fullName": "Product",
+      "parent": "swift:ns:ShopDomain/",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "signature": "public struct Product: Hashable, Sendable",
+      "location": {
+        "file": "Sources/ShopDomain/Product.swift",
+        "line": 1,
+        "endLine": 11
+      },
+      "metrics": {
+        "ca": 8,
+        "ce": 1,
+        "complexity": 1,
+        "constructors": 1,
+        "fields": 3,
+        "instability": 0.111,
+        "loc": 11,
+        "maxComplexity": 1,
+        "members": 4
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Tier",
+      "kind": "enum",
+      "name": "Tier",
+      "fullName": "Tier",
+      "parent": "swift:ns:ShopDomain/",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "signature": "public enum Tier: Sendable",
+      "location": {
+        "file": "Sources/ShopDomain/Discounts.swift",
+        "line": 1,
+        "endLine": 1
+      },
+      "metrics": {
+        "ca": 4,
+        "ce": 0,
+        "complexity": 0,
+        "enumMembers": 3,
+        "instability": 0,
+        "loc": 1,
+        "members": 0
+      }
+    },
+    {
+      "id": "swift:ShopDomain:file:Discounts",
+      "kind": "module",
+      "level": "type",
+      "name": "Discounts",
+      "fullName": "Discounts",
+      "parent": "swift:ns:ShopDomain/",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "signature": "Discounts.swift",
+      "location": {
+        "file": "Sources/ShopDomain/Discounts.swift",
+        "line": 1,
+        "endLine": 10
+      },
+      "metrics": {
+        "ca": 1,
+        "ce": 2,
+        "complexity": 4,
+        "instability": 0.667,
+        "loc": 7,
+        "maxComplexity": 4,
+        "members": 1,
+        "methods": 1
+      }
+    },
+    {
+      "id": "swift:ShopInfra:FakePaymentGateway",
+      "kind": "class",
+      "name": "FakePaymentGateway",
+      "fullName": "FakePaymentGateway",
+      "parent": "swift:ns:ShopInfra/",
+      "project": "swift:project:ShopInfra",
+      "accessibility": "public",
+      "modifiers": [
+        "final"
+      ],
+      "signature": "public final class FakePaymentGateway: PaymentGateway",
+      "location": {
+        "file": "Sources/ShopInfra/FakePaymentGateway.swift",
+        "line": 5,
+        "endLine": 14
+      },
+      "doc": "Pretends to charge: every payment goes through.",
+      "metrics": {
+        "ca": 3,
+        "ce": 2,
+        "complexity": 2,
+        "constructors": 1,
+        "fields": 1,
+        "instability": 0.4,
+        "loc": 10,
+        "maxComplexity": 1,
+        "members": 3,
+        "methods": 1
+      }
+    },
+    {
+      "id": "swift:ShopInfra:InMemoryOrderRepository",
+      "kind": "class",
+      "name": "InMemoryOrderRepository",
+      "fullName": "InMemoryOrderRepository",
+      "parent": "swift:ns:ShopInfra/",
+      "project": "swift:project:ShopInfra",
+      "accessibility": "public",
+      "modifiers": [
+        "final"
+      ],
+      "signature": "public final class InMemoryOrderRepository: OrderRepository",
+      "location": {
+        "file": "Sources/ShopInfra/InMemoryOrderRepository.swift",
+        "line": 5,
+        "endLine": 12
+      },
+      "metrics": {
+        "ca": 3,
+        "ce": 2,
+        "complexity": 3,
+        "constructors": 1,
+        "fields": 1,
+        "instability": 0.4,
+        "loc": 8,
+        "maxComplexity": 1,
+        "members": 4,
+        "methods": 2
+      }
+    },
+    {
+      "id": "swift:ShopServer:OrdersController",
+      "kind": "struct",
+      "name": "OrdersController",
+      "fullName": "OrdersController",
+      "parent": "swift:ns:ShopServer/",
+      "project": "swift:project:ShopServer",
+      "accessibility": "internal",
+      "signature": "struct OrdersController: RouteCollection",
+      "location": {
+        "file": "Sources/ShopServer/routes.swift",
+        "line": 12,
+        "endLine": 30
+      },
+      "tags": [
+        "controller"
+      ],
+      "metrics": {
+        "ca": 1,
+        "ce": 3,
+        "complexity": 5,
+        "fields": 1,
+        "instability": 0.75,
+        "loc": 19,
+        "maxComplexity": 2,
+        "members": 4,
+        "methods": 3
+      }
+    },
+    {
+      "id": "swift:ShopServer:ShopServer",
+      "kind": "struct",
+      "name": "ShopServer",
+      "fullName": "ShopServer",
+      "parent": "swift:ns:ShopServer/",
+      "project": "swift:project:ShopServer",
+      "accessibility": "internal",
+      "signature": "struct ShopServer",
+      "location": {
+        "file": "Sources/ShopServer/routes.swift",
+        "line": 32,
+        "endLine": 41
+      },
+      "attributes": [
+        "main"
+      ],
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 5,
+        "complexity": 1,
+        "instability": 1,
+        "loc": 10,
+        "maxComplexity": 1,
+        "members": 1,
+        "methods": 1
+      }
+    },
+    {
+      "id": "swift:ShopServer:file:routes",
+      "kind": "module",
+      "level": "type",
+      "name": "routes",
+      "fullName": "routes",
+      "parent": "swift:ns:ShopServer/",
+      "project": "swift:project:ShopServer",
+      "accessibility": "public",
+      "signature": "routes.swift",
+      "location": {
+        "file": "Sources/ShopServer/routes.swift",
+        "line": 1,
+        "endLine": 41
+      },
+      "metrics": {
+        "ca": 1,
+        "ce": 2,
+        "complexity": 1,
+        "instability": 0.667,
+        "loc": 5,
+        "maxComplexity": 1,
+        "members": 1,
+        "methods": 1
+      }
+    },
+    {
+      "id": "swift:ShopTests:OrderTests",
+      "kind": "class",
+      "name": "OrderTests",
+      "fullName": "OrderTests",
+      "parent": "swift:ns:ShopTests/",
+      "project": "swift:project:ShopTests",
+      "accessibility": "internal",
+      "modifiers": [
+        "final"
+      ],
+      "signature": "final class OrderTests: XCTestCase",
+      "baseType": "XCTestCase",
+      "location": {
+        "file": "Tests/ShopTests/OrderTests.swift",
+        "line": 4,
+        "endLine": 18
+      },
+      "tags": [
+        "test"
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 3,
+        "complexity": 2,
+        "fields": 1,
+        "instability": 1,
+        "loc": 15,
+        "maxComplexity": 1,
+        "members": 3,
+        "methods": 2
+      }
+    },
+    {
+      "id": "swift:ShopTests:PaymentSuite",
+      "kind": "struct",
+      "name": "PaymentSuite",
+      "fullName": "PaymentSuite",
+      "parent": "swift:ns:ShopTests/",
+      "project": "swift:project:ShopTests",
+      "accessibility": "internal",
+      "signature": "struct PaymentSuite",
+      "location": {
+        "file": "Tests/ShopTests/PaymentSuite.swift",
+        "line": 6,
+        "endLine": 15
+      },
+      "attributes": [
+        "Suite"
+      ],
+      "tags": [
+        "test"
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 8,
+        "complexity": 1,
+        "instability": 1,
+        "loc": 10,
+        "maxComplexity": 1,
+        "members": 1,
+        "methods": 1
+      }
+    },
+    {
+      "id": "swift:ShopiOS:Cart",
+      "kind": "class",
+      "name": "Cart",
+      "fullName": "Cart",
+      "parent": "swift:ns:ShopiOS/",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "internal",
+      "modifiers": [
+        "final"
+      ],
+      "signature": "final class Cart: ObservableObject",
+      "location": {
+        "file": "iOS/Cart.swift",
+        "line": 4,
+        "endLine": 11
+      },
+      "metrics": {
+        "ca": 4,
+        "ce": 2,
+        "complexity": 1,
+        "fields": 1,
+        "instability": 0.333,
+        "loc": 8,
+        "maxComplexity": 1,
+        "members": 2,
+        "methods": 1
+      }
+    },
+    {
+      "id": "swift:ShopiOS:CartView",
+      "kind": "struct",
+      "name": "CartView",
+      "fullName": "CartView",
+      "parent": "swift:ns:ShopiOS/",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "internal",
+      "signature": "struct CartView: View",
+      "location": {
+        "file": "iOS/CartView.swift",
+        "line": 4,
+        "endLine": 16
+      },
+      "tags": [
+        "component"
+      ],
+      "metrics": {
+        "ca": 2,
+        "ce": 4,
+        "complexity": 2,
+        "fields": 2,
+        "instability": 0.667,
+        "loc": 13,
+        "maxComplexity": 2,
+        "members": 3,
+        "properties": 1
+      }
+    },
+    {
+      "id": "swift:ShopiOS:CheckoutViewController",
+      "kind": "class",
+      "name": "CheckoutViewController",
+      "fullName": "CheckoutViewController",
+      "parent": "swift:ns:ShopiOS/",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "internal",
+      "modifiers": [
+        "final"
+      ],
+      "signature": "final class CheckoutViewController: UIViewController",
+      "baseType": "UIViewController",
+      "location": {
+        "file": "iOS/CheckoutViewController.swift",
+        "line": 4,
+        "endLine": 16
+      },
+      "tags": [
+        "component"
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 3,
+        "complexity": 2,
+        "fields": 2,
+        "instability": 1,
+        "loc": 13,
+        "maxComplexity": 1,
+        "members": 4,
+        "methods": 2
+      }
+    },
+    {
+      "id": "swift:ShopiOS:ShopiOSApp",
+      "kind": "struct",
+      "name": "ShopiOSApp",
+      "fullName": "ShopiOSApp",
+      "parent": "swift:ns:ShopiOS/",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "internal",
+      "signature": "struct ShopiOSApp: App",
+      "location": {
+        "file": "iOS/ShopiOSApp.swift",
+        "line": 4,
+        "endLine": 13
+      },
+      "attributes": [
+        "main"
+      ],
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 2,
+        "complexity": 1,
+        "fields": 1,
+        "instability": 1,
+        "loc": 10,
+        "maxComplexity": 1,
+        "members": 2,
+        "properties": 1
+      }
+    },
+    {
+      "id": "swift:ShopiOS:file:CartView",
+      "kind": "module",
+      "level": "type",
+      "name": "CartView",
+      "fullName": "CartView",
+      "parent": "swift:ns:ShopiOS/",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "private",
+      "signature": "CartView.swift",
+      "location": {
+        "file": "iOS/CartView.swift",
+        "line": 1,
+        "endLine": 20
+      },
+      "tags": [
+        "test"
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 2,
+        "complexity": 0,
+        "instability": 1,
+        "loc": 3,
+        "maxComplexity": 0,
+        "members": 1,
+        "methods": 1
+      }
+    },
+    {
+      "id": "swift:shop-cli:ShopCLI",
+      "kind": "struct",
+      "name": "ShopCLI",
+      "fullName": "ShopCLI",
+      "parent": "swift:ns:shop-cli/",
+      "project": "swift:project:shop-cli",
+      "accessibility": "internal",
+      "signature": "struct ShopCLI",
+      "location": {
+        "file": "Sources/shop-cli/ShopCLI.swift",
+        "line": 5,
+        "endLine": 15
+      },
+      "attributes": [
+        "main"
+      ],
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "ca": 0,
+        "ce": 8,
+        "complexity": 1,
+        "instability": 1,
+        "loc": 11,
+        "maxComplexity": 1,
+        "members": 1,
+        "methods": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:OrderRepository.find(id:)",
+      "kind": "method",
+      "level": "member",
+      "name": "find",
+      "fullName": "OrderRepository.find(id:)",
+      "parent": "swift:ShopApp:OrderRepository",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "signature": "func find(id: UUID) -> Order?",
+      "location": {
+        "file": "Sources/ShopApp/Ports.swift",
+        "line": 6,
+        "endLine": 6
+      },
+      "metrics": {
+        "fanIn": 1,
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:OrderRepository.save(_:)",
+      "kind": "method",
+      "level": "member",
+      "name": "save",
+      "fullName": "OrderRepository.save(_:)",
+      "parent": "swift:ShopApp:OrderRepository",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "signature": "func save(_ order: Order)",
+      "location": {
+        "file": "Sources/ShopApp/Ports.swift",
+        "line": 5,
+        "endLine": 5
+      },
+      "metrics": {
+        "fanIn": 1,
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:OrderService.checkout(_:)",
+      "kind": "method",
+      "level": "member",
+      "name": "checkout",
+      "fullName": "OrderService.checkout(_:)",
+      "parent": "swift:ShopApp:OrderService",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "modifiers": [
+        "throws"
+      ],
+      "signature": "public func checkout(_ order: Order) throws -> String",
+      "location": {
+        "file": "Sources/ShopApp/OrderService.swift",
+        "line": 21,
+        "endLine": 24
+      },
+      "metrics": {
+        "complexity": 2,
+        "fanIn": 3,
+        "fanOut": 1,
+        "loc": 4,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:OrderService.init(repository:)",
+      "kind": "constructor",
+      "level": "member",
+      "name": "init",
+      "fullName": "OrderService.init(repository:)",
+      "parent": "swift:ShopApp:OrderService",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "signature": "public init(repository: OrderRepository)",
+      "location": {
+        "file": "Sources/ShopApp/OrderService.swift",
+        "line": 9,
+        "endLine": 11
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 3,
+        "loc": 3,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:OrderService.order(id:)",
+      "kind": "method",
+      "level": "member",
+      "name": "order",
+      "fullName": "OrderService.order(id:)",
+      "parent": "swift:ShopApp:OrderService",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "signature": "public func order(id: UUID) -> Order?",
+      "location": {
+        "file": "Sources/ShopApp/OrderService.swift",
+        "line": 26,
+        "endLine": 26
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 3,
+        "fanOut": 1,
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:OrderService.payments",
+      "kind": "field",
+      "level": "member",
+      "name": "payments",
+      "fullName": "OrderService.payments",
+      "parent": "swift:ShopApp:OrderService",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "signature": "public var payments: PaymentService?",
+      "location": {
+        "file": "Sources/ShopApp/OrderService.swift",
+        "line": 7,
+        "endLine": 7
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:OrderService.place(_:tier:)",
+      "kind": "method",
+      "level": "member",
+      "name": "place",
+      "fullName": "OrderService.place(_:tier:)",
+      "parent": "swift:ShopApp:OrderService",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "signature": "public func place(_ products: [Product], tier: Tier) -> Order",
+      "location": {
+        "file": "Sources/ShopApp/OrderService.swift",
+        "line": 13,
+        "endLine": 19
+      },
+      "metrics": {
+        "complexity": 2,
+        "fanIn": 2,
+        "fanOut": 4,
+        "loc": 7,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "swift:ShopApp:OrderService.repository",
+      "kind": "field",
+      "level": "member",
+      "name": "repository",
+      "fullName": "OrderService.repository",
+      "parent": "swift:ShopApp:OrderService",
+      "project": "swift:project:ShopApp",
+      "accessibility": "private",
+      "modifiers": [
+        "readonly"
+      ],
+      "signature": "private let repository: OrderRepository",
+      "location": {
+        "file": "Sources/ShopApp/OrderService.swift",
+        "line": 6,
+        "endLine": 6
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:PaymentGateway.charge(_:reference:)",
+      "kind": "method",
+      "level": "member",
+      "name": "charge",
+      "fullName": "PaymentGateway.charge(_:reference:)",
+      "parent": "swift:ShopApp:PaymentGateway",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "modifiers": [
+        "throws"
+      ],
+      "signature": "func charge(_ amount: Money, reference: String) throws -> String",
+      "location": {
+        "file": "Sources/ShopApp/Ports.swift",
+        "line": 10,
+        "endLine": 10
+      },
+      "metrics": {
+        "fanIn": 1,
+        "loc": 1,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "swift:ShopApp:PaymentService.charge(_:)",
+      "kind": "method",
+      "level": "member",
+      "name": "charge",
+      "fullName": "PaymentService.charge(_:)",
+      "parent": "swift:ShopApp:PaymentService",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "modifiers": [
+        "throws"
+      ],
+      "signature": "public func charge(_ order: Order) throws -> String",
+      "location": {
+        "file": "Sources/ShopApp/PaymentService.swift",
+        "line": 14,
+        "endLine": 18
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "fanOut": 2,
+        "loc": 5,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:PaymentService.gateway",
+      "kind": "field",
+      "level": "member",
+      "name": "gateway",
+      "fullName": "PaymentService.gateway",
+      "parent": "swift:ShopApp:PaymentService",
+      "project": "swift:project:ShopApp",
+      "accessibility": "private",
+      "modifiers": [
+        "readonly"
+      ],
+      "signature": "private let gateway: PaymentGateway",
+      "location": {
+        "file": "Sources/ShopApp/PaymentService.swift",
+        "line": 6,
+        "endLine": 6
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:PaymentService.init(gateway:orders:)",
+      "kind": "constructor",
+      "level": "member",
+      "name": "init",
+      "fullName": "PaymentService.init(gateway:orders:)",
+      "parent": "swift:ShopApp:PaymentService",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "signature": "public init(gateway: PaymentGateway, orders: OrderService)",
+      "location": {
+        "file": "Sources/ShopApp/PaymentService.swift",
+        "line": 9,
+        "endLine": 12
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 3,
+        "loc": 4,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "swift:ShopApp:PaymentService.orders",
+      "kind": "field",
+      "level": "member",
+      "name": "orders",
+      "fullName": "PaymentService.orders",
+      "parent": "swift:ShopApp:PaymentService",
+      "project": "swift:project:ShopApp",
+      "accessibility": "private",
+      "modifiers": [
+        "readonly"
+      ],
+      "signature": "private let orders: OrderService",
+      "location": {
+        "file": "Sources/ShopApp/PaymentService.swift",
+        "line": 7,
+        "endLine": 7
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopApp:PaymentService.refund(orderID:)",
+      "kind": "method",
+      "level": "member",
+      "name": "refund",
+      "fullName": "PaymentService.refund(orderID:)",
+      "parent": "swift:ShopApp:PaymentService",
+      "project": "swift:project:ShopApp",
+      "accessibility": "public",
+      "signature": "public func refund(orderID: UUID) -> Bool",
+      "location": {
+        "file": "Sources/ShopApp/PaymentService.swift",
+        "line": 20,
+        "endLine": 22
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 1,
+        "loc": 3,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Money.+(lhs:rhs:)",
+      "kind": "method",
+      "level": "member",
+      "name": "+",
+      "fullName": "Money.+(lhs:rhs:)",
+      "parent": "swift:ShopDomain:Money",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "modifiers": [
+        "static"
+      ],
+      "signature": "public static func + (lhs: Money, rhs: Money) -> Money",
+      "location": {
+        "file": "Sources/ShopDomain/Money.swift",
+        "line": 9,
+        "endLine": 9
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 1,
+        "loc": 1,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Money.?(lhs:rhs:)",
+      "kind": "method",
+      "level": "member",
+      "name": "?",
+      "fullName": "Money.?(lhs:rhs:)",
+      "parent": "swift:ShopDomain:Money",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "modifiers": [
+        "static"
+      ],
+      "signature": "public static func < (lhs: Money, rhs: Money) -> Bool",
+      "location": {
+        "file": "Sources/ShopDomain/Money.swift",
+        "line": 10,
+        "endLine": 10
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 1,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Money.cents",
+      "kind": "field",
+      "level": "member",
+      "name": "cents",
+      "fullName": "Money.cents",
+      "parent": "swift:ShopDomain:Money",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "modifiers": [
+        "readonly"
+      ],
+      "signature": "public let cents: Int",
+      "location": {
+        "file": "Sources/ShopDomain/Money.swift",
+        "line": 3,
+        "endLine": 3
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Money.init(cents:)",
+      "kind": "constructor",
+      "level": "member",
+      "name": "init",
+      "fullName": "Money.init(cents:)",
+      "parent": "swift:ShopDomain:Money",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "signature": "public init(cents: Int)",
+      "location": {
+        "file": "Sources/ShopDomain/Money.swift",
+        "line": 5,
+        "endLine": 5
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 9,
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Money.times(_:)",
+      "kind": "method",
+      "level": "member",
+      "name": "times",
+      "fullName": "Money.times(_:)",
+      "parent": "swift:ShopDomain:Money",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "signature": "public func times(_ quantity: Int) -> Money",
+      "location": {
+        "file": "Sources/ShopDomain/Money.swift",
+        "line": 12,
+        "endLine": 12
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "fanOut": 1,
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Money.zero",
+      "kind": "field",
+      "level": "member",
+      "name": "zero",
+      "fullName": "Money.zero",
+      "parent": "swift:ShopDomain:Money",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "modifiers": [
+        "readonly",
+        "static"
+      ],
+      "signature": "public static let zero",
+      "location": {
+        "file": "Sources/ShopDomain/Money.swift",
+        "line": 7,
+        "endLine": 7
+      },
+      "metrics": {
+        "fanOut": 1,
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.Line.product",
+      "kind": "field",
+      "level": "member",
+      "name": "product",
+      "fullName": "Order.Line.product",
+      "parent": "swift:ShopDomain:Order.Line",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "modifiers": [
+        "readonly"
+      ],
+      "signature": "public let product: Product",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 11,
+        "endLine": 11
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.Line.quantity",
+      "kind": "field",
+      "level": "member",
+      "name": "quantity",
+      "fullName": "Order.Line.quantity",
+      "parent": "swift:ShopDomain:Order.Line",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "modifiers": [
+        "readonly"
+      ],
+      "signature": "public let quantity: Int",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 12,
+        "endLine": 12
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.add(_:)",
+      "kind": "method",
+      "level": "member",
+      "name": "add",
+      "fullName": "Order.add(_:)",
+      "parent": "swift:ShopDomain:Order",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "signature": "public func add(_ product: Product)",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 24,
+        "endLine": 26
+      },
+      "doc": "One of a product.",
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 3,
+        "fanOut": 1,
+        "loc": 3,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.add(_:quantity:)",
+      "kind": "method",
+      "level": "member",
+      "name": "add",
+      "fullName": "Order.add(_:quantity:)",
+      "parent": "swift:ShopDomain:Order",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "signature": "public func add(_ product: Product, quantity: Int)",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 29,
+        "endLine": 35
+      },
+      "doc": "A quantity of a product; the same product again adds to its line.",
+      "metrics": {
+        "complexity": 2,
+        "fanIn": 2,
+        "loc": 7,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.id",
+      "kind": "field",
+      "level": "member",
+      "name": "id",
+      "fullName": "Order.id",
+      "parent": "swift:ShopDomain:Order",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "modifiers": [
+        "readonly"
+      ],
+      "signature": "public let id: UUID",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 17,
+        "endLine": 17
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.init(id:)",
+      "kind": "constructor",
+      "level": "member",
+      "name": "init",
+      "fullName": "Order.init(id:)",
+      "parent": "swift:ShopDomain:Order",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "signature": "public init(id: UUID = UUID())",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 21,
+        "endLine": 21
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 3,
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.itemCount",
+      "kind": "property",
+      "level": "member",
+      "name": "itemCount",
+      "fullName": "Order.itemCount",
+      "parent": "swift:ShopDomain:Order",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "signature": "public var itemCount: Int",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order+Totals.swift",
+        "line": 6,
+        "endLine": 6
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.legacyTotal()",
+      "kind": "method",
+      "level": "member",
+      "name": "legacyTotal",
+      "fullName": "Order.legacyTotal()",
+      "parent": "swift:ShopDomain:Order",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "private",
+      "signature": "private func legacyTotal() -> Money",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 44,
+        "endLine": 46
+      },
+      "tags": [
+        "unused"
+      ],
+      "doc": "The total before discounts were a thing; nothing uses it any more.",
+      "metrics": {
+        "complexity": 1,
+        "loc": 3,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.lines",
+      "kind": "field",
+      "level": "member",
+      "name": "lines",
+      "fullName": "Order.lines",
+      "parent": "swift:ShopDomain:Order",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "modifiers": [
+        "private(set)"
+      ],
+      "signature": "public private(set) var lines: [Line]",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 18,
+        "endLine": 18
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.markPaid()",
+      "kind": "method",
+      "level": "member",
+      "name": "markPaid",
+      "fullName": "Order.markPaid()",
+      "parent": "swift:ShopDomain:Order",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "modifiers": [
+        "throws"
+      ],
+      "signature": "public func markPaid() throws",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 37,
+        "endLine": 41
+      },
+      "metrics": {
+        "complexity": 3,
+        "fanIn": 1,
+        "loc": 5,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.status",
+      "kind": "field",
+      "level": "member",
+      "name": "status",
+      "fullName": "Order.status",
+      "parent": "swift:ShopDomain:Order",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "modifiers": [
+        "private(set)"
+      ],
+      "signature": "public private(set) var status: Status",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order.swift",
+        "line": 19,
+        "endLine": 19
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Order.total",
+      "kind": "property",
+      "level": "member",
+      "name": "total",
+      "fullName": "Order.total",
+      "parent": "swift:ShopDomain:Order",
+      "project": "swift:project:ShopDomain",
+      "namespace": "Orders",
+      "accessibility": "public",
+      "signature": "public var total: Money",
+      "location": {
+        "file": "Sources/ShopDomain/Orders/Order+Totals.swift",
+        "line": 2,
+        "endLine": 4
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 1,
+        "loc": 3
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Product.init(sku:name:price:)",
+      "kind": "constructor",
+      "level": "member",
+      "name": "init",
+      "fullName": "Product.init(sku:name:price:)",
+      "parent": "swift:ShopDomain:Product",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "signature": "public init(sku: String, name: String, price: Money)",
+      "location": {
+        "file": "Sources/ShopDomain/Product.swift",
+        "line": 6,
+        "endLine": 10
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 4,
+        "loc": 5,
+        "parameters": 3
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Product.name",
+      "kind": "field",
+      "level": "member",
+      "name": "name",
+      "fullName": "Product.name",
+      "parent": "swift:ShopDomain:Product",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "modifiers": [
+        "readonly"
+      ],
+      "signature": "public let name: String",
+      "location": {
+        "file": "Sources/ShopDomain/Product.swift",
+        "line": 3,
+        "endLine": 3
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Product.price",
+      "kind": "field",
+      "level": "member",
+      "name": "price",
+      "fullName": "Product.price",
+      "parent": "swift:ShopDomain:Product",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "modifiers": [
+        "readonly"
+      ],
+      "signature": "public let price: Money",
+      "location": {
+        "file": "Sources/ShopDomain/Product.swift",
+        "line": 4,
+        "endLine": 4
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:Product.sku",
+      "kind": "field",
+      "level": "member",
+      "name": "sku",
+      "fullName": "Product.sku",
+      "parent": "swift:ShopDomain:Product",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "modifiers": [
+        "readonly"
+      ],
+      "signature": "public let sku: String",
+      "location": {
+        "file": "Sources/ShopDomain/Product.swift",
+        "line": 2,
+        "endLine": 2
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopDomain:file:Discounts.discount(for:on:)",
+      "kind": "function",
+      "level": "member",
+      "name": "discount",
+      "fullName": "discount(for:on:)",
+      "parent": "swift:ShopDomain:file:Discounts",
+      "project": "swift:project:ShopDomain",
+      "accessibility": "public",
+      "signature": "public func discount(for tier: Tier, on total: Money) -> Money",
+      "location": {
+        "file": "Sources/ShopDomain/Discounts.swift",
+        "line": 4,
+        "endLine": 10
+      },
+      "doc": "What a customer of a tier pays less, in cents.",
+      "metrics": {
+        "complexity": 4,
+        "fanIn": 1,
+        "fanOut": 1,
+        "loc": 7,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "swift:ShopInfra:FakePaymentGateway.charge(_:reference:)",
+      "kind": "method",
+      "level": "member",
+      "name": "charge",
+      "fullName": "FakePaymentGateway.charge(_:reference:)",
+      "parent": "swift:ShopInfra:FakePaymentGateway",
+      "project": "swift:project:ShopInfra",
+      "accessibility": "public",
+      "modifiers": [
+        "throws"
+      ],
+      "signature": "public func charge(_ amount: Money, reference: String) throws -> String",
+      "location": {
+        "file": "Sources/ShopInfra/FakePaymentGateway.swift",
+        "line": 10,
+        "endLine": 13
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 4,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "swift:ShopInfra:FakePaymentGateway.charged",
+      "kind": "field",
+      "level": "member",
+      "name": "charged",
+      "fullName": "FakePaymentGateway.charged",
+      "parent": "swift:ShopInfra:FakePaymentGateway",
+      "project": "swift:project:ShopInfra",
+      "accessibility": "public",
+      "modifiers": [
+        "private(set)"
+      ],
+      "signature": "public private(set) var charged: [String]",
+      "location": {
+        "file": "Sources/ShopInfra/FakePaymentGateway.swift",
+        "line": 6,
+        "endLine": 6
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopInfra:FakePaymentGateway.init()",
+      "kind": "constructor",
+      "level": "member",
+      "name": "init",
+      "fullName": "FakePaymentGateway.init()",
+      "parent": "swift:ShopInfra:FakePaymentGateway",
+      "project": "swift:project:ShopInfra",
+      "accessibility": "public",
+      "signature": "public init()",
+      "location": {
+        "file": "Sources/ShopInfra/FakePaymentGateway.swift",
+        "line": 8,
+        "endLine": 8
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 3,
+        "loc": 1,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "swift:ShopInfra:InMemoryOrderRepository.find(id:)",
+      "kind": "method",
+      "level": "member",
+      "name": "find",
+      "fullName": "InMemoryOrderRepository.find(id:)",
+      "parent": "swift:ShopInfra:InMemoryOrderRepository",
+      "project": "swift:project:ShopInfra",
+      "accessibility": "public",
+      "signature": "public func find(id: UUID) -> Order?",
+      "location": {
+        "file": "Sources/ShopInfra/InMemoryOrderRepository.swift",
+        "line": 11,
+        "endLine": 11
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopInfra:InMemoryOrderRepository.init()",
+      "kind": "constructor",
+      "level": "member",
+      "name": "init",
+      "fullName": "InMemoryOrderRepository.init()",
+      "parent": "swift:ShopInfra:InMemoryOrderRepository",
+      "project": "swift:project:ShopInfra",
+      "accessibility": "public",
+      "signature": "public init()",
+      "location": {
+        "file": "Sources/ShopInfra/InMemoryOrderRepository.swift",
+        "line": 8,
+        "endLine": 8
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 3,
+        "loc": 1,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "swift:ShopInfra:InMemoryOrderRepository.orders",
+      "kind": "field",
+      "level": "member",
+      "name": "orders",
+      "fullName": "InMemoryOrderRepository.orders",
+      "parent": "swift:ShopInfra:InMemoryOrderRepository",
+      "project": "swift:project:ShopInfra",
+      "accessibility": "private",
+      "signature": "private var orders: [UUID: Order]",
+      "location": {
+        "file": "Sources/ShopInfra/InMemoryOrderRepository.swift",
+        "line": 6,
+        "endLine": 6
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopInfra:InMemoryOrderRepository.save(_:)",
+      "kind": "method",
+      "level": "member",
+      "name": "save",
+      "fullName": "InMemoryOrderRepository.save(_:)",
+      "parent": "swift:ShopInfra:InMemoryOrderRepository",
+      "project": "swift:project:ShopInfra",
+      "accessibility": "public",
+      "signature": "public func save(_ order: Order)",
+      "location": {
+        "file": "Sources/ShopInfra/InMemoryOrderRepository.swift",
+        "line": 10,
+        "endLine": 10
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 1,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopServer:OrdersController.boot(routes:)",
+      "kind": "method",
+      "level": "member",
+      "name": "boot",
+      "fullName": "OrdersController.boot(routes:)",
+      "parent": "swift:ShopServer:OrdersController",
+      "project": "swift:project:ShopServer",
+      "accessibility": "internal",
+      "modifiers": [
+        "throws"
+      ],
+      "signature": "func boot(routes: RoutesBuilder) throws",
+      "location": {
+        "file": "Sources/ShopServer/routes.swift",
+        "line": 15,
+        "endLine": 19
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 2,
+        "loc": 5,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopServer:OrdersController.checkout(req:)",
+      "kind": "method",
+      "level": "member",
+      "name": "checkout",
+      "fullName": "OrdersController.checkout(req:)",
+      "parent": "swift:ShopServer:OrdersController",
+      "project": "swift:project:ShopServer",
+      "accessibility": "internal",
+      "modifiers": [
+        "async",
+        "throws"
+      ],
+      "signature": "func checkout(req: Request) async throws -> String",
+      "location": {
+        "file": "Sources/ShopServer/routes.swift",
+        "line": 26,
+        "endLine": 29
+      },
+      "tags": [
+        "entrypoint",
+        "route"
+      ],
+      "doc": "POST /api/orders/:id/checkout",
+      "metrics": {
+        "complexity": 2,
+        "fanIn": 1,
+        "fanOut": 2,
+        "loc": 4,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopServer:OrdersController.orders",
+      "kind": "field",
+      "level": "member",
+      "name": "orders",
+      "fullName": "OrdersController.orders",
+      "parent": "swift:ShopServer:OrdersController",
+      "project": "swift:project:ShopServer",
+      "accessibility": "internal",
+      "modifiers": [
+        "readonly"
+      ],
+      "signature": "let orders: OrderService",
+      "location": {
+        "file": "Sources/ShopServer/routes.swift",
+        "line": 13,
+        "endLine": 13
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopServer:OrdersController.show(req:)",
+      "kind": "method",
+      "level": "member",
+      "name": "show",
+      "fullName": "OrdersController.show(req:)",
+      "parent": "swift:ShopServer:OrdersController",
+      "project": "swift:project:ShopServer",
+      "accessibility": "internal",
+      "modifiers": [
+        "async",
+        "throws"
+      ],
+      "signature": "func show(req: Request) async throws -> String",
+      "location": {
+        "file": "Sources/ShopServer/routes.swift",
+        "line": 21,
+        "endLine": 24
+      },
+      "tags": [
+        "entrypoint",
+        "route"
+      ],
+      "doc": "GET /api/orders/:id",
+      "metrics": {
+        "complexity": 2,
+        "fanIn": 1,
+        "fanOut": 1,
+        "loc": 4,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopServer:ShopServer.main()",
+      "kind": "method",
+      "level": "member",
+      "name": "main",
+      "fullName": "ShopServer.main()",
+      "parent": "swift:ShopServer:ShopServer",
+      "project": "swift:project:ShopServer",
+      "accessibility": "internal",
+      "modifiers": [
+        "async",
+        "static",
+        "throws"
+      ],
+      "signature": "static func main() async throws",
+      "location": {
+        "file": "Sources/ShopServer/routes.swift",
+        "line": 34,
+        "endLine": 40
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 5,
+        "loc": 7,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "swift:ShopServer:file:routes.routes(_:orders:)",
+      "kind": "function",
+      "level": "member",
+      "name": "routes",
+      "fullName": "routes(_:orders:)",
+      "parent": "swift:ShopServer:file:routes",
+      "project": "swift:project:ShopServer",
+      "accessibility": "internal",
+      "modifiers": [
+        "throws"
+      ],
+      "signature": "func routes(_ app: Application, orders: OrderService) throws",
+      "location": {
+        "file": "Sources/ShopServer/routes.swift",
+        "line": 6,
+        "endLine": 10
+      },
+      "tags": [
+        "entrypoint",
+        "route"
+      ],
+      "doc": "GET /health",
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "loc": 5,
+        "parameters": 2
+      }
+    },
+    {
+      "id": "swift:ShopTests:OrderTests.book",
+      "kind": "field",
+      "level": "member",
+      "name": "book",
+      "fullName": "OrderTests.book",
+      "parent": "swift:ShopTests:OrderTests",
+      "project": "swift:project:ShopTests",
+      "accessibility": "private",
+      "signature": "private var book: Product!",
+      "location": {
+        "file": "Tests/ShopTests/OrderTests.swift",
+        "line": 5,
+        "endLine": 5
+      },
+      "tags": [
+        "test"
+      ],
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopTests:OrderTests.setUp()",
+      "kind": "method",
+      "level": "member",
+      "name": "setUp",
+      "fullName": "OrderTests.setUp()",
+      "parent": "swift:ShopTests:OrderTests",
+      "project": "swift:project:ShopTests",
+      "accessibility": "internal",
+      "modifiers": [
+        "override"
+      ],
+      "signature": "override func setUp()",
+      "location": {
+        "file": "Tests/ShopTests/OrderTests.swift",
+        "line": 7,
+        "endLine": 9
+      },
+      "tags": [
+        "test"
+      ],
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 2,
+        "loc": 3,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "swift:ShopTests:OrderTests.testTheSameProductAddsToItsLine()",
+      "kind": "method",
+      "level": "member",
+      "name": "testTheSameProductAddsToItsLine",
+      "fullName": "OrderTests.testTheSameProductAddsToItsLine()",
+      "parent": "swift:ShopTests:OrderTests",
+      "project": "swift:project:ShopTests",
+      "accessibility": "internal",
+      "signature": "func testTheSameProductAddsToItsLine()",
+      "location": {
+        "file": "Tests/ShopTests/OrderTests.swift",
+        "line": 11,
+        "endLine": 17
+      },
+      "tags": [
+        "test"
+      ],
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 4,
+        "loc": 7,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "kind": "method",
+      "level": "member",
+      "name": "checkoutChargesTheGateway",
+      "fullName": "PaymentSuite.checkoutChargesTheGateway()",
+      "parent": "swift:ShopTests:PaymentSuite",
+      "project": "swift:project:ShopTests",
+      "accessibility": "internal",
+      "modifiers": [
+        "throws"
+      ],
+      "signature": "func checkoutChargesTheGateway() throws",
+      "location": {
+        "file": "Tests/ShopTests/PaymentSuite.swift",
+        "line": 7,
+        "endLine": 14
+      },
+      "attributes": [
+        "Test"
+      ],
+      "tags": [
+        "test"
+      ],
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 8,
+        "loc": 8,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "swift:ShopiOS:Cart.add(_:)",
+      "kind": "method",
+      "level": "member",
+      "name": "add",
+      "fullName": "Cart.add(_:)",
+      "parent": "swift:ShopiOS:Cart",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "internal",
+      "signature": "func add(_ product: Product)",
+      "location": {
+        "file": "iOS/Cart.swift",
+        "line": 7,
+        "endLine": 10
+      },
+      "metrics": {
+        "complexity": 1,
+        "fanIn": 1,
+        "fanOut": 1,
+        "loc": 4,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopiOS:Cart.order",
+      "kind": "field",
+      "level": "member",
+      "name": "order",
+      "fullName": "Cart.order",
+      "parent": "swift:ShopiOS:Cart",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "internal",
+      "modifiers": [
+        "private(set)"
+      ],
+      "signature": "private(set) var order",
+      "location": {
+        "file": "iOS/Cart.swift",
+        "line": 5,
+        "endLine": 5
+      },
+      "attributes": [
+        "Published"
+      ],
+      "metrics": {
+        "fanOut": 1,
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopiOS:CartView.body",
+      "kind": "property",
+      "level": "member",
+      "name": "body",
+      "fullName": "CartView.body",
+      "parent": "swift:ShopiOS:CartView",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "internal",
+      "signature": "var body: some View",
+      "location": {
+        "file": "iOS/CartView.swift",
+        "line": 8,
+        "endLine": 15
+      },
+      "metrics": {
+        "complexity": 2,
+        "fanOut": 3,
+        "loc": 8
+      }
+    },
+    {
+      "id": "swift:ShopiOS:CartView.cart",
+      "kind": "field",
+      "level": "member",
+      "name": "cart",
+      "fullName": "CartView.cart",
+      "parent": "swift:ShopiOS:CartView",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "internal",
+      "signature": "var cart: Cart",
+      "location": {
+        "file": "iOS/CartView.swift",
+        "line": 5,
+        "endLine": 5
+      },
+      "attributes": [
+        "EnvironmentObject"
+      ],
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopiOS:CartView.showsTotal",
+      "kind": "field",
+      "level": "member",
+      "name": "showsTotal",
+      "fullName": "CartView.showsTotal",
+      "parent": "swift:ShopiOS:CartView",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "private",
+      "signature": "private var showsTotal",
+      "location": {
+        "file": "iOS/CartView.swift",
+        "line": 6,
+        "endLine": 6
+      },
+      "attributes": [
+        "State"
+      ],
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopiOS:CheckoutViewController.cart",
+      "kind": "field",
+      "level": "member",
+      "name": "cart",
+      "fullName": "CheckoutViewController.cart",
+      "parent": "swift:ShopiOS:CheckoutViewController",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "internal",
+      "signature": "var cart: Cart?",
+      "location": {
+        "file": "iOS/CheckoutViewController.swift",
+        "line": 6,
+        "endLine": 6
+      },
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopiOS:CheckoutViewController.payTapped(_:)",
+      "kind": "method",
+      "level": "member",
+      "name": "payTapped",
+      "fullName": "CheckoutViewController.payTapped(_:)",
+      "parent": "swift:ShopiOS:CheckoutViewController",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "private",
+      "signature": "private func payTapped(_ sender: UIButton)",
+      "location": {
+        "file": "iOS/CheckoutViewController.swift",
+        "line": 13,
+        "endLine": 15
+      },
+      "attributes": [
+        "IBAction"
+      ],
+      "tags": [
+        "handler"
+      ],
+      "metrics": {
+        "complexity": 1,
+        "loc": 3,
+        "parameters": 1
+      }
+    },
+    {
+      "id": "swift:ShopiOS:CheckoutViewController.totalLabel",
+      "kind": "field",
+      "level": "member",
+      "name": "totalLabel",
+      "fullName": "CheckoutViewController.totalLabel",
+      "parent": "swift:ShopiOS:CheckoutViewController",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "private",
+      "modifiers": [
+        "weak"
+      ],
+      "signature": "private weak var totalLabel: UILabel!",
+      "location": {
+        "file": "iOS/CheckoutViewController.swift",
+        "line": 5,
+        "endLine": 5
+      },
+      "attributes": [
+        "IBOutlet"
+      ],
+      "tags": [
+        "maybe-used"
+      ],
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopiOS:CheckoutViewController.viewDidLoad()",
+      "kind": "method",
+      "level": "member",
+      "name": "viewDidLoad",
+      "fullName": "CheckoutViewController.viewDidLoad()",
+      "parent": "swift:ShopiOS:CheckoutViewController",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "internal",
+      "modifiers": [
+        "override"
+      ],
+      "signature": "override func viewDidLoad()",
+      "location": {
+        "file": "iOS/CheckoutViewController.swift",
+        "line": 8,
+        "endLine": 11
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 4,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "swift:ShopiOS:ShopiOSApp.body",
+      "kind": "property",
+      "level": "member",
+      "name": "body",
+      "fullName": "ShopiOSApp.body",
+      "parent": "swift:ShopiOS:ShopiOSApp",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "internal",
+      "signature": "var body: some Scene",
+      "location": {
+        "file": "iOS/ShopiOSApp.swift",
+        "line": 8,
+        "endLine": 12
+      },
+      "metrics": {
+        "complexity": 1,
+        "loc": 5
+      }
+    },
+    {
+      "id": "swift:ShopiOS:ShopiOSApp.cart",
+      "kind": "field",
+      "level": "member",
+      "name": "cart",
+      "fullName": "ShopiOSApp.cart",
+      "parent": "swift:ShopiOS:ShopiOSApp",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "private",
+      "signature": "private var cart",
+      "location": {
+        "file": "iOS/ShopiOSApp.swift",
+        "line": 6,
+        "endLine": 6
+      },
+      "attributes": [
+        "StateObject"
+      ],
+      "metrics": {
+        "loc": 1
+      }
+    },
+    {
+      "id": "swift:ShopiOS:file:CartView.#Preview",
+      "kind": "method",
+      "level": "member",
+      "name": "#Preview",
+      "fullName": "#Preview",
+      "parent": "swift:ShopiOS:file:CartView",
+      "project": "swift:project:ShopiOS",
+      "accessibility": "private",
+      "signature": "#Preview",
+      "location": {
+        "file": "iOS/CartView.swift",
+        "line": 18,
+        "endLine": 20
+      },
+      "tags": [
+        "test"
+      ],
+      "metrics": {
+        "loc": 3,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "swift:shop-cli:ShopCLI.main()",
+      "kind": "method",
+      "level": "member",
+      "name": "main",
+      "fullName": "ShopCLI.main()",
+      "parent": "swift:shop-cli:ShopCLI",
+      "project": "swift:project:shop-cli",
+      "accessibility": "internal",
+      "modifiers": [
+        "static"
+      ],
+      "signature": "static func main()",
+      "location": {
+        "file": "Sources/shop-cli/ShopCLI.swift",
+        "line": 7,
+        "endLine": 14
+      },
+      "tags": [
+        "entrypoint"
+      ],
+      "metrics": {
+        "complexity": 1,
+        "fanOut": 8,
+        "loc": 8,
+        "parameters": 0
+      }
+    },
+    {
+      "id": "swift:pkg:vapor",
+      "kind": "package",
+      "name": "vapor",
+      "language": "swift",
+      "external": true
+    }
+  ],
+  "edges": [
+    {
+      "source": "swift:ShopApp:OrderRepository.find(id:)",
+      "target": "swift:ShopDomain:Order",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:OrderRepository.save(_:)",
+      "target": "swift:ShopDomain:Order",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:OrderService",
+      "target": "swift:ShopApp:OrderRepository",
+      "kind": "injects",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:OrderService.checkout(_:)",
+      "target": "swift:ShopDomain:Order",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:OrderService.checkout(_:)",
+      "target": "swift:ShopApp:OrderService.payments",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 22
+    },
+    {
+      "source": "swift:ShopApp:OrderService.checkout(_:)",
+      "target": "swift:ShopApp:PaymentService.charge(_:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 23
+    },
+    {
+      "source": "swift:ShopApp:OrderService.checkout(_:)",
+      "target": "swift:ShopDomain:OrderError",
+      "kind": "throws",
+      "weight": 1,
+      "line": 22
+    },
+    {
+      "source": "swift:ShopApp:OrderService.checkout(_:)",
+      "target": "swift:ShopDomain:OrderError",
+      "kind": "uses",
+      "weight": 1,
+      "line": 22
+    },
+    {
+      "source": "swift:ShopApp:OrderService.init(repository:)",
+      "target": "swift:ShopApp:OrderRepository",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:OrderService.init(repository:)",
+      "target": "swift:ShopApp:OrderService.repository",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopApp:OrderService.order(id:)",
+      "target": "swift:ShopApp:OrderService.repository",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 26
+    },
+    {
+      "source": "swift:ShopApp:OrderService.order(id:)",
+      "target": "swift:ShopApp:OrderRepository.find(id:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 26
+    },
+    {
+      "source": "swift:ShopApp:OrderService.order(id:)",
+      "target": "swift:ShopDomain:Order",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:OrderService.payments",
+      "target": "swift:ShopApp:PaymentService",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:OrderService.place(_:tier:)",
+      "target": "swift:ShopDomain:Product",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:OrderService.place(_:tier:)",
+      "target": "swift:ShopDomain:Tier",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:OrderService.place(_:tier:)",
+      "target": "swift:ShopApp:OrderService.repository",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 16
+    },
+    {
+      "source": "swift:ShopApp:OrderService.place(_:tier:)",
+      "target": "swift:ShopDomain:Order.total",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 17
+    },
+    {
+      "source": "swift:ShopApp:OrderService.place(_:tier:)",
+      "target": "swift:ShopApp:OrderRepository.save(_:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 16
+    },
+    {
+      "source": "swift:ShopApp:OrderService.place(_:tier:)",
+      "target": "swift:ShopDomain:Order.add(_:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 15
+    },
+    {
+      "source": "swift:ShopApp:OrderService.place(_:tier:)",
+      "target": "swift:ShopDomain:Order.init(id:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 14
+    },
+    {
+      "source": "swift:ShopApp:OrderService.place(_:tier:)",
+      "target": "swift:ShopDomain:file:Discounts.discount(for:on:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 17
+    },
+    {
+      "source": "swift:ShopApp:OrderService.place(_:tier:)",
+      "target": "swift:ShopDomain:Order",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 14
+    },
+    {
+      "source": "swift:ShopApp:OrderService.place(_:tier:)",
+      "target": "swift:ShopDomain:Order",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:OrderService.repository",
+      "target": "swift:ShopApp:OrderRepository",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:PaymentGateway.charge(_:reference:)",
+      "target": "swift:ShopDomain:Money",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:PaymentService",
+      "target": "swift:ShopApp:OrderService",
+      "kind": "injects",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:PaymentService",
+      "target": "swift:ShopApp:PaymentGateway",
+      "kind": "injects",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.charge(_:)",
+      "target": "swift:ShopDomain:Order",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.charge(_:)",
+      "target": "swift:ShopApp:PaymentService.gateway",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 15
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.charge(_:)",
+      "target": "swift:ShopDomain:Order.id",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 15
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.charge(_:)",
+      "target": "swift:ShopDomain:Order.total",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 15
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.charge(_:)",
+      "target": "swift:ShopApp:PaymentGateway.charge(_:reference:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 15
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.charge(_:)",
+      "target": "swift:ShopDomain:Order.markPaid()",
+      "kind": "calls",
+      "weight": 1,
+      "line": 16
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.gateway",
+      "target": "swift:ShopApp:PaymentGateway",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.init(gateway:orders:)",
+      "target": "swift:ShopApp:OrderService",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.init(gateway:orders:)",
+      "target": "swift:ShopApp:PaymentGateway",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.init(gateway:orders:)",
+      "target": "swift:ShopApp:PaymentService.gateway",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.init(gateway:orders:)",
+      "target": "swift:ShopApp:PaymentService.orders",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 11
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.orders",
+      "target": "swift:ShopApp:OrderService",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.refund(orderID:)",
+      "target": "swift:ShopApp:PaymentService.orders",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 21
+    },
+    {
+      "source": "swift:ShopApp:PaymentService.refund(orderID:)",
+      "target": "swift:ShopApp:OrderService.order(id:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 21
+    },
+    {
+      "source": "swift:ShopDomain:Money.+(lhs:rhs:)",
+      "target": "swift:ShopDomain:Money",
+      "kind": "accepts",
+      "weight": 2
+    },
+    {
+      "source": "swift:ShopDomain:Money.+(lhs:rhs:)",
+      "target": "swift:ShopDomain:Money.cents",
+      "kind": "accesses",
+      "weight": 2,
+      "line": 9
+    },
+    {
+      "source": "swift:ShopDomain:Money.+(lhs:rhs:)",
+      "target": "swift:ShopDomain:Money.init(cents:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:ShopDomain:Money.+(lhs:rhs:)",
+      "target": "swift:ShopDomain:Money",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:ShopDomain:Money.+(lhs:rhs:)",
+      "target": "swift:ShopDomain:Money",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:Money.?(lhs:rhs:)",
+      "target": "swift:ShopDomain:Money",
+      "kind": "accepts",
+      "weight": 2
+    },
+    {
+      "source": "swift:ShopDomain:Money.?(lhs:rhs:)",
+      "target": "swift:ShopDomain:Money.cents",
+      "kind": "accesses",
+      "weight": 2,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopDomain:Money.init(cents:)",
+      "target": "swift:ShopDomain:Money.cents",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 5
+    },
+    {
+      "source": "swift:ShopDomain:Money.times(_:)",
+      "target": "swift:ShopDomain:Money.cents",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 12
+    },
+    {
+      "source": "swift:ShopDomain:Money.times(_:)",
+      "target": "swift:ShopDomain:Money.init(cents:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 12
+    },
+    {
+      "source": "swift:ShopDomain:Money.times(_:)",
+      "target": "swift:ShopDomain:Money",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 12
+    },
+    {
+      "source": "swift:ShopDomain:Money.times(_:)",
+      "target": "swift:ShopDomain:Money",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:Money.zero",
+      "target": "swift:ShopDomain:Money.init(cents:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 7
+    },
+    {
+      "source": "swift:ShopDomain:Money.zero",
+      "target": "swift:ShopDomain:Money",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:Money.zero",
+      "target": "swift:ShopDomain:Money",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 7
+    },
+    {
+      "source": "swift:ShopDomain:Order.Line.product",
+      "target": "swift:ShopDomain:Product",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:Order.add(_:)",
+      "target": "swift:ShopDomain:Product",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:Order.add(_:)",
+      "target": "swift:ShopDomain:Order.add(_:quantity:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 25
+    },
+    {
+      "source": "swift:ShopDomain:Order.add(_:quantity:)",
+      "target": "swift:ShopDomain:Product",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:Order.add(_:quantity:)",
+      "target": "swift:ShopDomain:Order.Line.product",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 30
+    },
+    {
+      "source": "swift:ShopDomain:Order.add(_:quantity:)",
+      "target": "swift:ShopDomain:Order.Line.quantity",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 31
+    },
+    {
+      "source": "swift:ShopDomain:Order.add(_:quantity:)",
+      "target": "swift:ShopDomain:Order.lines",
+      "kind": "accesses",
+      "weight": 4,
+      "line": 30
+    },
+    {
+      "source": "swift:ShopDomain:Order.add(_:quantity:)",
+      "target": "swift:ShopDomain:Order.Line",
+      "kind": "instantiates",
+      "weight": 2,
+      "line": 31
+    },
+    {
+      "source": "swift:ShopDomain:Order.init(id:)",
+      "target": "swift:ShopDomain:Order.id",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 21
+    },
+    {
+      "source": "swift:ShopDomain:Order.itemCount",
+      "target": "swift:ShopDomain:Order.Line.quantity",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 6
+    },
+    {
+      "source": "swift:ShopDomain:Order.itemCount",
+      "target": "swift:ShopDomain:Order.lines",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 6
+    },
+    {
+      "source": "swift:ShopDomain:Order.legacyTotal()",
+      "target": "swift:ShopDomain:Money.zero",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 45
+    },
+    {
+      "source": "swift:ShopDomain:Order.legacyTotal()",
+      "target": "swift:ShopDomain:Order.Line.product",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 45
+    },
+    {
+      "source": "swift:ShopDomain:Order.legacyTotal()",
+      "target": "swift:ShopDomain:Order.lines",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 45
+    },
+    {
+      "source": "swift:ShopDomain:Order.legacyTotal()",
+      "target": "swift:ShopDomain:Product.price",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 45
+    },
+    {
+      "source": "swift:ShopDomain:Order.legacyTotal()",
+      "target": "swift:ShopDomain:Money",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:Order.legacyTotal()",
+      "target": "swift:ShopDomain:Money",
+      "kind": "uses",
+      "weight": 1,
+      "line": 45
+    },
+    {
+      "source": "swift:ShopDomain:Order.lines",
+      "target": "swift:ShopDomain:Order.Line",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:Order.markPaid()",
+      "target": "swift:ShopDomain:Order.lines",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 39
+    },
+    {
+      "source": "swift:ShopDomain:Order.markPaid()",
+      "target": "swift:ShopDomain:Order.status",
+      "kind": "accesses",
+      "weight": 2,
+      "line": 38
+    },
+    {
+      "source": "swift:ShopDomain:Order.markPaid()",
+      "target": "swift:ShopDomain:OrderError",
+      "kind": "throws",
+      "weight": 2,
+      "line": 38
+    },
+    {
+      "source": "swift:ShopDomain:Order.markPaid()",
+      "target": "swift:ShopDomain:OrderError",
+      "kind": "uses",
+      "weight": 2,
+      "line": 38
+    },
+    {
+      "source": "swift:ShopDomain:Order.status",
+      "target": "swift:ShopDomain:Order.Status",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:Order.total",
+      "target": "swift:ShopDomain:Money.zero",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 3
+    },
+    {
+      "source": "swift:ShopDomain:Order.total",
+      "target": "swift:ShopDomain:Order.Line.product",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 3
+    },
+    {
+      "source": "swift:ShopDomain:Order.total",
+      "target": "swift:ShopDomain:Order.Line.quantity",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 3
+    },
+    {
+      "source": "swift:ShopDomain:Order.total",
+      "target": "swift:ShopDomain:Order.lines",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 3
+    },
+    {
+      "source": "swift:ShopDomain:Order.total",
+      "target": "swift:ShopDomain:Product.price",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 3
+    },
+    {
+      "source": "swift:ShopDomain:Order.total",
+      "target": "swift:ShopDomain:Money.times(_:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 3
+    },
+    {
+      "source": "swift:ShopDomain:Order.total",
+      "target": "swift:ShopDomain:Money",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:Order.total",
+      "target": "swift:ShopDomain:Money",
+      "kind": "uses",
+      "weight": 1,
+      "line": 3
+    },
+    {
+      "source": "swift:ShopDomain:Product",
+      "target": "swift:ShopDomain:Money",
+      "kind": "injects",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:Product.init(sku:name:price:)",
+      "target": "swift:ShopDomain:Money",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:Product.init(sku:name:price:)",
+      "target": "swift:ShopDomain:Product.name",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:ShopDomain:Product.init(sku:name:price:)",
+      "target": "swift:ShopDomain:Product.price",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:ShopDomain:Product.init(sku:name:price:)",
+      "target": "swift:ShopDomain:Product.sku",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 7
+    },
+    {
+      "source": "swift:ShopDomain:Product.price",
+      "target": "swift:ShopDomain:Money",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:file:Discounts.discount(for:on:)",
+      "target": "swift:ShopDomain:Money",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:file:Discounts.discount(for:on:)",
+      "target": "swift:ShopDomain:Tier",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopDomain:file:Discounts.discount(for:on:)",
+      "target": "swift:ShopDomain:Money.cents",
+      "kind": "accesses",
+      "weight": 2,
+      "line": 7
+    },
+    {
+      "source": "swift:ShopDomain:file:Discounts.discount(for:on:)",
+      "target": "swift:ShopDomain:Money.init(cents:)",
+      "kind": "calls",
+      "weight": 2,
+      "line": 7
+    },
+    {
+      "source": "swift:ShopDomain:file:Discounts.discount(for:on:)",
+      "target": "swift:ShopDomain:Money",
+      "kind": "instantiates",
+      "weight": 2,
+      "line": 7
+    },
+    {
+      "source": "swift:ShopDomain:file:Discounts.discount(for:on:)",
+      "target": "swift:ShopDomain:Money",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopInfra:FakePaymentGateway",
+      "target": "swift:ShopApp:PaymentGateway",
+      "kind": "implements",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopInfra:FakePaymentGateway.charge(_:reference:)",
+      "target": "swift:ShopDomain:Money",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopInfra:FakePaymentGateway.charge(_:reference:)",
+      "target": "swift:ShopDomain:Money.cents",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 12
+    },
+    {
+      "source": "swift:ShopInfra:FakePaymentGateway.charge(_:reference:)",
+      "target": "swift:ShopInfra:FakePaymentGateway.charged",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 11
+    },
+    {
+      "source": "swift:ShopInfra:FakePaymentGateway.charge(_:reference:)",
+      "target": "swift:ShopApp:PaymentGateway.charge(_:reference:)",
+      "kind": "implements",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopInfra:InMemoryOrderRepository",
+      "target": "swift:ShopApp:OrderRepository",
+      "kind": "implements",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopInfra:InMemoryOrderRepository.find(id:)",
+      "target": "swift:ShopInfra:InMemoryOrderRepository.orders",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 11
+    },
+    {
+      "source": "swift:ShopInfra:InMemoryOrderRepository.find(id:)",
+      "target": "swift:ShopApp:OrderRepository.find(id:)",
+      "kind": "implements",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopInfra:InMemoryOrderRepository.find(id:)",
+      "target": "swift:ShopDomain:Order",
+      "kind": "returns",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopInfra:InMemoryOrderRepository.orders",
+      "target": "swift:ShopDomain:Order",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopInfra:InMemoryOrderRepository.save(_:)",
+      "target": "swift:ShopDomain:Order",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopInfra:InMemoryOrderRepository.save(_:)",
+      "target": "swift:ShopDomain:Order.id",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopInfra:InMemoryOrderRepository.save(_:)",
+      "target": "swift:ShopInfra:InMemoryOrderRepository.orders",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopInfra:InMemoryOrderRepository.save(_:)",
+      "target": "swift:ShopApp:OrderRepository.save(_:)",
+      "kind": "implements",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopServer:OrdersController.boot(routes:)",
+      "target": "swift:ShopServer:OrdersController.checkout(req:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 18
+    },
+    {
+      "source": "swift:ShopServer:OrdersController.boot(routes:)",
+      "target": "swift:ShopServer:OrdersController.show(req:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 17
+    },
+    {
+      "source": "swift:ShopServer:OrdersController.checkout(req:)",
+      "target": "swift:ShopServer:OrdersController.orders",
+      "kind": "accesses",
+      "weight": 2,
+      "line": 27
+    },
+    {
+      "source": "swift:ShopServer:OrdersController.checkout(req:)",
+      "target": "swift:ShopApp:OrderService.checkout(_:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 28
+    },
+    {
+      "source": "swift:ShopServer:OrdersController.checkout(req:)",
+      "target": "swift:ShopApp:OrderService.order(id:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 27
+    },
+    {
+      "source": "swift:ShopServer:OrdersController.orders",
+      "target": "swift:ShopApp:OrderService",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopServer:OrdersController.show(req:)",
+      "target": "swift:ShopDomain:Money.cents",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 23
+    },
+    {
+      "source": "swift:ShopServer:OrdersController.show(req:)",
+      "target": "swift:ShopDomain:Order.itemCount",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 23
+    },
+    {
+      "source": "swift:ShopServer:OrdersController.show(req:)",
+      "target": "swift:ShopDomain:Order.total",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 23
+    },
+    {
+      "source": "swift:ShopServer:OrdersController.show(req:)",
+      "target": "swift:ShopServer:OrdersController.orders",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 22
+    },
+    {
+      "source": "swift:ShopServer:OrdersController.show(req:)",
+      "target": "swift:ShopApp:OrderService.order(id:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 22
+    },
+    {
+      "source": "swift:ShopServer:ShopServer.main()",
+      "target": "swift:ShopApp:OrderService.payments",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 37
+    },
+    {
+      "source": "swift:ShopServer:ShopServer.main()",
+      "target": "swift:ShopApp:OrderService.init(repository:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 36
+    },
+    {
+      "source": "swift:ShopServer:ShopServer.main()",
+      "target": "swift:ShopApp:PaymentService.init(gateway:orders:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 37
+    },
+    {
+      "source": "swift:ShopServer:ShopServer.main()",
+      "target": "swift:ShopInfra:FakePaymentGateway.init()",
+      "kind": "calls",
+      "weight": 1,
+      "line": 37
+    },
+    {
+      "source": "swift:ShopServer:ShopServer.main()",
+      "target": "swift:ShopInfra:InMemoryOrderRepository.init()",
+      "kind": "calls",
+      "weight": 1,
+      "line": 36
+    },
+    {
+      "source": "swift:ShopServer:ShopServer.main()",
+      "target": "swift:ShopServer:file:routes.routes(_:orders:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 38
+    },
+    {
+      "source": "swift:ShopServer:ShopServer.main()",
+      "target": "swift:ShopApp:OrderService",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 36
+    },
+    {
+      "source": "swift:ShopServer:ShopServer.main()",
+      "target": "swift:ShopApp:PaymentService",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 37
+    },
+    {
+      "source": "swift:ShopServer:ShopServer.main()",
+      "target": "swift:ShopInfra:FakePaymentGateway",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 37
+    },
+    {
+      "source": "swift:ShopServer:ShopServer.main()",
+      "target": "swift:ShopInfra:InMemoryOrderRepository",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 36
+    },
+    {
+      "source": "swift:ShopServer:file:routes.routes(_:orders:)",
+      "target": "swift:ShopApp:OrderService",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopServer:file:routes.routes(_:orders:)",
+      "target": "swift:ShopServer:OrdersController",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.book",
+      "target": "swift:ShopDomain:Product",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.setUp()",
+      "target": "swift:ShopTests:OrderTests.book",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.setUp()",
+      "target": "swift:ShopDomain:Money.init(cents:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.setUp()",
+      "target": "swift:ShopDomain:Product.init(sku:name:price:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.setUp()",
+      "target": "swift:ShopDomain:Money",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.setUp()",
+      "target": "swift:ShopDomain:Product",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.testTheSameProductAddsToItsLine()",
+      "target": "swift:ShopDomain:Order.lines",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 15
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.testTheSameProductAddsToItsLine()",
+      "target": "swift:ShopDomain:Order.total",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 16
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.testTheSameProductAddsToItsLine()",
+      "target": "swift:ShopTests:OrderTests.book",
+      "kind": "accesses",
+      "weight": 2,
+      "line": 13
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.testTheSameProductAddsToItsLine()",
+      "target": "swift:ShopDomain:Money.init(cents:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 16
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.testTheSameProductAddsToItsLine()",
+      "target": "swift:ShopDomain:Order.add(_:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 13
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.testTheSameProductAddsToItsLine()",
+      "target": "swift:ShopDomain:Order.add(_:quantity:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 14
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.testTheSameProductAddsToItsLine()",
+      "target": "swift:ShopDomain:Order.init(id:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 12
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.testTheSameProductAddsToItsLine()",
+      "target": "swift:ShopDomain:Money",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 16
+    },
+    {
+      "source": "swift:ShopTests:OrderTests.testTheSameProductAddsToItsLine()",
+      "target": "swift:ShopDomain:Order",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 12
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopApp:OrderService.payments",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopDomain:Order.id",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 13
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopInfra:FakePaymentGateway.charged",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 13
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopApp:OrderService.checkout(_:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 12
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopApp:OrderService.init(repository:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopApp:OrderService.place(_:tier:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 11
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopApp:PaymentService.init(gateway:orders:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopDomain:Money.init(cents:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 11
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopDomain:Product.init(sku:name:price:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 11
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopInfra:FakePaymentGateway.init()",
+      "kind": "calls",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopInfra:InMemoryOrderRepository.init()",
+      "kind": "calls",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopApp:OrderService",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopApp:PaymentService",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopDomain:Money",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 11
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopDomain:Product",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 11
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopInfra:FakePaymentGateway",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopInfra:InMemoryOrderRepository",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:ShopTests:PaymentSuite.checkoutChargesTheGateway()",
+      "target": "swift:ShopDomain:Tier",
+      "kind": "uses",
+      "weight": 1,
+      "line": 11
+    },
+    {
+      "source": "swift:ShopiOS:Cart.add(_:)",
+      "target": "swift:ShopDomain:Product",
+      "kind": "accepts",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopiOS:Cart.add(_:)",
+      "target": "swift:ShopiOS:Cart.order",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:ShopiOS:Cart.add(_:)",
+      "target": "swift:ShopDomain:Order.add(_:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:ShopiOS:Cart.order",
+      "target": "swift:ShopDomain:Order.init(id:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 5
+    },
+    {
+      "source": "swift:ShopiOS:Cart.order",
+      "target": "swift:ShopDomain:Order",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopiOS:Cart.order",
+      "target": "swift:ShopDomain:Order",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 5
+    },
+    {
+      "source": "swift:ShopiOS:CartView",
+      "target": "swift:ShopiOS:Cart",
+      "kind": "injects",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopiOS:CartView.body",
+      "target": "swift:ShopDomain:Money.cents",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 12
+    },
+    {
+      "source": "swift:ShopiOS:CartView.body",
+      "target": "swift:ShopDomain:Order.itemCount",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopiOS:CartView.body",
+      "target": "swift:ShopDomain:Order.total",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 12
+    },
+    {
+      "source": "swift:ShopiOS:CartView.body",
+      "target": "swift:ShopiOS:Cart.order",
+      "kind": "accesses",
+      "weight": 2,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopiOS:CartView.body",
+      "target": "swift:ShopiOS:CartView.cart",
+      "kind": "accesses",
+      "weight": 3,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopiOS:CartView.body",
+      "target": "swift:ShopiOS:CartView.showsTotal",
+      "kind": "accesses",
+      "weight": 2,
+      "line": 11
+    },
+    {
+      "source": "swift:ShopiOS:CartView.body",
+      "target": "swift:ShopDomain:Money.init(cents:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 13
+    },
+    {
+      "source": "swift:ShopiOS:CartView.body",
+      "target": "swift:ShopDomain:Product.init(sku:name:price:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 13
+    },
+    {
+      "source": "swift:ShopiOS:CartView.body",
+      "target": "swift:ShopiOS:Cart.add(_:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 13
+    },
+    {
+      "source": "swift:ShopiOS:CartView.body",
+      "target": "swift:ShopDomain:Money",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 13
+    },
+    {
+      "source": "swift:ShopiOS:CartView.body",
+      "target": "swift:ShopDomain:Product",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 13
+    },
+    {
+      "source": "swift:ShopiOS:CartView.cart",
+      "target": "swift:ShopiOS:Cart",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopiOS:CheckoutViewController.cart",
+      "target": "swift:ShopiOS:Cart",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopiOS:CheckoutViewController.viewDidLoad()",
+      "target": "swift:ShopDomain:Money.cents",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopiOS:CheckoutViewController.viewDidLoad()",
+      "target": "swift:ShopDomain:Order.total",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopiOS:CheckoutViewController.viewDidLoad()",
+      "target": "swift:ShopiOS:Cart.order",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopiOS:CheckoutViewController.viewDidLoad()",
+      "target": "swift:ShopiOS:CheckoutViewController.cart",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopiOS:CheckoutViewController.viewDidLoad()",
+      "target": "swift:ShopiOS:CheckoutViewController.totalLabel",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopiOS:ShopiOSApp.body",
+      "target": "swift:ShopiOS:ShopiOSApp.cart",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopiOS:ShopiOSApp.body",
+      "target": "swift:ShopiOS:CartView",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:ShopiOS:ShopiOSApp.cart",
+      "target": "swift:ShopiOS:Cart",
+      "kind": "holds",
+      "weight": 1
+    },
+    {
+      "source": "swift:ShopiOS:ShopiOSApp.cart",
+      "target": "swift:ShopiOS:Cart",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 6
+    },
+    {
+      "source": "swift:ShopiOS:file:CartView.#Preview",
+      "target": "swift:ShopiOS:Cart",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 19
+    },
+    {
+      "source": "swift:ShopiOS:file:CartView.#Preview",
+      "target": "swift:ShopiOS:CartView",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 19
+    },
+    {
+      "source": "swift:project:ShopApp",
+      "target": "swift:project:ShopDomain",
+      "kind": "projectReference",
+      "weight": 1
+    },
+    {
+      "source": "swift:project:ShopInfra",
+      "target": "swift:project:ShopApp",
+      "kind": "projectReference",
+      "weight": 1
+    },
+    {
+      "source": "swift:project:ShopServer",
+      "target": "swift:pkg:vapor",
+      "kind": "packageReference",
+      "weight": 1
+    },
+    {
+      "source": "swift:project:ShopServer",
+      "target": "swift:project:ShopInfra",
+      "kind": "projectReference",
+      "weight": 1
+    },
+    {
+      "source": "swift:project:ShopTests",
+      "target": "swift:project:ShopInfra",
+      "kind": "projectReference",
+      "weight": 1
+    },
+    {
+      "source": "swift:project:ShopiOS",
+      "target": "swift:project:ShopApp",
+      "kind": "projectReference",
+      "weight": 1
+    },
+    {
+      "source": "swift:project:ShopiOS",
+      "target": "swift:project:ShopDomain",
+      "kind": "projectReference",
+      "weight": 1
+    },
+    {
+      "source": "swift:project:ShopiOS",
+      "target": "swift:project:ShopInfra",
+      "kind": "projectReference",
+      "weight": 1
+    },
+    {
+      "source": "swift:project:shop-cli",
+      "target": "swift:project:ShopInfra",
+      "kind": "projectReference",
+      "weight": 1
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopApp:OrderService.payments",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopDomain:Money.cents",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 13
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopDomain:Order.itemCount",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 13
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopDomain:Order.total",
+      "kind": "accesses",
+      "weight": 1,
+      "line": 13
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopApp:OrderService.checkout(_:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 12
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopApp:OrderService.init(repository:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopApp:OrderService.place(_:tier:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 11
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopApp:PaymentService.init(gateway:orders:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopDomain:Money.init(cents:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopDomain:Product.init(sku:name:price:)",
+      "kind": "calls",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopInfra:FakePaymentGateway.init()",
+      "kind": "calls",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopInfra:InMemoryOrderRepository.init()",
+      "kind": "calls",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopApp:OrderService",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopApp:PaymentService",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopDomain:Money",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopDomain:Product",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 10
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopInfra:FakePaymentGateway",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 9
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopInfra:InMemoryOrderRepository",
+      "kind": "instantiates",
+      "weight": 1,
+      "line": 8
+    },
+    {
+      "source": "swift:shop-cli:ShopCLI.main()",
+      "target": "swift:ShopDomain:Tier",
+      "kind": "uses",
+      "weight": 1,
+      "line": 11
+    }
+  ],
+  "analysis": {
+    "cycles": [
+      {
+        "level": "type",
+        "nodes": [
+          "swift:ShopApp:OrderService",
+          "swift:ShopApp:PaymentService"
+        ]
+      }
+    ],
+    "hotspots": [],
+    "mostComplex": [
+      {
+        "id": "swift:ShopDomain:Order",
+        "score": 10
+      },
+      {
+        "id": "swift:ShopApp:OrderService",
+        "score": 6
+      },
+      {
+        "id": "swift:ShopServer:OrdersController",
+        "score": 5
+      },
+      {
+        "id": "swift:ShopDomain:Money",
+        "score": 4
+      },
+      {
+        "id": "swift:ShopDomain:file:Discounts",
+        "score": 4
+      },
+      {
+        "id": "swift:ShopApp:PaymentService",
+        "score": 3
+      },
+      {
+        "id": "swift:ShopInfra:InMemoryOrderRepository",
+        "score": 3
+      },
+      {
+        "id": "swift:ShopInfra:FakePaymentGateway",
+        "score": 2
+      },
+      {
+        "id": "swift:ShopTests:OrderTests",
+        "score": 2
+      },
+      {
+        "id": "swift:ShopiOS:CartView",
+        "score": 2
+      },
+      {
+        "id": "swift:ShopiOS:CheckoutViewController",
+        "score": 2
+      },
+      {
+        "id": "swift:ShopDomain:Product",
+        "score": 1
+      },
+      {
+        "id": "swift:ShopServer:ShopServer",
+        "score": 1
+      },
+      {
+        "id": "swift:ShopServer:file:routes",
+        "score": 1
+      },
+      {
+        "id": "swift:ShopTests:PaymentSuite",
+        "score": 1
+      },
+      {
+        "id": "swift:ShopiOS:Cart",
+        "score": 1
+      },
+      {
+        "id": "swift:ShopiOS:ShopiOSApp",
+        "score": 1
+      },
+      {
+        "id": "swift:shop-cli:ShopCLI",
+        "score": 1
+      }
+    ],
+    "mostDepended": [
+      {
+        "id": "swift:ShopDomain:Money",
+        "score": 11
+      },
+      {
+        "id": "swift:ShopDomain:Order",
+        "score": 11
+      },
+      {
+        "id": "swift:ShopDomain:Product",
+        "score": 8
+      },
+      {
+        "id": "swift:ShopApp:OrderService",
+        "score": 6
+      },
+      {
+        "id": "swift:ShopApp:PaymentService",
+        "score": 4
+      },
+      {
+        "id": "swift:ShopDomain:Tier",
+        "score": 4
+      },
+      {
+        "id": "swift:ShopiOS:Cart",
+        "score": 4
+      },
+      {
+        "id": "swift:ShopInfra:FakePaymentGateway",
+        "score": 3
+      },
+      {
+        "id": "swift:ShopInfra:InMemoryOrderRepository",
+        "score": 3
+      },
+      {
+        "id": "swift:ShopApp:OrderRepository",
+        "score": 2
+      },
+      {
+        "id": "swift:ShopApp:PaymentGateway",
+        "score": 2
+      },
+      {
+        "id": "swift:ShopDomain:OrderError",
+        "score": 2
+      },
+      {
+        "id": "swift:ShopiOS:CartView",
+        "score": 2
+      },
+      {
+        "id": "swift:ShopDomain:Order.Line",
+        "score": 1
+      },
+      {
+        "id": "swift:ShopDomain:Order.Status",
+        "score": 1
+      },
+      {
+        "id": "swift:ShopDomain:file:Discounts",
+        "score": 1
+      },
+      {
+        "id": "swift:ShopServer:OrdersController",
+        "score": 1
+      },
+      {
+        "id": "swift:ShopServer:file:routes",
+        "score": 1
+      }
+    ],
+    "unusedCandidates": [
+      "swift:ShopDomain:Order.legacyTotal()"
+    ],
+    "layers": [
+      {
+        "level": "project",
+        "layers": [
+          [
+            "swift:project:ShopDomain"
+          ],
+          [
+            "swift:project:ShopApp"
+          ],
+          [
+            "swift:project:ShopInfra"
+          ],
+          [
+            "swift:project:ShopServer",
+            "swift:project:ShopTests",
+            "swift:project:ShopiOS",
+            "swift:project:shop-cli"
+          ]
+        ],
+        "upward": []
+      },
+      {
+        "level": "namespace",
+        "layers": [
+          [
+            "swift:ns:ShopDomain/"
+          ],
+          [
+            "swift:ns:ShopDomain/Orders"
+          ],
+          [
+            "swift:ns:ShopApp/",
+            "swift:ns:ShopiOS/"
+          ],
+          [
+            "swift:ns:ShopInfra/"
+          ],
+          [
+            "swift:ns:ShopServer/",
+            "swift:ns:ShopTests/",
+            "swift:ns:shop-cli/"
+          ]
+        ],
+        "upward": []
+      }
+    ],
+    "changeCoupling": [],
+    "warnings": []
+  }
+}

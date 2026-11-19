@@ -1,0 +1,112 @@
+## swift:ShopServer:OrdersController (controller, reach 11): swift:ShopServer:OrdersController.boot(routes:), swift:ShopServer:OrdersController.checkout(req:), swift:ShopServer:OrdersController.show(req:)
+methods 11, types 8, depth 4, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as OrdersController
+    participant P1 as OrderService
+    participant P2 as InMemoryOrderRepository
+    participant P3 as PaymentService
+    participant P4 as FakePaymentGateway
+    participant P5 as Order
+    Note over P0: boot()
+    P0->>P0: show
+    activate P0
+    P0->>P1: order()
+    activate P1
+    P1->>P2: find() [OrderRepository]
+    deactivate P1
+    deactivate P0
+    P0->>P0: checkout
+    activate P0
+    P0->>P1: order() (see above)
+    P0->>P1: checkout()
+    activate P1
+    P1->>P3: charge()
+    activate P3
+    P3->>P4: charge() [PaymentGateway]
+    P3->>P5: markPaid()
+    deactivate P3
+    deactivate P1
+    deactivate P0
+
+sequenceDiagram
+    autonumber
+    participant P0 as OrdersController
+    Note over P0: checkout
+
+sequenceDiagram
+    autonumber
+    participant P0 as OrdersController
+    Note over P0: show
+
+## swift:shop-cli:ShopCLI (entrypoint, reach 19): swift:shop-cli:ShopCLI.main()
+methods 19, types 11, depth 3, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as ShopCLI
+    participant P1 as OrderService
+    participant P2 as InMemoryOrderRepository
+    participant P3 as PaymentService
+    participant P4 as FakePaymentGateway
+    participant P5 as Money
+    participant P6 as Product
+    participant P7 as Order
+    participant P8 as Discounts
+    Note over P0: main()
+    P0-)P1: new OrderService
+    P0-)P2: new InMemoryOrderRepository
+    P0->>P1: init()
+    P0->>P2: init()
+    P0-)P3: new PaymentService
+    P0-)P4: new FakePaymentGateway
+    P0->>P3: init()
+    P0->>P4: init()
+    P0-)P5: new Money
+    P0-)P6: new Product
+    P0->>P5: init()
+    P0->>P6: init()
+    P0->>P1: place()
+    activate P1
+    P1-)P7: new Order
+    P1->>P7: init()
+    P1->>P7: add()
+    activate P7
+    P7->>P7: add()
+    deactivate P7
+    P1->>P2: save() [OrderRepository]
+    P1->>P8: discount()
+    activate P8
+    P8-)P5: new Money
+    P8->>P5: init()
+    deactivate P8
+    deactivate P1
+    P0->>P1: checkout()
+    activate P1
+    P1->>P3: charge()
+    activate P3
+    P3->>P4: charge() [PaymentGateway]
+    P3->>P7: markPaid()
+    deactivate P3
+    deactivate P1
+
+## swift:ShopServer:ShopServer (entrypoint, reach 6): swift:ShopServer:ShopServer.main()
+methods 6, types 6, depth 1, truncated false
+sequenceDiagram
+    autonumber
+    participant P0 as ShopServer
+    participant P1 as OrderService
+    participant P2 as InMemoryOrderRepository
+    participant P3 as PaymentService
+    participant P4 as FakePaymentGateway
+    participant P5 as routes
+    Note over P0: main()
+    P0-)P1: new OrderService
+    P0-)P2: new InMemoryOrderRepository
+    P0->>P1: init()
+    P0->>P2: init()
+    P0-)P3: new PaymentService
+    P0-)P4: new FakePaymentGateway
+    P0->>P3: init()
+    P0->>P4: init()
+    P0->>P5: routes
+
