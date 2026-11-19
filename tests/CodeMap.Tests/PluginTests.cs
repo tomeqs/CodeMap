@@ -336,6 +336,28 @@ public class PluginTests
     internal static string SwiftFixture(string name) => Path.Combine(GoldenTests.RepoRoot(), "analyzers", "swift", "test", "fixtures", name);
 
     [NodeFact(swift: true)]
+    public void Swift_calls_reach_implementations_through_protocols_in_call_flows()
+    {
+        var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });
+        var graph = CodeMapAnalyzer.Analyze(SwiftFixture("resolve"), registry, NoGit);
+
+        Assert.Empty(graph.Analysis.Warnings);
+        const string services = "swift:Services:";
+        graph.AssertEdge(services + "OrderService.place(_:)", EdgeKinds.Calls, services + "PaymentGateway.charge(_:)");
+        graph.AssertEdge(services + "StripeGateway.charge(_:)", EdgeKinds.Implements, services + "PaymentGateway.charge(_:)");
+        graph.AssertEdge(services + "StripeGateway", EdgeKinds.Implements, services + "PaymentGateway");
+        graph.AssertEdge(services + "OrderService", EdgeKinds.Inherits, services + "BaseService");
+
+        // The flow from place(_:) goes through the protocol to the Stripe gateway and on to what it makes.
+        var flow = new CodeMap.Insights.CallFlow(new CodeMap.Insights.GraphIndex(graph)).Build(new[] { services + "OrderService.place(_:)" });
+        Assert.Contains(flow.Methods, m => m.Id == services + "StripeGateway.charge(_:)");
+        Assert.Contains(flow.Methods, m => m.Id == "swift:Domain:Receipt.init(amount:)");
+
+        // A dependency of another target: coupling between the targets' types counts it.
+        Assert.True(graph.Node(services + "OrderService").Metric("ce") > 0);
+    }
+
+    [NodeFact(swift: true)]
     public void The_swift_plugin_maps_a_package_with_its_extensions_and_an_xcode_project_beside_it()
     {
         var registry = LanguageRegistry.WithPlugins(new[] { Path.Combine(GoldenTests.RepoRoot(), "analyzers") });

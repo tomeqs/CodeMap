@@ -134,7 +134,7 @@ class Model {
     }
 
     if (topLevel) {
-      const main = { kind: 'method', name: 'main', labels: null, params: [], returns: null, access: 'private', modifiers: [], attributes: [], signature: 'top-level code', line: topLevel.line, endLine: topLevel.endLine, complexity: topLevel.complexity, topLevel: true };
+      const main = { kind: 'method', name: 'main', labels: null, params: [], returns: null, access: 'private', modifiers: [], attributes: [], signature: 'top-level code', line: topLevel.line, endLine: topLevel.endLine, complexity: topLevel.complexity, topLevel: true, refs: topLevel.refs, locals: topLevel.locals };
       holder.members.push({ key: 'top-level', decl: main, places: [{ file, member: main }] });
     }
   }

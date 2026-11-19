@@ -7,7 +7,7 @@
   "license": "MIT",
   "engines": { "node": ">=18" },
   "scripts": {
-    "test": "node --test test/plist.test.mjs test/yaml.test.mjs test/projects.test.mjs test/analyze.test.mjs test/cli.test.mjs",
+    "test": "node --test test/plist.test.mjs test/yaml.test.mjs test/projects.test.mjs test/analyze.test.mjs test/resolve.test.mjs test/cli.test.mjs",
     "build-grammar": "node scripts/build-grammar.mjs"
   },
   "dependencies": {
