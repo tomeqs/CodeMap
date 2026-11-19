@@ -170,16 +170,18 @@ class Claims {
   }
 
   owner(path) {
-    // SwiftPM targets come before Xcode's explicit file lists (a package and its .xcodeproj of the same files).
+    // From the file itself (a target that lists single files) up: the deepest claim wins, unless one higher up has
+    // a lower rank (SwiftPM targets come before Xcode's, a package before its .xcodeproj of the same files).
     let best = null;
-    for (let dir = dirname(path); ; dir = dirname(dir)) {
+    for (let dir = path; ; dir = dirname(dir)) {
+      let here = null;
       for (const claim of this.dirs.get(dir) ?? []) {
         if (!claim.accepts(path)) continue;
-        if (!best || claim.rank < best.rank || (claim.rank === best.rank && claim.order < best.order)) best = claim;
+        if (!here || claim.rank < here.rank || (claim.rank === here.rank && claim.order < here.order)) here = claim;
       }
 
-      if (best && best.rank === 0) return best.project;
-      if (dirname(dir) === dir) break;
+      if (here && (!best || here.rank < best.rank)) best = here;
+      if (best?.rank === 0 || dirname(dir) === dir) break;
     }
 
     const explicit = this.files.get(path);

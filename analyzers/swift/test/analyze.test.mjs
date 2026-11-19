@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import test from 'node:test';
 import { run, scratch } from './helpers.mjs';
 
@@ -145,6 +146,57 @@ test('a file the grammar cannot follow is still mapped as far as it reads, and t
     assert.ok(fragment.has('swift:P:Helper'));
     assert.ok(fragment.has('swift:P:Helper@B.swift'));
     assert.ok(fragment.has('swift:P:Fine.ok()'));
+  } finally {
+    dispose();
+  }
+});
+
+test('private types of one name: each file extends its own, and a type of the target that is not private keeps the name', () => {
+  const { dir, dispose } = scratch({
+    'Package.swift': '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "P", path: ".")])\n',
+    'A.swift': 'private struct Helper { func a() {} }\nprivate struct Config { let x = 1 }\n',
+    'B.swift': 'private struct Helper { func b() {} }\nprivate extension Helper { func c() {} }\n',
+    'C.swift': 'public struct Config { public struct Inner {} }\nextension Config { func more() {} }\n',
+  });
+  try {
+    const fragment = run(dir);
+    assert.ok(fragment.has('swift:P:Helper@B.swift.c()'));
+    assert.ok(!fragment.has('swift:P:Helper.c()'));
+    assert.equal(fragment.node('swift:P:Config').accessibility, 'public');
+    assert.ok(fragment.has('swift:P:Config.more()'));
+    assert.ok(fragment.has('swift:P:Config.Inner'));
+    assert.ok(fragment.has('swift:P:Config@A.swift.x'));
+  } finally {
+    dispose();
+  }
+});
+
+test('a static and an instance member of one name are two; a type nested in an outside extension is named after it', () => {
+  const { dir, dispose } = scratch({
+    'Package.swift': '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "P", path: ".")])\n',
+    'S.swift': 'struct S {\n  static func make() -> S { S() }\n  func make() -> S { self }\n  static let x = 1\n  let x = 2\n}\nextension String {\n  struct Inner { func d() {} }\n}\n',
+  });
+  try {
+    const fragment = run(dir);
+    assert.deepEqual(fragment.node('swift:P:S.make()').modifiers, undefined);
+    assert.deepEqual(fragment.node('swift:P:S.make()#static').modifiers, ['static']);
+    assert.ok(fragment.has('swift:P:S.x'));
+    assert.ok(fragment.has('swift:P:S.x#static'));
+    assert.equal(fragment.node('swift:P:extension:String.Inner').fullName, 'String.Inner');
+    assert.equal(fragment.node('swift:P:extension:String.Inner').parent, 'swift:P:extension:String');
+    assert.ok(fragment.has('swift:P:extension:String.Inner.d()'));
+  } finally {
+    dispose();
+  }
+});
+
+test('the map is named after the folder of a project file', () => {
+  const { dir, dispose } = scratch({
+    'Weather/project.yaml': 'name: Weather\ntargets:\n  Weather:\n    type: application\n    sources: [Sources]\n',
+    'Weather/Sources/App.swift': 'struct App {}\n',
+  });
+  try {
+    assert.equal(run(join(dir, 'Weather', 'project.yaml')).source.name, 'Weather');
   } finally {
     dispose();
   }

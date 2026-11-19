@@ -116,16 +116,26 @@ export function readXcodeGenProject(file) {
 }
 
 /**
- * A Podfile's pods by target: `target 'App' do … pod 'Alamofire' … end`. Pods of an enclosing (abstract) target and
- * of the file's top level belong to every target inside; a subspec is its pod (Firebase/Analytics → Firebase).
+ * A Podfile's pods by target: `target 'App' do … pod 'Alamofire' … end`. Pods of an enclosing abstract target and of
+ * the file's top level belong to every target inside; pods in an `if` or a block inside a target are the target's;
+ * a `def` of pods counts where it is called. A subspec is its pod (Firebase/Analytics → Firebase).
  *   { file, dir, project: the .xcodeproj it names or null, targets: Map(name → [pods]) }
  */
 export function readPodfile(file) {
   const dir = dirname(file);
   const targets = new Map();
-  const stack = []; // { target: name or null, pods: [] }
+  const defs = new Map();
+  const stack = []; // { kind: target | abstract | def | other, name, pods, inner }
   const top = [];
   let project = null;
+  // Where a pod written here goes: the nearest target, abstract target or def around it, else the top.
+  const owner = () => [...stack].reverse().find((f) => f.kind !== 'other') ?? null;
+  const add = (pods) => {
+    const frame = owner();
+    if (!frame) top.push(...pods);
+    else if (frame.kind === 'target') targets.get(frame.name).push(...pods);
+    else frame.pods.push(...pods);
+  };
   for (const raw of readFileSync(file, 'utf8').split('\n')) {
     const line = raw.replace(/#.*$/, '').trim();
     if (!line) continue;
@@ -133,29 +143,39 @@ export function readPodfile(file) {
     if (projectMatch) project = resolve(dir, projectMatch[1].endsWith('.xcodeproj') ? projectMatch[1] : `${projectMatch[1]}.xcodeproj`);
     const target = /^(abstract_)?target\s+['":]?([^'"\s]+)['"]?\s+do\b/.exec(line);
     if (target) {
-      stack.push({ target: target[1] ? null : target[2], abstract: Boolean(target[1]), pods: [] });
+      stack.push({ kind: target[1] ? 'abstract' : 'target', name: target[2], pods: [] });
       if (!target[1] && !targets.has(target[2])) targets.set(target[2], []);
+      continue;
+    }
+
+    const def = /^def\s+(\w+)/.exec(line);
+    if (def) {
+      stack.push({ kind: 'def', name: def[1], pods: [] });
       continue;
     }
 
     const pod = /^pod\s+['"]([^'"/]+)/.exec(line);
     if (pod) {
-      const frame = stack[stack.length - 1];
-      if (!frame) top.push(pod[1]);
-      else frame.pods.push(pod[1]);
-      if (frame?.target) targets.get(frame.target).push(pod[1]);
+      add([pod[1]]);
+      continue;
+    }
+
+    const call = /^(\w+)(\(\))?$/.exec(line);
+    if (call && defs.has(call[1])) {
+      add(defs.get(call[1]));
       continue;
     }
 
     if (/^end\b/.test(line)) {
       const frame = stack.pop();
-      // Pods of an enclosing abstract target belong to the targets inside it, those already closed included.
-      if (frame?.abstract) for (const inner of frame.inner ?? []) targets.get(inner).push(...frame.pods);
-      if (frame?.target) for (const outer of stack) (outer.inner ??= []).push(frame.target);
+      if (frame?.kind === 'def') defs.set(frame.name, frame.pods);
+      // Pods of an abstract target belong to the targets inside it, those already closed included.
+      if (frame?.kind === 'abstract') for (const inner of frame.inner ?? []) targets.get(inner).push(...frame.pods);
+      if (frame?.kind === 'target') for (const outer of stack) (outer.inner ??= []).push(frame.name);
       continue;
     }
 
-    if (/\bdo\b(\s*\|[^|]*\|)?\s*$/.test(line) || /^(if|unless|case|def|begin|while|until|for)\b/.test(line)) stack.push({ target: null, pods: [] });
+    if (/\bdo\b(\s*\|[^|]*\|)?\s*$/.test(line) || /^(if|unless|case|begin|while|until|for)\b/.test(line)) stack.push({ kind: 'other', pods: [] });
   }
 
   for (const pods of targets.values()) pods.push(...top);

@@ -6,8 +6,8 @@ import { Graph } from './graph.mjs';
 import { buildModel, placeOf } from './model.mjs';
 import { buildProjects } from './projects/projects.mjs';
 
-/** Files above this size are left out (generated tables); 4 MB of Swift parses in about a second. */
-const MAX_BYTES = 8 * 1024 * 1024;
+/** Files longer than this (in characters) are left out: generated tables. 4 MB of Swift parses in about a second. */
+const MAX_LENGTH = 8 * 1024 * 1024;
 const LEVEL_RANK = { project: 0, namespace: 1, type: 2, member: 3 };
 /** Bookkeeping fields of nodes, not written. */
 const PRIVATE_FIELDS = new Set(['bases', 'declaredType', 'returnType', 'paramTypes']);
@@ -39,7 +39,7 @@ export function analyze(parser, request, log = () => {}) {
     if (!project) continue;
     const text = readText(path);
     if (text === null) continue;
-    if (text.length > MAX_BYTES) {
+    if (text.length > MAX_LENGTH) {
       counts.large++;
       continue;
     }
@@ -91,7 +91,7 @@ export function analyze(parser, request, log = () => {}) {
 
   if (counts.generated) warnings.push(`${counts.generated} generated file(s) were skipped.`);
   if (counts.tests) warnings.push(`${counts.tests} test file(s) were left out.`);
-  if (counts.large) warnings.push(`${counts.large} file(s) larger than ${MAX_BYTES / 1024 / 1024} MB were skipped.`);
+  if (counts.large) warnings.push(`${counts.large} file(s) longer than ${MAX_LENGTH / 1024 / 1024} M characters were skipped.`);
   if (counts.failed.length) warnings.push(`${counts.failed.length} file(s) could not be read: ${counts.failed.slice(0, 5).join(', ')}${counts.failed.length > 5 ? ', …' : ''}`);
   if (counts.unreadable.length) warnings.push(`${counts.unreadable.length} file(s) are mostly code the parser could not follow, so their declarations may be missing: ${counts.unreadable.slice(0, 5).join(', ')}${counts.unreadable.length > 5 ? ', …' : ''}`);
   if (process.env.CODEMAP_SWIFT_STATS) log(`parse errors: ${totalBytes ? ((100 * errorBytes) / totalBytes).toFixed(2) : '0.00'}% of the code`);
@@ -104,14 +104,18 @@ export function analyze(parser, request, log = () => {}) {
       path: target,
       root,
       kind: found.only && found.only.kind !== 'file' ? (found.only.kind === 'xcworkspace' ? 'solution' : 'project') : isFile ? 'file' : 'directory',
-      name: basename(target).replace(/\.(xcodeproj|xcworkspace|podspec|swift|yml)$/i, '') === 'Package' || basename(target) === 'Project.swift' || basename(target) === 'project.yml' || basename(target) === 'Podfile'
-        ? basename(dirname(target))
-        : basename(target).replace(/\.(xcodeproj|xcworkspace|podspec|swift)$/i, ''),
+      name: nameOf(target, found.only),
     },
     nodes,
     edges,
     analysis: options.checks ? { warnings, diagnostics: [] } : { warnings },
   };
+}
+
+/** The map's name: a project file's folder (Package.swift, Project.swift, project.yml, Podfile), else the target's name. */
+function nameOf(target, only) {
+  if (only && ['package', 'tuist', 'xcodegen', 'podfile'].includes(only.kind)) return basename(dirname(target));
+  return basename(target).replace(/\.(xcodeproj|xcworkspace|podspec\.json|podspec|swift)$/i, '');
 }
 
 function errorShare(tree) {

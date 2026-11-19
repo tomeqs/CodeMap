@@ -3,6 +3,7 @@ import { join, relative } from 'node:path';
 import test from 'node:test';
 import { discover, toPosix } from '../src/discover.mjs';
 import { loadParser } from '../src/parser.mjs';
+import { readPodfile } from '../src/projects/others.mjs';
 import { buildProjects } from '../src/projects/projects.mjs';
 import { fixtures, scratch } from './helpers.mjs';
 
@@ -137,6 +138,52 @@ test('a manifest that cannot be read is a warning, and its files are still mappe
     assert.match(warnings[0], /App\.xcodeproj could not be read \(Not a property list/);
     assert.equal(projects[0].kind, 'folder');
     assert.equal(projects[0].files.length, 1);
+  } finally {
+    dispose();
+  }
+});
+
+test('targets that list single files claim them, and a deeper pattern of the same kind wins over a broader one', () => {
+  const { dir, dispose } = scratch({
+    'Package.swift': '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "A", path: "Sources/A", sources: ["One.swift"])])\n',
+    'Sources/A/One.swift': 'struct One {}\n',
+    'Sources/A/Two.swift': 'struct Two {}\n',
+    'Pod/Toast.podspec': "Pod::Spec.new do |s|\n  s.name = 'Toast'\n  s.source_files = 'Toast.swift'\nend\n",
+    'Pod/Toast.swift': 'struct Toast {}\n',
+    'App/Project.swift': 'import ProjectDescription\nlet project = Project(name: "App", targets: [.target(name: "App", product: .app, sources: ["Sources/**"]), .target(name: "Feature", product: .framework, sources: ["Sources/Feature/**"])])\n',
+    'App/Sources/AppMain.swift': 'struct AppMain {}\n',
+    'App/Sources/Feature/Feature.swift': 'struct Feature {}\n',
+  });
+  try {
+    const { projects } = buildProjects(discover(dir), parser.parse);
+    const files = Object.fromEntries(projects.map((p) => [p.id, p.files.map((f) => toPosix(relative(dir, f)))]));
+    assert.deepEqual(files.A, ['Sources/A/One.swift']);
+    assert.deepEqual(files.Toast, ['Pod/Toast.swift']);
+    assert.deepEqual(files.App, ['App/Sources/AppMain.swift']);
+    assert.deepEqual(files.Feature, ['App/Sources/Feature/Feature.swift']);
+  } finally {
+    dispose();
+  }
+});
+
+test('glob roots are native paths, the folders the patterns start in', async () => {
+  const { globMatcher } = await import('../src/projects/glob.mjs');
+  const base = join(fixtures, 'tuist');
+  const matcher = globMatcher(base, ['Notes/Sources/**', 'NotesKit/Sources/Note.swift', 'Other/*.{swift,h}']);
+  assert.deepEqual(matcher.roots, [join(base, 'Notes', 'Sources'), join(base, 'NotesKit', 'Sources', 'Note.swift'), join(base, 'Other')]);
+  assert.ok(matcher.matches(join(base, 'Notes', 'Sources', 'Deep', 'A.swift')));
+  assert.ok(matcher.matches(join(base, 'Other', 'B.h')));
+  assert.ok(!matcher.matches(join(base, 'Other', 'Deep', 'B.swift')));
+});
+
+test('a Podfile: pods of a def where it is called, pods in an if inside a target', () => {
+  const { dir, dispose } = scratch({
+    'App.xcodeproj/project.pbxproj': '{ objects = { R = { isa = PBXProject; mainGroup = G; targets = (T); }; G = { isa = PBXGroup; children = (); }; T = { isa = PBXNativeTarget; name = App; productType = "com.apple.product-type.application"; }; }; rootObject = R; }',
+    'Podfile': "def shared\n  pod 'Alamofire'\nend\n\ntarget 'App' do\n  shared\n  if ENV['DEBUG']\n    pod 'Debug'\n  end\n  pod 'Kingfisher'\nend\n",
+  });
+  try {
+    const podfile = readPodfile(join(dir, 'Podfile'));
+    assert.deepEqual(podfile.targets.get('App'), ['Alamofire', 'Debug', 'Kingfisher']);
   } finally {
     dispose();
   }

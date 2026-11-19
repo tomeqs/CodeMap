@@ -7,11 +7,13 @@ import { resolve, sep } from 'node:path';
  *   { roots: [folders the patterns start in], matches(path) }
  */
 export function globMatcher(base, patterns) {
+  // Roots stay native paths (the callers look folders up by them); matching is on paths with forward slashes.
   const compiled = patterns.filter((p) => typeof p === 'string' && p.trim()).map((pattern) => {
-    const full = toPosix(resolve(base, pattern.trim()));
-    const wild = full.search(/[*?{[]/);
-    if (wild < 0) return { root: full, re: new RegExp(`^${escape(full)}(/.*)?$`) };
-    const root = full.slice(0, full.lastIndexOf('/', wild)) || '/';
+    const native = resolve(base, pattern.trim());
+    const full = toPosix(native);
+    const wild = native.search(/[*?{[]/);
+    if (wild < 0) return { root: native, re: new RegExp(`^${escape(full)}(/.*)?$`) };
+    const root = native.slice(0, Math.max(native.lastIndexOf(sep, wild), 0)) || sep;
     return { root, re: new RegExp(`^${translate(full)}$`) };
   });
   return {

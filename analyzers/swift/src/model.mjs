@@ -41,16 +41,22 @@ class Model {
   addType(file, decl, outer) {
     if (!decl.name) return null;
     const table = this.types.get(file.project.id);
-    let qualified = outer ? `${outer.qualified}.${decl.name}` : decl.name;
+    let qualified = outer ? `${outer.nestBase ?? outer.qualified}.${decl.name}` : decl.name;
     let entry = table.get(qualified);
-    // Two private types of one name in two files are two types; one in both branches of an #if is one.
-    if (entry && !outer && entry.decls.every((d) => d.file !== file) && (decl.access === 'private' || entry.decls.every((d) => d.decl.access === 'private'))) {
-      qualified = `${decl.name}@${file.rel}`;
-      entry = table.get(qualified);
+    // Two private types of one name in two files are two types (each `Name@file` but the first); one in both
+    // branches of an #if is one. A type of the target that is not private keeps the plain name.
+    if (entry && !outer && entry.decls.every((d) => d.file !== file)) {
+      if (decl.access === 'private') {
+        qualified = `${decl.name}@${file.rel}`;
+        entry = table.get(qualified);
+      } else if (entry.decls.every((d) => d.decl.access === 'private')) {
+        this.rekey(table, entry, `${decl.name}@${entry.decls[0].file.rel}`);
+        entry = null;
+      }
     }
 
     if (!entry) {
-      entry = { qualified, name: decl.name, project: file.project, outer, kind: decl.kind, decls: [], extensions: [], members: [], nested: [], cases: [], folder: outer ? outer.folder : file.folder };
+      entry = { qualified, name: decl.name, display: outer ? `${outer.display}.${decl.name}` : decl.name, project: file.project, outer, kind: decl.kind, decls: [], extensions: [], members: [], nested: [], cases: [], folder: outer ? outer.folder : file.folder };
       table.set(qualified, entry);
       if (outer) outer.nested.push(entry);
     }
@@ -59,6 +65,14 @@ class Model {
     this.addMembers(entry, file, decl, null);
     for (const nested of decl.nested) this.addType(file, nested, entry);
     return entry;
+  }
+
+  /** Moves a type (and the types nested in it) to another key of the target's table. */
+  rekey(table, entry, qualified) {
+    table.delete(entry.qualified);
+    entry.qualified = qualified;
+    table.set(qualified, entry);
+    for (const nested of entry.nested) this.rekey(table, nested, `${qualified}.${nested.name}`);
   }
 
   addMembers(entry, file, decl, extension) {
@@ -86,12 +100,15 @@ class Model {
     for (const decl of file.facts.types) {
       if (decl.kind !== 'extension' || !decl.name) continue;
       const table = this.types.get(file.project.id);
-      let entry = table.get(decl.name) ?? table.get(`${decl.name}@${file.rel}`);
+      // The file's own private type first: another file's private type of the name is not the one it extends.
+      let entry = table.get(`${decl.name}@${file.rel}`) ?? table.get(decl.name);
       if (!entry) {
         const key = `extension|${file.folder}|${decl.name}`;
         entry = table.get(key);
         if (!entry) {
-          entry = { qualified: key, name: decl.name, project: file.project, outer: null, kind: 'extension', decls: [], extensions: [], members: [], nested: [], cases: [], folder: file.folder, external: true };
+          // Types nested in it are named after its node: swift:T:extension:Folder/String.Inner.
+          const nestBase = `extension:${file.folder ? `${file.folder}/` : ''}${decl.name}`;
+          entry = { qualified: key, nestBase, name: decl.name, display: decl.name, project: file.project, outer: null, kind: 'extension', decls: [], extensions: [], members: [], nested: [], cases: [], folder: file.folder, external: true };
           table.set(key, entry);
         }
       }
@@ -197,7 +214,7 @@ class Model {
       kind: entry.external ? 'extension' : KIND[entry.kind] ?? 'class',
       level: entry.external ? 'type' : undefined,
       name: entry.name,
-      fullName: entry.external ? `extension ${entry.name}` : entry.qualified.replace(/@.*$/, ''),
+      fullName: entry.external ? `extension ${entry.name}` : entry.display,
       parent: entry.outer?.id ?? parent,
       project: projectId(entry.project.id),
       namespace: entry.folder || undefined,
@@ -351,7 +368,8 @@ export function placeOf(file) {
 function memberKey(member) {
   const labels = idLabels(member);
   const kind = member.kind === 'field' || member.kind === 'property' || member.kind === 'variable' ? 'var' : member.kind;
-  return `${kind}|${member.name}|${labels ? labels.join(':') : ''}`;
+  const scope = member.modifiers?.includes('static') ? 'static|' : '';
+  return `${scope}${kind}|${member.name}|${labels ? labels.join(':') : ''}`;
 }
 
 /** Ids from the argument labels; with the parameter types too when two members share them. */
@@ -365,6 +383,8 @@ function assignIds(ownerId, members) {
 
   const seen = new Set();
   for (const [base, group] of byLabels) {
+    // An instance member keeps the plain id; a static one of the same name and labels gets #static.
+    group.sort((a, b) => Number(a.decl.modifiers.includes('static')) - Number(b.decl.modifiers.includes('static')));
     for (const member of group) {
       const decl = member.decl;
       let id = group.length > 1 && decl.params?.length ? memberId(ownerId, decl.name, idLabels(decl), decl.params.map((p) => compactType(p.type))) : base;
