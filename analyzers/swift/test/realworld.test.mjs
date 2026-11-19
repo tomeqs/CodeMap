@@ -156,3 +156,40 @@ test("a documentation catalog's tutorial code (*.docc) is not on the map", () =>
   assert.ok(!map.has('swift:P:TutorialOnly'));
   assert.deepEqual(map.node('swift:P:Feature').extraLocations ?? [], []);
 });
+
+test("a bare call of a name nothing the caller sees declares is Swift's or a framework's; a capitalized one makes that type", () => {
+  // swift-nio: 1,236 `XCTAssertNoThrow(…)` and 343 `assert(…)` counted as missed calls of the map, because one test
+  // target declares its own internal XCTAssertNoThrow; `semaphore.wait()` on a DispatchSemaphore(value: 0) too.
+  const { map, misses } = mapWithMisses({
+    'Package.swift': '// swift-tools-version:5.9\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "P"), .testTarget(name: "PTests"), .testTarget(name: "OtherTests", dependencies: ["P"])])\n',
+    'Sources/P/Waiter.swift': `import Dispatch
+public final class Waiter {
+  public init() {}
+  public func wait() {}
+  func assert(_ ok: Bool) {}
+  func check() { assert(true) }
+}
+extension DispatchSemaphore {
+  public func waitBriefly() {}
+}
+`,
+    'Tests/PTests/Helpers.swift': 'func XCTAssertNoThrow<T>(_ expression: @autoclosure () throws -> T) {}\n',
+    'Tests/OtherTests/WaiterTests.swift': `import XCTest
+import Dispatch
+import P
+final class WaiterTests: XCTestCase {
+  func testWait() {
+    XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: [:]))
+    assert(true)
+    let semaphore = DispatchSemaphore(value: 0)
+    semaphore.wait()
+    semaphore.waitBriefly()
+  }
+}
+`,
+  });
+  assert.ok(map.hasEdge('swift:P:Waiter.check()', 'calls', 'swift:P:Waiter.assert(_:)'), "a type's own member still wins");
+  assert.ok(map.hasEdge('swift:OtherTests:WaiterTests.testWait()', 'calls', 'swift:P:extension:DispatchSemaphore.waitBriefly()'));
+  assert.ok(!map.hasEdge('swift:OtherTests:WaiterTests.testWait()', 'calls', 'swift:P:Waiter.wait()'));
+  assert.deepEqual(misses.filter((m) => m[1] === '*').map((m) => m[2]), []);
+});

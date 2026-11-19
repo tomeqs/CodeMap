@@ -347,6 +347,7 @@ class Resolver {
         const call = this.resolveCall(e, scope, depth);
         if (call.member) return this.returnOf(call.member, call.receiver);
         if (call.type) return { entry: call.type };
+        if (call.outsideType) return { ext: call.outsideType };
         // Array methods that keep the array or give an element.
         const callee = e[1];
         if (callee[0] === 'm') {
@@ -502,7 +503,10 @@ class Resolver {
         if (global) return { closure: global };
       }
 
-      return {};
+      // Nothing the caller can see has this name: Swift's or a framework's (`assert(…)`, `XCTAssertNoThrow(…)`), and
+      // a capitalized one makes an instance of that type (`DispatchSemaphore(value: 0)`).
+      if (scope.owner && this.membersNamed(scope.owner, name).length) return {};
+      return { outside: true, outsideType: /^[A-Z]/.test(name) ? name : null };
     }
 
     if (fn[0] === 'm') {
@@ -724,7 +728,7 @@ class Resolver {
 
         const name = fn[0] === 'm' ? fn[2] : fn[0] === 'n' ? fn[1] : null;
         // A call on a type from outside the map (DispatchQueue.sync, an array's append) is not one of the map's code.
-        const outside = call.receiver && !call.receiver.entry && !call.receiver.meta && !call.member;
+        const outside = call.outside || (call.receiver && !call.receiver.entry && !call.receiver.meta && !call.member);
         const ours = name !== null && this.declared.has(name) && !outside;
         if (ours) this.counts.ours++;
         if (call.member?.id || call.type?.id || call.enumCase) {
