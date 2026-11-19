@@ -3,7 +3,7 @@ import test from 'node:test';
 import { run } from './helpers.mjs';
 
 const map = run('checks', { options: { checks: true } });
-const found = map.analysis.diagnostics.map((d) => `${d.location.line} ${d.rule}`);
+const found = map.analysis.diagnostics.filter((d) => d.location.file.endsWith('Checks.swift')).map((d) => `${d.location.line} ${d.rule}`);
 
 test('each Swift rule finds its case, at its line', () => {
   for (const expected of [
@@ -49,4 +49,17 @@ test('tests are not checked, and nothing is reported without --checks', () => {
     assert.ok(['info', 'warning'].includes(d.severity));
     assert.ok(d.category);
   }
+});
+
+test('from the self-review: methods named abort, real messages, locals of observers, guard, extensions, captures, nested types, negatives', () => {
+  const review = map.analysis.diagnostics.filter((d) => d.location.file.endsWith('Review.swift')).map((d) => `${d.location.line} ${d.rule}`);
+  assert.deepEqual(review.sort(), [
+    '21 constant-condition', // guard false
+    '24 float-equality', // v == -0.5
+    '27 implicitly-unwrapped-property', // a class declared in a function
+    '39 strong-self-in-stored-closure', // in an extension of a class
+    '40 strong-self-in-stored-closure', // [weak delegate] still keeps self
+  ].sort());
+  const guard = map.analysis.diagnostics.find((d) => d.location.file.endsWith('Review.swift') && d.rule === 'constant-condition');
+  assert.match(guard.message, /the else block always runs/);
 });

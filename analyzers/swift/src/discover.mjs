@@ -27,8 +27,8 @@ export function isManifestSource(path) {
 /** Test code by folder or name: Tests/, IntegrationTests/, tests_…/, *Tests.swift, *Test.swift, *Spec.swift. */
 export function isTestFile(path) {
   return /(^|\/)(tests?|unittests?|uitests?|specs?)\//i.test(path)
-    || /(^|\/)[A-Za-z]*Tests\//.test(path) // IntegrationTests/, SnapshotTests/
-    || /(^|\/)tests?_[^/]*\//i.test(path) // swift-nio's tests_04_performance/
+    || /(^|\/)(Integration|Snapshot|UI|Unit|Performance|Acceptance|EndToEnd|E2E|Functional|Smoke|Regression|Compatibility)Tests\//.test(path)
+    || /(^|\/)tests?_[^/]*\//.test(path) // swift-nio's tests_04_performance/
     || /(^|\/)[^/]*[a-z0-9](Tests?|Spec|Specs)\.swift$/.test(path);
 }
 

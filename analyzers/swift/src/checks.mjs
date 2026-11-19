@@ -21,9 +21,12 @@ const RULES = {
 };
 
 /** Calls that never return: what follows them in the block does not run. */
-const NEVER_RETURNS = new Set(['fatalError', 'preconditionFailure', 'exit', 'abort']);
+const NEVER_RETURNS = new Set(['fatalError', 'preconditionFailure']);
 const FLOATS = /^(Double|Float|Float32|Float64|Float80|CGFloat|TimeInterval)$/;
-const PLACEHOLDER = /\b(not (yet )?implemented|unimplemented|implement me|todo|fixme|tbd)\b/i;
+/** TODO / FIXME / TBD as a developer writes them ("TODO", "todo: …"), not "the todo list"; with "not implemented". */
+const PLACEHOLDER_WORD = /(^|[("'\s])(TODO|FIXME|TBD)\b|\b(todo|fixme|tbd)\s*:/;
+/** Bodies a local is declared in: a property declared in one is a local, not a property. */
+const BODIES = new Set(['function_declaration', 'init_declaration', 'computed_property', 'deinit_declaration', 'subscript_declaration', 'willset_didset_block', 'lambda_literal']);
 const OPERATORS = new Set(['==', '!=', '===', '!==', '<', '>', '<=', '>=']);
 
 export function runChecks(tree, file) {
@@ -39,8 +42,17 @@ export function runChecks(tree, file) {
     const [node, type, fn] = stack.pop();
     let innerType = type;
     let innerFn = fn;
-    if (node.type === 'class_declaration' || node.type === 'protocol_declaration') innerType = { kind: node.childForFieldName('declaration_kind')?.type ?? 'protocol', node };
-    if (node.type === 'function_declaration' || node.type === 'init_declaration' || node.type === 'computed_property' || node.type === 'deinit_declaration') innerFn = { node, floats: floatNames(node) };
+    // A type declared in a function starts over: its properties are properties.
+    if (node.type === 'class_declaration' || node.type === 'protocol_declaration') {
+      innerType = { kind: node.childForFieldName('declaration_kind')?.type ?? 'protocol', node };
+      innerFn = null;
+    }
+
+    if (BODIES.has(node.type)) {
+      // A closure is in its function: a check of the main thread there covers it.
+      const outer = node.type === 'lambda_literal' && innerFn ? innerFn.outer : node;
+      innerFn = { node, outer, floats: floatNames(node), mutating: /\bmutating\b/.test(node.text.split('{')[0]) || Boolean(innerFn?.mutating) };
+    }
     check(node, innerType, innerFn, at);
     for (let i = node.namedChildCount - 1; i >= 0; i--) stack.push([node.namedChild(i), innerType, innerFn]);
   }
@@ -62,7 +74,9 @@ function check(node, type, fn, at) {
         at('self-assignment', node, `${result.text} is assigned to itself: a typo for self.${result.text.replace(/^self\./, '')} = …?`);
       }
 
-      if (type && (type.kind === 'class' || type.kind === 'actor') && result?.type === 'lambda_literal' && storesProperty(target)) strongSelf(result, node, at);
+      // In an extension the type is not known here: a struct's would be mutating.
+      const reference = type && (type.kind === 'class' || type.kind === 'actor' || (type.kind === 'extension' && !fn?.mutating));
+      if (reference && result?.type === 'lambda_literal' && storesProperty(target)) strongSelf(result, node, at);
       return;
     }
 
@@ -82,7 +96,11 @@ function check(node, type, fn, at) {
     case 'while_statement': {
       const conditions = node.childrenForFieldName('condition').filter((c) => c.isNamed);
       if (conditions.length === 1 && conditions[0].type === 'boolean_literal' && !(node.type === 'while_statement' && conditions[0].text === 'true')) {
-        at('constant-condition', conditions[0], `${node.type === 'guard_statement' ? 'guard' : node.type === 'while_statement' ? 'while' : 'if'} ${conditions[0].text}: ${conditions[0].text === 'true' ? 'the condition always holds' : 'the block never runs'}.`);
+        const value = conditions[0].text === 'true';
+        const meaning = node.type === 'guard_statement'
+          ? (value ? 'the else block never runs' : 'the else block always runs: the code after the guard never does')
+          : value ? 'the condition always holds' : 'the block never runs';
+        at('constant-condition', conditions[0], `${node.type === 'guard_statement' ? 'guard' : node.type === 'while_statement' ? 'while' : 'if'} ${conditions[0].text}: ${meaning}.`);
       }
 
       return;
@@ -126,14 +144,15 @@ function check(node, type, fn, at) {
 
     case 'call_expression': {
       const callee = node.namedChildren[0]?.text ?? '';
-      if (/^DispatchQueue\.main\.sync$/.test(callee) && !/isMainThread|dispatchPrecondition|getSpecific/.test(fn?.node.text ?? '')) {
+      if (/^DispatchQueue\.main\.sync$/.test(callee) && !/isMainThread|dispatchPrecondition|getSpecific/.test(fn?.outer?.text ?? '')) {
         at('main-sync-deadlock', node, 'DispatchQueue.main.sync deadlocks when it runs on the main thread: check Thread.isMainThread first, or use async.');
       }
 
       if (callee === 'fatalError' || callee === 'preconditionFailure') {
         const message = node.namedChildren.find((c) => c.type === 'call_suffix')?.text ?? '';
-        const inInitCoder = fn?.node.type === 'init_declaration' && /\bcoder\b/.test(fn.node.text.split('{')[0]);
-        if (PLACEHOLDER.test(message) && !inInitCoder) at('fatal-error-placeholder', node, `${callee}${message.length > 60 ? '(…)' : message}: a placeholder that crashes the program when this code runs.`);
+        const inInitCoder = fn?.outer?.type === 'init_declaration' && /\bcoder\b/.test(fn.outer.text.split('{')[0]);
+        const placeholder = /\b(not (yet )?implemented|unimplemented|implement me)\b/i.test(message) || PLACEHOLDER_WORD.test(message);
+        if (placeholder && !inInitCoder) at('fatal-error-placeholder', node, `${callee}${message.length > 60 ? '(…)' : message}: a placeholder that crashes the program when this code runs.`);
       }
 
       return;
@@ -191,8 +210,9 @@ function storesProperty(target) {
 /** A closure stored in the object that uses self strongly: the object keeps the closure, the closure the object. */
 function strongSelf(lambda, node, at) {
   const captures = lambda.namedChildren.find((c) => c.type === 'capture_list')?.text ?? '';
-  if (/\b(weak|unowned)\s+(var\s+)?self\b|\b(weak|unowned)\b/.test(captures)) return;
-  if (!/\bself\b/.test(lambda.text.replace(/\[[^\]]*\]/, ''))) return;
+  if (/\b(weak|unowned)(\(\w+\))?\s+(var\s+)?self\b/.test(captures)) return;
+  // `self`, not a metatype's `Decoder.OutboundIn.self`.
+  if (!/(^|[^.\w])self\b/.test(lambda.text.replace(/\[[^\]]*\]/, ''))) return;
   at('strong-self-in-stored-closure', node, 'A closure stored in the object captures self strongly: the object and the closure keep each other alive; capture [weak self].');
 }
 
@@ -222,7 +242,11 @@ function floatNames(fn) {
 }
 
 /** == between floating-point values: a decimal literal that is not whole against a name, or two float names. */
-function isFloat(lhs, rhs, fn) {
+function isFloat(left, right, fn) {
+  // -0.5, (0.5): the literal inside.
+  const unwrap = (n) => (n.type === 'prefix_expression' && /^-/.test(n.text) && n.childForFieldName('target') ? n.childForFieldName('target') : n.type === 'parenthesized_expression' && n.namedChildCount === 1 ? unwrap(n.namedChildren[0]) : n);
+  const lhs = unwrap(left);
+  const rhs = unwrap(right);
   const fractional = (n) => n.type === 'real_literal' && !/^-?\d+\.0*$/.test(n.text.replace(/_/g, ''));
   const whole = (n) => n.type === 'integer_literal' || (n.type === 'real_literal' && !fractional(n));
   const named = (n) => n.type === 'simple_identifier' && fn?.floats.has(n.text);
